@@ -11,6 +11,7 @@ members = [
     "spi-handle",
     "w25q",
     "examples/imu-test",
-    "examples/bare"
+    "examples/bare",
+    "examples/cmsis-dsp-test"
 , "sirin-c"]
 resolver = "2"
