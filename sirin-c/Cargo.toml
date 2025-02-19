@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+libc = { version = "0.2.169", features = [] }
 
 [build-dependencies]
 cc = "1.2"
+walkdir = "2.5.0"
