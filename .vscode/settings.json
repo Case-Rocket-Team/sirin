@@ -3,4 +3,5 @@
         "s1",
     ],
     "rust-analyzer.check.allTargets": false,
+    "cmake.ignoreCMakeListsMissing": true,
 }
