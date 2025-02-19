@@ -27,8 +27,6 @@ fn recursive_dirs<P: AsRef<Path>>(dir: P) -> Vec<PathBuf> {
         }
     }
 
-    println!("cargo::warning={:?}", vec);
-
     return vec;
 }
 
@@ -46,8 +44,6 @@ fn recursive_files<P: AsRef<Path>>(dir: P) -> Vec<PathBuf> {
             vec.push(entry.into_path())
         }
     }
-
-    println!("cargo::warning={:?}", vec);
 
     return vec;
 }
