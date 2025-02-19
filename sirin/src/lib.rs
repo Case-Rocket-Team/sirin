@@ -11,6 +11,7 @@ use gpio::GpioPins;
 use rfm9x::Rfm9x;
 use w25q::W25Q;
 use lsm6dso::Lsm6dso;
+use h3lis::H3lis;
 use spi::{Spi, SpiConfig, SpiConfigStruct, SpiDev, SpiInstance, WithSpiHandle};
 
 pub mod spi;
@@ -28,7 +29,8 @@ pub struct Sirin {
     pub spi2: SpiInstance,
     pub gpio: GpioPins,
     pub baro: Bmp3<SpiDev>,
-    pub flash: W25Q<SpiDev>
+    pub flash: W25Q<SpiDev>,
+    pub h3lis: H3lis<SpiDev>
 }
 
 impl Sirin {
@@ -135,6 +137,10 @@ impl Sirin {
             let imu: *mut Lsm6dso<SpiDev> = ptr!(sirin.imu);
             let imu_cs = Output::new(p.PE11, Level::High, Speed::High);
             imu.write(Lsm6dso::new((*spi1).handle(imu_cs)));
+
+            let h3lis: *mut H3lis<SpiDev> = ptr!(sirin.h3lis);
+            let h3lis_cs = Output::new(p.PE13,Level::High, Speed::High);
+            h3lis.write(H3lis::new((*spi1).handle(h3lis_cs)));
 
             // TODO: JOIN FUTURES, AWAIT
             baro_ptr.write(baro_future.await.unwrap());

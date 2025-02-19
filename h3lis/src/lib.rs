@@ -3,6 +3,7 @@ use dev_csr::dev_csr;
 use embedded_hal::spi::ErrorType;
 use embedded_hal_async::spi::SpiBus;
 use spi_handle::SpiHandle;
+use core::mem;
 
 dev_csr!{
     dev H3lis {
@@ -93,18 +94,9 @@ dev_csr!{
                 /// (0: no overrun has occurred; 1: new data has overwritten the previous data before it was read)
                 7 xyz_overrun
             }, 
-            0x29 OUT_X r {
-                /// X-axis acceleration data as 2's complement
-                0..7 x
-            },
-            0x2B OUT_Y r {
-                /// Y-axis acceleration data as 2's complement
-                0..7 y
-            },
-            0x2D OUT_Z r {
-                /// Z-axis acceleration data as 2's complement
-                0..7 z
-            },
+            0x29 OUT_X r x[0..7],
+            0x2B OUT_Y r y [0..7],
+            0x2D OUT_Z r z[0..7],
             0x30 INT1_CFG rw {
                 /// Default value: 0
                 /// (0: disable interrupt request; 1: enable interrupt request on measured accel. value lower/higher than preset threshold)
@@ -196,6 +188,25 @@ impl <S: SpiHandle> H3lis<S> {
         //self.write_reg().await?;
         Ok(())    
     }
+
+    pub async fn acceleration(&mut self) -> Result<(i32, i32, i32), <S::Bus as ErrorType>::Error> {
+        // TODO u8 -> i8 transmute
+         /*let accel_x: u8 = self.x().await?;
+         let accel_y: u8 = self.y().await?;
+         let accel_z: u8 = self.z().await?;*/
+         Ok(unsafe {
+            let accel_x: i8 = mem::transmute(self.x().await?);
+            let accel_y: i8 = mem::transmute(self.y().await?);
+            let accel_z: i8 = mem::transmute(self.z().await?);
+
+            ((accel_x as i32) * 780000, (accel_y as i32) * 780000, (accel_z as i32) * 780000)
+       })
+    }
+
+    pub async fn manufacturer_id(&mut self) -> Result<u8, <S::Bus as ErrorType>::Error> {
+        Ok(self.who_am_i().await?)
+    }
+
 }
 
 impl <S: SpiHandle> ReadH3lis for H3lis<S>{
