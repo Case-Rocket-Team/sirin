@@ -38,16 +38,15 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
     main_task(sirin).await
 }
 
-bind_interrupts!(struct Irqs {
-    USART3 => usart::InterruptHandler<peripherals::USART3>;
-});
-
 async fn main_task(sirin: &'static mut Sirin) {
     sirin.h3lis.setup().await.unwrap();
+    sirin.imu.setup().await.unwrap();
     let a = sirin.h3lis.manufacturer_id().await.unwrap();
     println!("{}", a);
     println!("Hello world!");
-    for i in 0..1000{
-        println!("raw accel: {}", sirin.h3lis.acceleration().await.unwrap());
+    loop {
+        println!("H3LIS: {}, LSM6DSO: {}", sirin.h3lis.acceleration().await.unwrap(), sirin.imu.accel().await.unwrap());
+
+        Timer::after_millis(10).await;
     }
 }
