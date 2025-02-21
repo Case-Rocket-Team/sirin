@@ -184,22 +184,20 @@ impl <S: SpiHandle> H3lis<S> {
     ) -> Result<(),<S::Bus as ErrorType>::Error> {
         // self.write_reg(reg, value as u8).await?;
         // enable x,y,z axis
-        self.write_reg(RegCtrlReg1, 0b001_00_111 as u8).await?;
+        self.write_reg(RegCtrlReg1, 0b001_10_111 as u8).await?;
         //self.write_reg().await?;
         Ok(())    
     }
 
     pub async fn acceleration(&mut self) -> Result<(i32, i32, i32), <S::Bus as ErrorType>::Error> {
-        // TODO u8 -> i8 transmute
-         /*let accel_x: u8 = self.x().await?;
-         let accel_y: u8 = self.y().await?;
-         let accel_z: u8 = self.z().await?;*/
          Ok(unsafe {
             let accel_x: i8 = mem::transmute(self.x().await?);
             let accel_y: i8 = mem::transmute(self.y().await?);
             let accel_z: i8 = mem::transmute(self.z().await?);
-
-            ((accel_x as i32) * 780000, (accel_y as i32) * 780000, (accel_z as i32) * 780000)
+            //xyz are corrected so that
+            //x -> cable direction
+            //yz follow from right hand rule, x as index finger
+            ((accel_x as i32) * 780000, (accel_y as i32) * -780000, (accel_z as i32) * -780000)
        })
     }
 

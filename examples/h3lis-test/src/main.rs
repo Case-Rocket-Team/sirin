@@ -41,11 +41,8 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 async fn main_task(sirin: &'static mut Sirin) {
     sirin.h3lis.setup().await.unwrap();
     sirin.imu.setup().await.unwrap();
-    let a = sirin.h3lis.manufacturer_id().await.unwrap();
-    println!("{}", a);
-    println!("Hello world!");
     loop {
-        println!("H3LIS: {}, LSM6DSO: {}", sirin.h3lis.acceleration().await.unwrap(), sirin.imu.accel().await.unwrap());
+        println!("{} , {}", sirin.h3lis.acceleration().await.unwrap(), sirin.imu.accel().await.unwrap());
 
         Timer::after_millis(10).await;
     }
