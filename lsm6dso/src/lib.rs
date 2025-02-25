@@ -846,9 +846,12 @@ impl <S: SpiHandle> Lsm6dso<S> {
           //sensitivity mode TODO: read from chip
           let fs = self.accel_sensitivity().await?;
           let scalar: i32 = 122 * fs;//* fs/4;
-          let accel_x: i32 = scalar * (raw_x as i32);
+          //xyz are corrected so that
+          //x -> cable direction
+          //yz follow from right hand rule, x as index finger
+          let accel_x: i32 = -scalar * (raw_x as i32);
           let accel_y: i32 = scalar * (raw_y as i32);
-          let accel_z: i32 = scalar * (raw_z as i32);
+          let accel_z: i32 = -scalar * (raw_z as i32);
 
           Ok((accel_x, accel_y, accel_z))
      }

@@ -1,0 +1,20 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/sirin-c/cmsis/CMSIS/Core/Include",
+                "${workspaceFolder}/sirin-c/cmsis-dsp/PrivateInclude",
+                "${workspaceFolder}/sirin-c/cmsis-dsp/Include",
+                "${workspaceFolder}/sirin-c/cmsis-dsp/Source"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/arm-none-eabi-gcc",
+            "cStandard": "c17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "linux-gcc-arm"
+        }
+    ],
+    "version": 4
+}

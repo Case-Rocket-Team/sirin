@@ -5,3 +5,6 @@ edition = "2021"
 
 [dependencies]
 dev-csr = { version = "0.1.0", path = "../dev-csr" }
+embedded-hal = "1.0.0"
+embedded-hal-async = "1.0.0"
+spi-handle = { version = "0.1.0", path = "../spi-handle" }

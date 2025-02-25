@@ -334,7 +334,7 @@ fn gen_io_fn(var: &Var) -> IoFn {
                 let var_start = Literal::usize_unsuffixed(var_start);
                 
                 read_var_out.extend(quote! {
-                    #acc += (((#ident & (1 << (#reg_end + 1))) as #var_ty) >> #reg_start) << #var_start;
+                    #acc += (((#ident % (1 << (#reg_end + 1))) as #var_ty) >> #reg_start) << #var_start;
                 });
 
                 // Don't write -- theres other stuff in the register that we would overwrite
