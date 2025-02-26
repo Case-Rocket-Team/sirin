@@ -53,10 +53,15 @@ async fn main_task(sirin: &'static mut Sirin) {
     let this = (((0b0011_00_00 & (1 << (3 + 1))) as u8) >>2) << 0;
     println!("{}", this);
 
-    for i in 0..3{
-        println!("set sensitivity: {}", sirin.imu.set_accel_sensitivity(0).await.unwrap());
-        println!("raw accel: {} \nadjusted accel: {}", sirin.imu.raw_accel().await.unwrap(), sirin.imu.accel().await.unwrap());
-    }
+    
+    println!("set sensitivity to 4: {}", sirin.imu.set_accel_sensitivity(0).await.unwrap());
+    println!("raw accel: {} \nadjusted accel: {}", sirin.imu.raw_accel().await.unwrap(), sirin.imu.accel().await.unwrap());
+    println!("set sensitivity to 8: {}", sirin.imu.set_accel_sensitivity(1).await.unwrap());
+    println!("raw accel: {} \nadjusted accel: {}", sirin.imu.raw_accel().await.unwrap(), sirin.imu.accel().await.unwrap());
+    println!("set sensitivity to 16: {}", sirin.imu.set_accel_sensitivity(2).await.unwrap());
+    println!("raw accel: {} \nadjusted accel: {}", sirin.imu.raw_accel().await.unwrap(), sirin.imu.accel().await.unwrap());
+    println!("set sensitivity to 32: {}", sirin.imu.set_accel_sensitivity(3).await.unwrap());
+    println!("raw accel: {} \nadjusted accel: {}", sirin.imu.raw_accel().await.unwrap(), sirin.imu.accel().await.unwrap());
     loop {
         // println!("raw accel: {} \nadjusted accel: {}", sirin.imu.raw_accel().await.unwrap(), sirin.imu.accel().await.unwrap());
         // println!("gyro: {}", sirin.imu.raw_gyro().await.unwrap());
