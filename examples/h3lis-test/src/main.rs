@@ -42,8 +42,14 @@ async fn main_task(sirin: &'static mut Sirin) {
     sirin.h3lis.setup().await.unwrap();
     sirin.imu.setup().await.unwrap();
     loop {
-        println!("{} , {}", sirin.h3lis.acceleration().await.unwrap(), sirin.imu.accel().await.unwrap());
-
+        println!("{} {} {} {} {} {}", 
+        sirin.h3lis.acceleration().await.unwrap().0,
+        sirin.h3lis.acceleration().await.unwrap().1,
+        sirin.h3lis.acceleration().await.unwrap().2,  
+        sirin.imu.accel().await.unwrap().0,
+        sirin.imu.accel().await.unwrap().1,
+        sirin.imu.accel().await.unwrap().2,);
+        
         Timer::after_millis(10).await;
     }
 }
