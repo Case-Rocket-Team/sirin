@@ -1,6 +1,6 @@
 #![no_std]
 
-use core::{fmt::Debug, mem};
+use core::{fmt::Debug, i16::MAX, mem};
 
 use dev_csr::dev_csr;
 use embedded_hal::spi::{ ErrorKind as SpiError, ErrorType};
@@ -864,7 +864,7 @@ impl <S: SpiHandle> Lsm6dso<S> {
 
      /// returns a tuple with units of ug (10^-6)
      pub async fn accel(&mut self) -> Result<(i32, i32, i32), <S::Bus as ErrorType>::Error> {
-         let (raw_x, raw_y, raw_z) = self.raw_accel().await?;
+          let (raw_x, raw_y, raw_z) = self.raw_accel().await?;
           //sensitivity mode TODO: read from chip
           let fs = self.accel_sensitivity().await?;
           let scalar: i32 = 122 * fs/4;//* fs/4;
@@ -889,7 +889,30 @@ impl <S: SpiHandle> Lsm6dso<S> {
 
           Ok((gyro_pitch, gyro_roll, gyro_yaw))
      }
-    
+
+     pub async fn accel_autoscale(&mut self) -> Result<(i32, i32, i32), <S::Bus as ErrorType>::Error> {
+          let (raw_x, raw_y, raw_z) = self.raw_accel().await?;
+          //sensitivity mode TODO: read from chip
+          let fs = self.accel_sensitivity().await?;
+          let scalar: i32 = 122 * fs/4;//* fs/4;
+          //xyz are corrected so that
+          //x -> cable direction
+          //yz follow from right hand rule, x as index finger
+          let accel_x: i32 = -scalar * (raw_x as i32);
+          let accel_y: i32 = scalar * (raw_y as i32);
+          let accel_z: i32 = -scalar * (raw_z as i32);
+
+          let max_accel = accel_x.max(accel_y).max(accel_z);
+          let sensitivity = match max_accel{
+               0..=3500000 => 0,
+               3500001..=7000000 => 1,
+               7000001..=14000000 => 2,
+               _ => 3
+          };
+          self.set_accel_sensitivity(sensitivity).await?;
+          
+          Ok((accel_x, accel_y, accel_z))
+     }
 }
 
 
