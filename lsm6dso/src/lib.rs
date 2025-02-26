@@ -773,9 +773,9 @@ impl <S: SpiHandle> Lsm6dso<S> {
     ) -> Result<(),<S::Bus as ErrorType>::Error> {
           //TODO: Use this function to perform initial setup of the IMU. Example: opening register access,
           // let accel_mode = self.read_reg(RegCtrl1Xl).await?;
-          self.write_reg(RegCtrl1Xl, 0b1010_11_00 as u8).await?;
+          self.write_reg(RegCtrl1Xl, 0b1010_11_0_0 as u8).await?;
           // let gyro_mode = self.read_reg(RegCtrl2G).await?;
-          self.write_reg(RegCtrl2G, 0b1010_11_00).await?;
+          self.write_reg(RegCtrl2G, 0b1010_11_0_0).await?;
           Ok(())    
     }
 
@@ -800,8 +800,11 @@ impl <S: SpiHandle> Lsm6dso<S> {
      }
 
      pub async fn accel_sensitivity(&mut self) -> Result<i32, <S::Bus as ErrorType>::Error> {
+          let mask = 0b0000_11_00;
+          let reg = self.read_reg(RegCtrl1Xl).await?; 
+          let real_val = (reg & mask) >> 2;
           Ok(
-          match self.accel_fs().await? {
+          match real_val {
                0 => 4,
                1 => 32,
                2 => 8,
@@ -825,9 +828,13 @@ impl <S: SpiHandle> Lsm6dso<S> {
           self.write_reg(RegCtrl1Xl, accel_mode & mask | new_bits as u8).await?;
           Ok(new_bits >> 2)
      }
+     
      pub async fn gyro_sensitivity(&mut self) -> Result<i32, <S::Bus as ErrorType>::Error> {
+          let mask = 0b0000_11_00;
+          let reg = self.read_reg(RegCtrl2G).await?; 
+          let real_val = (reg & mask) >> 2;
           Ok(
-          match self.gyro_fs_select().await? {
+          match real_val {
                0 => 250,
                1 => 500,
                2 => 1000,
@@ -835,7 +842,22 @@ impl <S: SpiHandle> Lsm6dso<S> {
                _ => unreachable!()
           })
      }
-     
+     /// 0 = 250dps, 1 = 500dps, 2 = 1000dps, 3 = 2000dps
+     pub async fn set_gyro_sensitivity(&mut self, new_fs: u8) -> Result<u8, <S::Bus as ErrorType>::Error> {
+          let gyro_mode = self.read_reg(RegCtrl2G).await?;
+          let mask = 0b1111_00_11;
+
+          let new_bits = match new_fs {
+               0 => 0b0000_00_00,
+               1 => 0b0000_01_00,
+               2 => 0b0000_10_00,
+               3 => 0b0000_11_00,
+               _ => 0b0000_00_00
+          };
+
+          self.write_reg(RegCtrl2G, gyro_mode & mask | new_bits as u8).await?;
+          Ok(new_bits >> 2)
+     }
      pub async fn test_fs(&mut self) -> Result<u8, <S::Bus as ErrorType>::Error> {
           Ok(self.accel_fs().await?)
      }
@@ -845,7 +867,7 @@ impl <S: SpiHandle> Lsm6dso<S> {
          let (raw_x, raw_y, raw_z) = self.raw_accel().await?;
           //sensitivity mode TODO: read from chip
           let fs = self.accel_sensitivity().await?;
-          let scalar: i32 = 122 * fs;//* fs/4;
+          let scalar: i32 = 122 * fs/4;//* fs/4;
           //xyz are corrected so that
           //x -> cable direction
           //yz follow from right hand rule, x as index finger
@@ -856,14 +878,14 @@ impl <S: SpiHandle> Lsm6dso<S> {
           Ok((accel_x, accel_y, accel_z))
      }
 
-     pub async fn gyro(&mut self) -> Result<(i32, i32, i32), <S::Bus as ErrorType>::Error> {
+     pub async fn gyro(&mut self) -> Result<(i64, i64, i64), <S::Bus as ErrorType>::Error> {
           let (raw_pitch, raw_roll, raw_yaw) = self.raw_gyro().await?;
           //sensitivity mode TODO: read from chip
           let fs = self.gyro_sensitivity().await?;
-          let scalar: i32 = 4375 * fs/125;
-          let gyro_pitch: i32 = scalar * (raw_pitch as i32);
-          let gyro_roll: i32 = scalar * (raw_roll as i32);
-          let gyro_yaw: i32 = scalar * (raw_yaw as i32);
+          let scalar: i64 = 4375 * (fs as i64)/125;
+          let gyro_pitch: i64 = scalar * (raw_pitch as i64);
+          let gyro_roll: i64 = scalar * (raw_roll as i64);
+          let gyro_yaw: i64 = scalar * (raw_yaw as i64);
 
           Ok((gyro_pitch, gyro_roll, gyro_yaw))
      }
