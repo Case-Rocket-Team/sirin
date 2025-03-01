@@ -867,6 +867,10 @@ impl <S: SpiHandle> Lsm6dso<S> {
 
           Ok((gyro_pitch, gyro_roll, gyro_yaw))
      }
+
+     pub async fn read_manufacturer_id(&mut self) -> Result<u8, <S::Bus as ErrorType>::Error> {
+          Ok(self.whoami().await?)
+     }
     
 }
 

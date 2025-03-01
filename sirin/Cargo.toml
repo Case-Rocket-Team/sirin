@@ -34,3 +34,4 @@ rfm9x = { version = "0.1.0", path = "../rfm9x" }
 w25q = { version = "0.1.0", path = "../w25q" }
 lsm6dso = { version = "0.1.0", path = "../lsm6dso" }
 h3lis = { version = "0.1.0", path = "../h3lis" }
+embedded-hal = "1.0.0"
