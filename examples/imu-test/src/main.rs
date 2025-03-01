@@ -45,25 +45,36 @@ bind_interrupts!(struct Irqs {
 
 async fn main_task(sirin: &'static mut Sirin) {
     sirin.imu.setup().await.unwrap();
-    println!("set sensitivity: {}", sirin.imu.set_accel_sensitivity(2).await.unwrap());
-    println!("read ctrl: {}", sirin.imu.read_reg(0x10).await.unwrap());
+    // println!("set sensitivity: {}", sirin.imu.set_accel_sensitivity(4).await.unwrap());
+    // println!("read ctrl: {}", sirin.imu.read_reg(0x10).await.unwrap());
     
-    println!("read real sensitivity: {}", sirin.imu.accel_sensitivity().await.unwrap());
-    println!("read bits: {}", sirin.imu.test_fs().await.unwrap());
-    let this = (((0b0011_00_00 & (1 << (3 + 1))) as u8) >>2) << 0;
-    println!("{}", this);
+    // println!("read real sensitivity: {}", sirin.imu.accel_sensitivity().await.unwrap());
+    // println!("read bits: {}", sirin.imu.test_fs().await.unwrap());
+    // let this = (((0b0011_00_00 & (1 << (3 + 1))) as u8) >>2) << 0;
+    // println!("{}", this);
 
     
-    println!("set sensitivity to 4: {}", sirin.imu.set_accel_sensitivity(0).await.unwrap());
-    println!("raw accel: {} \nadjusted accel: {}", sirin.imu.raw_accel().await.unwrap(), sirin.imu.accel().await.unwrap());
-    println!("set sensitivity to 8: {}", sirin.imu.set_accel_sensitivity(1).await.unwrap());
-    println!("raw accel: {} \nadjusted accel: {}", sirin.imu.raw_accel().await.unwrap(), sirin.imu.accel().await.unwrap());
-    println!("set sensitivity to 16: {}", sirin.imu.set_accel_sensitivity(2).await.unwrap());
-    println!("raw accel: {} \nadjusted accel: {}", sirin.imu.raw_accel().await.unwrap(), sirin.imu.accel().await.unwrap());
-    println!("set sensitivity to 32: {}", sirin.imu.set_accel_sensitivity(3).await.unwrap());
-    println!("raw accel: {} \nadjusted accel: {}", sirin.imu.raw_accel().await.unwrap(), sirin.imu.accel().await.unwrap());
+    // println!("set sensitivity to 4: {}", sirin.imu.set_accel_sensitivity(0).await.unwrap());
+    // println!("raw accel: {} \nadjusted accel: {}", sirin.imu.raw_accel().await.unwrap(), sirin.imu.accel().await.unwrap());
+    // println!("set sensitivity to 8: {}", sirin.imu.set_accel_sensitivity(1).await.unwrap());
+    // println!("raw accel: {} \nadjusted accel: {}", sirin.imu.raw_accel().await.unwrap(), sirin.imu.accel().await.unwrap());
+    // println!("set sensitivity to 16: {}", sirin.imu.set_accel_sensitivity(2).await.unwrap());
+    // println!("raw accel: {} \nadjusted accel: {}", sirin.imu.raw_accel().await.unwrap(), sirin.imu.accel().await.unwrap());
+    // println!("set sensitivity to 32: {}", sirin.imu.set_accel_sensitivity(3).await.unwrap());
+    // println!("raw accel: {} \nadjusted accel: {}", sirin.imu.raw_accel().await.unwrap(), sirin.imu.accel().await.unwrap());
+    
+    // println!("set sensitivity to 250: {}", sirin.imu.set_gyro_sensitivity(0).await.unwrap());
+    // println!("raw gyro: {}\nadjusted: {}", sirin.imu.raw_gyro().await.unwrap(), sirin.imu.gyro().await.unwrap());
+    // println!("set sensitivity to 500: {}", sirin.imu.set_gyro_sensitivity(1).await.unwrap());
+    // println!("raw gyro: {}\nadjusted: {}", sirin.imu.raw_gyro().await.unwrap(), sirin.imu.gyro().await.unwrap());
+    // println!("set sensitivity to 1000: {}", sirin.imu.set_gyro_sensitivity(2).await.unwrap());
+    // println!("raw gyro: {}\nadjusted: {}", sirin.imu.raw_gyro().await.unwrap(), sirin.imu.gyro().await.unwrap());
+    // println!("set sensitivity to 2000: {}", sirin.imu.set_gyro_sensitivity(3).await.unwrap());
+    // println!("raw gyro: {}\nadjusted: {}", sirin.imu.raw_gyro().await.unwrap(), sirin.imu.gyro().await.unwrap());
+
     loop {
-        // println!("raw accel: {} \nadjusted accel: {}", sirin.imu.raw_accel().await.unwrap(), sirin.imu.accel().await.unwrap());
-        // println!("gyro: {}", sirin.imu.raw_gyro().await.unwrap());
+        println!("raw accel: {} \nadjusted accel: {}", sirin.imu.raw_accel().await.unwrap(), sirin.imu.accel_autoscale().await.unwrap());
+        // println!("gyro: {}\n adjusted: {}", sirin.imu.raw_gyro().await.unwrap(), sirin.imu.gyro().await.unwrap());
+
     }
 }
