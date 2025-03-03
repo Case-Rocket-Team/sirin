@@ -1,7 +1,8 @@
 {
     "rust-analyzer.cargo.features": [
-        "s1",
+        
     ],
     "rust-analyzer.check.allTargets": false,
     "cmake.ignoreCMakeListsMissing": true,
+    "clangd.arguments": [],
 }
