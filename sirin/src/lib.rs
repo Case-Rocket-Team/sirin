@@ -12,7 +12,6 @@ use lsm6dso::Lsm6dso;
 use h3lis::H3lis;
 use spi::{Spi, SpiConfig, SpiConfigStruct, SpiDev, SpiInstance, WithSpiHandle};
 use defmt::println;
-//use embedded_hal::spi::{ ErrorKind as SpiError, ErrorType, Error};
 use bmp3::Bmp3Readout;
 pub mod spi;
 pub mod delay;
@@ -139,7 +138,7 @@ impl Sirin {
     }
 
     #[inline(never)]
-    pub async fn self_check(&mut self) -> [bool; 9] {
+    pub async fn self_check(&mut self) -> [bool; 10] {
 
         /*Bounds assume Sirin is not violently accelerating or rotating, 
         and is at or close to 1k foot altitude and within 50F to 95F.
@@ -218,8 +217,17 @@ impl Sirin {
             _ => false
         };
         println!("Manufacturer ID: {}", self.flash.read_device_id().await.unwrap());
+        let mut array: [u8; 4] = [0, 0, 0, 0];
+        let mut input_array: [u8; 4] = [18, 22, 99, 1];
+        println!("Testing Flash Write: Array '[18, 22, 99, 1]' should print below");
+        self.flash.page(100, &mut input_array).await.unwrap();
+        self.flash.read_data(100, &mut array).await.unwrap();
+        println!("{}", array);
+        let flash_write: bool = match array {
+            [18, 22, 99, 1] => true,
+            _ => false
+        };
     
-
         println!("\nOverall Operation Status: 
         H3LIS Active? {}
         H3LIS Acceleration: {}
@@ -229,7 +237,8 @@ impl Sirin {
         BMP3 Pressure: {} 
         BMP3 Temperature: {}
         RFM9X Active? {} 
-        W25Q Active? {}",
+        W25Q Active? {}
+        W25Q Read/Write? {}",
         h3lis_active, 
         h3lis_accel_check, 
         imu_active,
@@ -238,7 +247,8 @@ impl Sirin {
         baro_pressure_check, 
         baro_temperature_check,
         radio_active,
-        flash_active);
+        flash_active,
+        flash_write);
 
         [h3lis_active, 
         h3lis_accel_check, 
@@ -248,6 +258,7 @@ impl Sirin {
         baro_pressure_check, 
         baro_temperature_check,
         radio_active,
-        flash_active]
+        flash_active, 
+        flash_write]
     }
 }
