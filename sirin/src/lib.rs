@@ -19,6 +19,7 @@ pub mod delay;
 pub mod gpio;
 pub mod sync;
 pub mod triplet;
+pub mod measurement;
 
 pub struct Sirin {
     pub imu: Lsm6dso<SpiDev>,
@@ -155,4 +156,6 @@ impl Sirin {
     pub async fn log(&mut self, msg: &str) {
         
     }
+
+    
 }
