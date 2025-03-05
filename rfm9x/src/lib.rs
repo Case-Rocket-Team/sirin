@@ -387,6 +387,11 @@ impl <S: SpiHandle> Rfm9x<S> {
         Ok(())
     }
 
+    pub async fn read_version(&mut self) -> Result<u8, Error>{
+        let version: u8 = self.version().await.unwrap();
+        Ok(version)
+    } 
+
     /*
     pub async fn calibrate(&mut self) -> Result<(), Error> {
         self.set_mode(Mode::Sleep).await?;
@@ -483,7 +488,6 @@ impl <S: SpiHandle> Rfm9x<S> {
         self.set_mode(Mode::Stdby).await?;
         Ok(len)
     }
-    
 }
 
 

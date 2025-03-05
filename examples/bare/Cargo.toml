@@ -47,18 +47,6 @@ name = "bare"
 test = false
 bench = false
 
-[profile.dev]
-debug = true
-lto = true
-opt-level = "z"
-incremental = true
-
-[profile.release]
-debug = false
-lto = true
-opt-level = "z"
-incremental = true
-
 [features]
 default = ["debug"]
 debug = [

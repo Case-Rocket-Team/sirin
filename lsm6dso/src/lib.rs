@@ -890,6 +890,11 @@ impl <S: SpiHandle> Lsm6dso<S> {
           Ok((gyro_pitch, gyro_roll, gyro_yaw))
      }
 
+
+     pub async fn read_manufacturer_id(&mut self) -> Result<u8, <S::Bus as ErrorType>::Error> {
+          Ok(self.whoami().await?)
+     }
+    
      pub async fn accel_autoscale(&mut self) -> Result<(i32, i32, i32), <S::Bus as ErrorType>::Error> {
           let (raw_x, raw_y, raw_z) = self.raw_accel().await?;
           //sensitivity mode TODO: read from chip
