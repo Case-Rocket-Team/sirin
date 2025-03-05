@@ -153,7 +153,10 @@ impl Sirin {
         }
     }
 
-    #[inline(never)]
+    /*
+
+    When converting this whole thing to structs people cut parts of this instead of copying and idk if we still need it so heres a massive comment
+
     pub async fn self_check(&mut self) -> Selfcheck {
         /*Bounds assume Sirin is not violently accelerating or rotating, 
         and is at or close to 1k foot altitude and within 50F to 95F.
@@ -247,7 +250,7 @@ impl Sirin {
         radio_active,
         flash_active, 
         flash_write]
-    }
+    } */
 }
 
 /*h3lis_active, 
@@ -282,7 +285,16 @@ impl Selfcheck {
         } else {
             Err(())
         }
-    } 
+    }
+    pub async fn selfcheck(sirin: &mut Sirin) -> Self {
+        Self{
+            baro: BaroSelfcheck::selfcheck(sirin).await,
+            flash: FlashSelfcheck::selfcheck(sirin).await,
+            imu: ImuSelfcheck::selfcheck(sirin).await,
+            highg_imu: HighgImuSelfcheck::selfcheck(sirin).await,
+            radio: RadioSelfcheck::selfcheck(sirin).await
+        }
+    }
 }
 
 pub struct BaroSelfcheck {
@@ -345,13 +357,39 @@ impl FlashSelfcheck {
 }
 
 pub struct ImuSelfcheck {
+    pub active_check: Result<(), ()>,
     pub accel_check: Result<(), ()>,
     pub gyro_check: Result<(), ()>
 }
 
-impl ImuSelfCheck {
-    pub fn selfcheck(sirin: &mut Sirin) -> Self {
+impl ImuSelfcheck {
+    pub async fn selfcheck(sirin: &mut Sirin) -> Self {
+        let imu_id = sirin.imu.read_manufacturer_id().await.unwrap();
+        debug!("Manufacturer ID: {}", imu_id);
+        let active_check = match imu_id{
+            108 => Ok(()),
+            _ => Err(())
+        };
+
+        let accel = sirin.imu.accel().await.unwrap();
+        debug!("Instantaneous Acceleration: {} (μg)", accel);
+        let accel_check = match accel{
+            (-16_000_000..=16_000_000, -16_000_000..=16_000_000, -16_000_000..=16_000_000) => Ok(()),
+            _ => Err(())
+        };
         
+        let gyro = sirin.imu.gyro().await.unwrap();
+        debug!("Instantaneous Gyroscope: {} (μdps)", gyro);
+        let gyro_check = match gyro {
+            (-360_000_000..=360_000_000, -360_000_000..=360_000_000, -360_000_000..=360_000_000) => Ok(()),
+            _ => Err(())
+        };
+
+        Self{
+            active_check,
+            accel_check,
+            gyro_check
+        }
     }
 }
 
@@ -396,7 +434,6 @@ impl RadioSelfcheck {
             18 => Ok(()),
             _ => Err(())
         };
-
         Self {
             radio_active
         }
