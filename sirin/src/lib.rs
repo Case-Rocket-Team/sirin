@@ -18,6 +18,7 @@ pub mod delay;
 pub mod gpio;
 pub mod sync;
 pub mod triplet;
+pub mod measurement;
 
 pub struct Sirin {
     pub spawner: Spawner,
@@ -441,4 +442,6 @@ impl RadioSelfcheck {
             radio_active
         }
     }
+
+    
 }
