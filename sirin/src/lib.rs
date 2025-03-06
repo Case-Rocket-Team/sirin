@@ -266,20 +266,23 @@ impl Sirin {
 
 pub struct Selfcheck {
     pub baro: BaroSelfcheck,
+    pub radio: RadioSelfcheck,
     pub flash: FlashSelfcheck,
     pub imu: ImuSelfcheck,
     pub highg_imu: HighgImuSelfcheck,
-    pub radio: RadioSelfcheck,
 }
 
 impl Selfcheck {
     pub fn result(&self) -> Result<(),()> {
         if self.baro.pressure_check.is_ok()
             && self.baro.temperature_check.is_ok()
+            && self.radio.radio_active.is_ok()
             && self.flash.active_check.is_ok()
             && self.flash.read_write_check.is_ok()
             && self.imu.accel_check.is_ok()
             && self.imu.gyro_check.is_ok()
+            && self.highg_imu.accel_check.is_ok()
+            && self.highg_imu.active_check.is_ok()
         {
             Ok(())
         } else {
@@ -287,7 +290,7 @@ impl Selfcheck {
         }
     }
     pub async fn selfcheck(sirin: &mut Sirin) -> Self {
-        Self{
+        Self {
             baro: BaroSelfcheck::selfcheck(sirin).await,
             flash: FlashSelfcheck::selfcheck(sirin).await,
             imu: ImuSelfcheck::selfcheck(sirin).await,
