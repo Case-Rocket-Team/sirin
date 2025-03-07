@@ -176,6 +176,8 @@ impl Selfcheck {
             && self.flash.read_write_check.is_ok()
             && self.imu.accel_check.is_ok()
             && self.imu.gyro_check.is_ok()
+            && self.highg_imu.active_check.is_ok()
+            && self.highg_imu.accel_check.is_ok()
         {
             info!("All chips funcional");
             Ok(())
