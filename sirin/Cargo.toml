@@ -36,3 +36,6 @@ lsm6dso = { version = "0.1.0", path = "../lsm6dso" }
 h3lis = { version = "0.1.0", path = "../h3lis" }
 embedded-hal = "1.0.0"
 defmt-rtt = "*"
+
+[env]
+DEFMT_LOG = "debug"

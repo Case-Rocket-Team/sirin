@@ -11,7 +11,7 @@ use w25q::W25Q;
 use lsm6dso::Lsm6dso;
 use h3lis::H3lis;
 use spi::{Spi, SpiConfig, SpiConfigStruct, SpiDev, SpiInstance, WithSpiHandle};
-use defmt::debug;
+use defmt::{debug, info};
 use bmp3::Bmp3Readout;
 pub mod spi;
 pub mod delay;
@@ -30,6 +30,7 @@ pub struct Sirin {
     pub highg_imu: H3lis<SpiDev>,
     pub radio: Rfm9x<SpiDev>,
     //pub gps: S1315F8,
+    pub health: Selfcheck
 }
 
 impl Sirin {
@@ -149,120 +150,13 @@ impl Sirin {
             (*highg_imu_ptr).setup().await.unwrap();
 
             let sirin: &'static mut _ = sirin.assume_init_mut();
+
+            sirin.health = Selfcheck::selfcheck(sirin).await;
+            sirin.health.result();
             sirin
         }
     }
-
-    /*
-
-    When converting this whole thing to structs people cut parts of this instead of copying and idk if we still need it so heres a massive comment
-
-    pub async fn self_check(&mut self) -> Selfcheck {
-        /*Bounds assume Sirin is not violently accelerating or rotating, 
-        and is at or close to 1k foot altitude and within 50F to 95F.
-        Adjust bounds if elsewhere*/
-
-        //Check all the h3lis stuff here
-        
-        
-
-        //Check all the lsm6 (imu) stuff here
-        debug!("\nIMU:");
-        let imu_id = self.imu.read_manufacturer_id().await.unwrap();
-        debug!("Manufacturer ID: {}", imu_id);
-        let imu_active = match imu_id{
-            108 => true,
-            _ => false
-        };
-        let accel = self.imu.accel().await.unwrap();
-        let imu_accel_check: bool = match accel{
-            (-16_000_000..=16_000_000, -16_000_000..=16_000_000, -16_000_000..=16_000_000) => true,
-            _ => false
-        };
-        debug!("Instantaneous Acceleration: {} (μg)", accel);
-        let gyro = self.imu.gyro().await.unwrap();
-        let imu_gyro_check: bool = match gyro{
-            (-360_000_000..=360_000_000, -360_000_000..=360_000_000, -360_000_000..=360_000_000) => true,
-            _ => false
-        };
-        debug!("Instantaneous Gyroscope: {} (μdps)", gyro);
-
-        //Check all the baro stuff here
-        debug!("\nBaro:");
-        
-
-        //Check all the radio stuff here
-        debug!("\nRadio:");
-        let radio_num = self.radio.version().await.unwrap();
-        let radio_active: bool = match radio_num {
-            18 => true,
-            _ => false
-        };
-        debug!("Radio Version: {}", radio_num);
-        
-        //Check all the flash stuff here
-        debug!("\nFlash:");
-        let flash_active = match self.flash.read_device_id().await.unwrap(){
-            21 => true,
-            _ => false
-        };
-        debug!("Manufacturer ID: {}", self.flash.read_device_id().await.unwrap());
-        let mut array: [u8; 4] = [0, 0, 0, 0];
-        let mut input_array: [u8; 4] = [18, 22, 99, 1];
-        debug!("Testing Flash Write: Array '[18, 22, 99, 1]' should print below");
-        self.flash.page(100, &mut input_array).await.unwrap();
-        self.flash.read_data(100, &mut array).await.unwrap();
-        debug!("{}", array);
-        let flash_write: bool = match array {
-            [18, 22, 99, 1] => true,
-            _ => false
-        };
-    
-        debug!("\nOverall Operation Status: 
-        H3LIS Active? {}
-        H3LIS Acceleration: {}
-        LSM6 Active? {}
-        LSM6 Acceleration: {} 
-        LSM6 Gyroscope: {} 
-        BMP3 Pressure: {} 
-        BMP3 Temperature: {}
-        RFM9X Active? {} 
-        W25Q Active? {}
-        W25Q Read/Write? {}",
-        h3lis_active, 
-        h3lis_accel_check, 
-        imu_active,
-        imu_accel_check, 
-        imu_gyro_check, 
-        baro_pressure_check, 
-        baro_temperature_check,
-        radio_active,
-        flash_active,
-        flash_write);
-
-        [h3lis_active, 
-        h3lis_accel_check, 
-        imu_active,
-        imu_accel_check, 
-        imu_gyro_check, 
-        baro_pressure_check, 
-        baro_temperature_check,
-        radio_active,
-        flash_active, 
-        flash_write]
-    } */
 }
-
-/*h3lis_active, 
-        h3lis_accel_check, 
-        imu_active,
-        imu_accel_check, 
-        imu_gyro_check, 
-        baro_pressure_check, 
-        baro_temperature_check,
-        radio_active,
-        flash_active, 
-        flash_write*/
 
 pub struct Selfcheck {
     pub baro: BaroSelfcheck,
@@ -280,9 +174,39 @@ impl Selfcheck {
             && self.flash.read_write_check.is_ok()
             && self.imu.accel_check.is_ok()
             && self.imu.gyro_check.is_ok()
+            && self.highg_imu.active_check.is_ok()
+            && self.highg_imu.accel_check.is_ok()
         {
+            info!("All chips funcional");
             Ok(())
         } else {
+            if(self.baro.temperature_check.is_err()){
+                info!("Baro is NOT OK! Temperature check failed")
+            }
+            if(self.baro.pressure_check.is_err()){
+                info!("Baro is NOT OK! Pressure check failed");
+            }
+            if(self.flash.active_check.is_err()){
+                info!("Flash is NOT OK! Active check failed");
+            }
+            if(self.flash.read_write_check.is_err()){
+                info!("Flash is NOT OK! Read/write check failed");
+            }
+            if(self.imu.active_check.is_err()){
+                info!("IMU is NOT OK! Active check failed");
+            }
+            if(self.imu.accel_check.is_err()){
+                info!("IMU is NOT OK! Acceleration check failed");
+            }
+            if(self.imu.gyro_check.is_err()){
+                info!("IMU is NOT OK! Gyro check failed");
+            }
+            if(self.highg_imu.active_check.is_err()){
+                info!("High IMU is NOT OK! Active check failed");
+            }
+            if(self.highg_imu.accel_check.is_err()){
+                info!("High IMU is NOT OK! Acceleration check failed");
+            }
             Err(())
         }
     }
@@ -304,18 +228,19 @@ pub struct BaroSelfcheck {
 
 impl BaroSelfcheck {
     pub async fn selfcheck(sirin: &mut Sirin) -> Self {
+        info!("Baro:");
         let baro_data = sirin.baro.read().await.unwrap();
         let pressure_check = match baro_data.pressure.value {
             90_000.0..=110_000.0 => Ok(()),
             _ => Err(())
         };
-        debug!("Pressure: {} (Pa)", baro_data.pressure.value);
+        info!("Pressure: {:?} (Pa)", baro_data.pressure.value);
         
         let temperature_check = match baro_data.temperature.value {
             10.0..=35.0 => Ok(()),
             _ => Err(())
         };
-        debug!("Temperature: {} (C)", baro_data.temperature.value);
+        info!("Temperature: {:?} (C)", baro_data.temperature.value);
 
         Self {
             pressure_check,
@@ -331,18 +256,19 @@ pub struct FlashSelfcheck {
     
 impl FlashSelfcheck {
     pub async fn selfcheck(sirin: &mut Sirin) -> Self {
+        info!("Flash:");
         let active_check = match sirin.flash.read_device_id().await.unwrap(){
             21 => Ok(()),
             _ => Err(())
         };
 
-        debug!("Manufacturer ID: {}", sirin.flash.read_device_id().await.unwrap());
+        info!("Manufacturer ID: {:?}", sirin.flash.read_device_id().await.unwrap());
         let mut array: [u8; 4] = [0, 0, 0, 0];
         let mut input_array: [u8; 4] = [18, 22, 99, 1];
-        debug!("Testing Flash Write: Array '[18, 22, 99, 1]' should print below");
+        info!("Testing Flash Write: Array '[18, 22, 99, 1]' should print below");
         sirin.flash.page(100, &mut input_array).await.unwrap();
         sirin.flash.read_data(100, &mut array).await.unwrap();
-        debug!("{}", array);
+        info!("{:?}", array);
 
         let read_write_check = match array {
             [18, 22, 99, 1] => Ok(()),
@@ -365,21 +291,21 @@ pub struct ImuSelfcheck {
 impl ImuSelfcheck {
     pub async fn selfcheck(sirin: &mut Sirin) -> Self {
         let imu_id = sirin.imu.read_manufacturer_id().await.unwrap();
-        debug!("Manufacturer ID: {}", imu_id);
+        info!("Manufacturer ID: {:?}", imu_id);
         let active_check = match imu_id{
             108 => Ok(()),
             _ => Err(())
         };
 
         let accel = sirin.imu.accel().await.unwrap();
-        debug!("Instantaneous Acceleration: {} (μg)", accel);
+        info!("Instantaneous Acceleration: {:?} (μg)", accel);
         let accel_check = match accel{
             (-16_000_000..=16_000_000, -16_000_000..=16_000_000, -16_000_000..=16_000_000) => Ok(()),
             _ => Err(())
         };
         
         let gyro = sirin.imu.gyro().await.unwrap();
-        debug!("Instantaneous Gyroscope: {} (μdps)", gyro);
+        info!("Instantaneous Gyroscope: {:?} (μdps)", gyro);
         let gyro_check = match gyro {
             (-360_000_000..=360_000_000, -360_000_000..=360_000_000, -360_000_000..=360_000_000) => Ok(()),
             _ => Err(())
@@ -400,16 +326,16 @@ pub struct HighgImuSelfcheck {
 
 impl HighgImuSelfcheck {
     pub async fn selfcheck(sirin: &mut Sirin) -> Self {
-        debug!("H3LIS:");
+        info!("H3LIS:");
         let h3lis_id = sirin.highg_imu.manufacturer_id().await.unwrap();
-        debug!("Manufacturer ID: {} ",h3lis_id);
+        info!("Manufacturer ID: {:?} ",h3lis_id);
 
         let active_check = match h3lis_id {
             50 => Ok(()),
             _ => Err(())
         };
         let accel = sirin.highg_imu.acceleration().await.unwrap();
-        debug!("Instantaneous Acceleration: {} (μg)", accel);
+        info!("Instantaneous Acceleration: {:?} (μg)", accel);
 
         let accel_check = match accel {
             (-16_000_000..=16_000_000, -16_000_000..=16_000_000, -16_000_000..=16_000_000) => Ok(()),
@@ -423,17 +349,19 @@ impl HighgImuSelfcheck {
     }
 }
 
-struct RadioSelfcheck {
+pub struct RadioSelfcheck {
     pub radio_active: Result<(), ()>,
 }
 
 impl RadioSelfcheck {
     pub async fn selfcheck(sirin: &mut Sirin) -> Self {
+        info!("Radio:");
         let radio_num = sirin.radio.version().await.unwrap();
         let radio_active = match radio_num {
             18 => Ok(()),
             _ => Err(())
         };
+        info!("Radio Version: {:?}", radio_num);
         Self {
             radio_active
         }

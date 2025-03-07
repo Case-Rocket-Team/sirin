@@ -39,8 +39,6 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 }
 
 async fn main_task(sirin: &'static mut Sirin) {
-    sirin.highg_imu.setup().await.unwrap();
-    sirin.imu.setup().await.unwrap();
     loop {
         println!("{} {} {} {} {} {}", 
         sirin.highg_imu.acceleration().await.unwrap().0,
