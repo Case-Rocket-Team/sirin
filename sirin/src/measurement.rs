@@ -23,7 +23,7 @@ binary_layout!(imu2_measurement, LittleEndian, {
     accel_z: i32,
 });
 
-#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct BaroMeasurement {
     pressure: f64,
     temperature: f64,
@@ -31,16 +31,24 @@ struct BaroMeasurement {
 
 
 
-fn write_measurement(data: &mut [u8]) {
-    let mut view = baro_measurement::View::new(data);
-    let val = view.pressure().read();
+pub fn write_measurement() {
 
-    let test_pressure: f64 = 1.237;
+    let test_pressure: f64 = 1.9937;
     let test_temperature: f64 = 122.37;
+    
+    let mut buffer: [u8; 32] = [0; 32];
+    let mut writer: &mut [u8] = &mut buffer;
+    let ser = to_eio(&true, &mut writer).unwrap();
 
-    let output = to_eio(&BaroMeasurement {
+    to_eio(&BaroMeasurement {
         pressure: test_pressure,
         temperature: test_temperature,
-    }).unwrap();
+    }, ser).unwrap();
+
+
+    debug!("serialized: {}", buffer);
+    let mut reader: &[u8] = &buffer;
+    
+    let output: BaroMeasurement = from_eio((reader, &mut buffer)).unwrap();
 
 }
