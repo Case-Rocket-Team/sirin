@@ -35,8 +35,8 @@ w25q = { version = "0.1.0", path = "../w25q" }
 lsm6dso = { version = "0.1.0", path = "../lsm6dso" }
 h3lis = { version = "0.1.0", path = "../h3lis" }
 uunit = { git = "https://github.com/Nautki/uunit", version = "0.1.0" }
-serde = { version = "1.0.218", features = ["derive"], default-features = false }
-postcard = { version = "1.1.1", features = ["embedded-io-04"] }
+serde = {version = "1.0.218", default-features = false }
+postcard = { version = "1.1.1", default-features = false, features = ["embedded-io-06"] }
 embedded-hal = "1.0.0"
 defmt-rtt = "*"
 embedded-io = "0.6.1"

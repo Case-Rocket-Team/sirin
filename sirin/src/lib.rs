@@ -21,6 +21,8 @@ pub mod triplet;
 pub mod measurement;
 pub mod flash;
 
+pub use measurement::write_measurement;
+
 pub struct Sirin {
     pub spawner: Spawner,
     pub spi1: SpiInstance,
