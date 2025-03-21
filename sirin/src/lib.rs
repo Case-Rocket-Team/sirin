@@ -379,3 +379,12 @@ impl RadioSelfcheck {
         }
     }
 }
+
+pub struct PostcardTest {
+    write: Result<(), ()>,
+}
+impl PostcardTest {
+    pub async fn write(){
+        
+    }
+}

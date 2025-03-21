@@ -2,9 +2,10 @@
 
 use core::{future::{poll_fn, Future}, task::Poll};
 
-use embedded_hal_async::spi::ErrorKind;
+use embedded_hal_async::{digital::Wait, spi::ErrorKind};
 use spi_handle::SpiHandle;
 use embedded_hal_async::spi::SpiBus;
+use yield_now::yield_now;
 
 mod yield_now;
 
@@ -157,25 +158,31 @@ impl Logger {
         }
     }
     pub async fn log_partial_page(&mut self, flash: &mut W25Q<impl SpiHandle>, msg: &[u8]) -> Result<(), ErrorKind> {
-        if self.current_addr % 4096 == 0 {
-            flash.sector_erase(self.current_addr).await?;
-        }
         flash.page(self.current_addr, msg).await?;
         self.current_addr += msg.len() as u32;
         Ok(())
     }
     pub async fn log(&mut self, flash: &mut W25Q<impl SpiHandle>, msg: &[u8]) -> Result<(), ErrorKind> {
+        while flash.is_busy().await? {
+            yield_now().await;
+        }
         let start = self.current_addr as usize;
         let end = self.current_addr as usize + msg.len();
         let mut msg_i = 0;
         let first_full_page = ((self.current_addr as usize / 256) + 1) * 256;
-        self.log_partial_page(flash, &msg[..(first_full_page - start)]).await?;
+        self.log_partial_page(flash, &msg[0..(first_full_page - start)]).await?;
         msg_i = first_full_page - start;
         while ((self.current_addr as usize / 256) + 1) * 256 <= end {
             self.log_partial_page(flash, &msg[msg_i..(msg_i + 256)]).await?;
             msg_i += 256;
         }
         self.log_partial_page(flash, &msg[msg_i..]).await?;
+        Ok(())
+    }
+
+    pub async fn erase(&mut self, flash: &mut W25Q<impl SpiHandle>) -> Result<(), ErrorKind> {
+        let next_sector = ((self.current_addr as usize / 4096) + 1) * 4096;
+        flash.sector_erase(next_sector as u32).await?;
         Ok(())
     }
 }
