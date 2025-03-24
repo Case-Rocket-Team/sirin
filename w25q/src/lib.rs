@@ -166,6 +166,9 @@ impl Logger {
         while flash.is_busy().await? {
             yield_now().await;
         }
+        for i in 0..((msg.len()/4096) + 1){
+            flash.sector_erase(self.current_addr + (i as u32)*(4096)).await.unwrap();
+        }
         let start = self.current_addr as usize;
         let end = self.current_addr as usize + msg.len();
         let mut msg_i = 0;
@@ -183,6 +186,11 @@ impl Logger {
     pub async fn erase(&mut self, flash: &mut W25Q<impl SpiHandle>) -> Result<(), ErrorKind> {
         let next_sector = ((self.current_addr as usize / 4096) + 1) * 4096;
         flash.sector_erase(next_sector as u32).await?;
+        Ok(())
+    }
+
+    pub async fn reset_address(&mut self) -> Result<(), ErrorKind> {
+        self.current_addr = 0;
         Ok(())
     }
 }
