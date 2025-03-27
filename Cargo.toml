@@ -14,8 +14,8 @@ members = [
     "examples/imu-test",
     "examples/bare",
     "examples/h3lis-test",
-    "examples/data-test",
-    "examples/cmsis-dsp-test"
+    "examples/cmsis-dsp-test",
+    "examples/main"
 ]
 resolver = "2"
 

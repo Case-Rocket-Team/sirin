@@ -8,10 +8,11 @@ use defmt::*;
 use embassy_executor::{task, Executor, Spawner};
 use embassy_stm32::{bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, peripherals::{self, DMA1_CH0, DMA1_CH1, PD8, PD9, USART3}, usart::{self, Config, Uart}};
 use embassy_time::Timer;
+use embedded_hal_1::spi::ErrorKind;
 use rfm9x::ReadRfm9x;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::Sirin;
-use sirin::write_measurement;
+use sirin::{event::Event, flash_logger::FlashLogger, measurement::Measurement, Sirin};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::{Publisher, Subscriber}};
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
     core::mem::transmute(item)
@@ -44,5 +45,33 @@ bind_interrupts!(struct Irqs {
 });
 
 async fn main_task(sirin: &'static mut Sirin) {
-    write_measurement();
+    let publisher = sirin.event_channel.immediate_publisher();
+    let flash_sub = sirin.event_channel.subscriber().unwrap();
+
+    let mut logger = FlashLogger::new(&mut sirin.flash);
+
+    let logger_mut = unsafe {
+        // Safety: this main task ought to live forever
+        transmute_into_static(&mut logger)
+    };
+
+    sirin.spawner.must_spawn(flash_writer(logger_mut, flash_sub));
+
+    loop {
+        publisher.publish_immediate(Event::Measurement(Measurement::Baro(sirin.baro.read().await.unwrap())));
+
+        
+    }
+}
+
+#[task]
+async fn flash_writer(
+    logger: &'static mut FlashLogger,
+    mut flash_sub: Subscriber<'static, CriticalSectionRawMutex, Event, 100, 4, 4>
+) {
+    loop {
+        // TODO: Report error on lag
+        let event = flash_sub.next_message_pure().await;
+        
+    }
 }

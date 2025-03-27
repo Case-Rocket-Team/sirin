@@ -1,6 +1,7 @@
 use dev_csr::dev_csr;
 use embedded_hal::spi::ErrorType;
 use embedded_hal_async::spi::SpiBus;
+use serde::{Deserialize, Serialize};
 use spi_handle::SpiHandle;
 use uunit::{Celsius, Pascals};
 
@@ -193,6 +194,8 @@ pub struct Bmp3RawData {
     pub raw_temperature: i64,
 }
 
+#[repr(C)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Bmp3Readout {
     pub pressure: Pascals<f64>,
     pub temperature: Celsius<f64>

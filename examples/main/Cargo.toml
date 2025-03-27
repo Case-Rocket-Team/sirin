@@ -2,7 +2,7 @@
 
 [package]
 edition = "2021"
-name = "data-test"
+name = "main"
 version = "0.1.0"
 
 [dependencies]
@@ -43,7 +43,7 @@ rfm9x = { version = "0.1.0", path = "../../rfm9x", features = ['defmt'] }
 #panic-halt = "0.2.0"
 
 [[bin]]
-name = "data-test"
+name = "main"
 test = false
 bench = false
 

@@ -5,6 +5,8 @@ use core::{mem::MaybeUninit, panic, ptr::addr_of_mut};
 use bmp3::{Bmp3};
 use embassy_executor::{Executor, Spawner};
 use embassy_stm32::{ gpio::{Level, Output, Speed}, spi as em_spi, time::mhz, Config, Peripherals };
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
+use event::Event;
 use gpio::GpioPins;
 use rfm9x::{ReadRfm9x, Rfm9x};
 use w25q::W25Q;
@@ -19,9 +21,8 @@ pub mod gpio;
 pub mod sync;
 pub mod triplet;
 pub mod measurement;
-pub mod flash;
-
-pub use measurement::write_measurement;
+pub mod flash_logger;
+pub mod event;
 
 pub struct Sirin {
     pub spawner: Spawner,
@@ -34,7 +35,8 @@ pub struct Sirin {
     pub highg_imu: H3lis<SpiDev>,
     pub radio: Rfm9x<SpiDev>,
     //pub gps: S1315F8,
-    pub health: Selfcheck
+    pub health: Selfcheck,
+    pub event_channel: PubSubChannel<CriticalSectionRawMutex, Event, 100, 4, 4>
 }
 
 impl Sirin {
@@ -73,6 +75,8 @@ impl Sirin {
                 config.rcc.apb4_pre = APBPrescaler::DIV2; // 100 Mhz
                 config.rcc.voltage_scale = VoltageScale::Scale1;
             }
+
+            *ptr!(sirin.event_channel) = PubSubChannel::new();
 
             let p = embassy_stm32::init(config);
             let mut spi_config = em_spi::Config::default();
@@ -302,12 +306,15 @@ pub struct ImuSelfcheck {
 
 impl ImuSelfcheck {
     pub async fn selfcheck(sirin: &mut Sirin) -> Self {
-        let imu_id = sirin.imu.read_manufacturer_id().await.unwrap();
+        // TODO figure out why this an error on VSCode
+        /*let imu_id = sirin.imu.read_manufacturer_id().await.unwrap();
         debug!("Manufacturer ID: {:?}", imu_id);
         let active_check = match imu_id{
             108 => Ok(()),
             _ => Err(())
-        };
+        };*/
+
+        let active_check = Err(());
 
         let accel = sirin.imu.accel().await.unwrap();
         debug!("Instantaneous Acceleration: {:?} (μg)", accel);
