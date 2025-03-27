@@ -1,10 +1,10 @@
 #![no_std]
 #![no_main]
 
-use core::mem::{self, MaybeUninit};
+use core::{f32, f64::consts::PI, mem::{self, MaybeUninit}};
 
 use bmp3::{hal::{Bmp3RawData, ReadBmp3, RegErrReg, RegStatus}, Bmp3Readout};
-use defmt::*;
+use defmt::debug;
 use embassy_executor::{task, Executor, Spawner};
 use embassy_stm32::{bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, peripherals::{self, DMA1_CH0, DMA1_CH1, PD8, PD9, USART3}, usart::{self, Config, Uart}};
 use embassy_time::Timer;
@@ -59,8 +59,32 @@ async fn main_task(sirin: &'static mut Sirin) {
 
     loop {
         publisher.publish_immediate(Event::Measurement(Measurement::Baro(sirin.baro.read().await.unwrap())));
+        publisher.publish_immediate(Event::Measurement(Measurement::ImuAccel(sirin.imu.accel().await.unwrap())));
+        publisher.publish_immediate(Event::Measurement(Measurement::ImuAngularVel(sirin.imu.angular_vel().await.unwrap())));
+    }
+}
 
-        
+// TODO: airbreaks
+#[task]
+async fn kalman(
+    mut event_sub: Subscriber<'static, CriticalSectionRawMutex, Event, 100, 4, 4>
+) {
+    loop {
+        let event = event_sub.next_message_pure().await;
+
+        match event {
+            Event::Measurement(measurement) => {
+                match measurement {
+                    Measurement::Baro(bmp3_readout) => todo!(),
+                    Measurement::ImuAccel(accel) => todo!(),
+                    Measurement::ImuAngularVel(angular_vel) => todo!(),
+                }
+            },
+        }
+
+        // Example: call a C function from sirin-c Rust crate
+        // Edit sirin-c crate and c project to add more functions
+        sirin_c::cmsis_dsp_sin(f32::consts::PI / 2.0);
     }
 }
 

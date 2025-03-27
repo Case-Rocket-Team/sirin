@@ -1,11 +1,13 @@
 #![no_std]
 
-use core::{fmt::Debug, i16::MAX, mem};
+use core::{fmt::Debug, i16::MAX, mem, ops::Div};
 
 use dev_csr::dev_csr;
 use embedded_hal::spi::{ ErrorKind as SpiError, ErrorType};
 use embedded_hal_async::spi::SpiBus;
+use serde::{Deserialize, Serialize};
 use spi_handle::SpiHandle;
+use uunit::{MicroGs, Quantity, UnitMicrodegrees, UnitSeconds, WithUnits};
 
 
 dev_csr! {
@@ -758,6 +760,22 @@ dev_csr! {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Accel {
+     pub x: MicroGs<i32>,
+     pub y: MicroGs<i32>,
+     pub z: MicroGs<i32>
+}
+
+type MicrodegreesPerSecond<T> = Quantity<T, <UnitMicrodegrees as Div<UnitSeconds>>::Output>;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AngularVel {
+     pub x_pitch: MicrodegreesPerSecond<i64>,
+     pub y_roll: MicrodegreesPerSecond<i64>,
+     pub z_yaw: MicrodegreesPerSecond<i64>,
+}
+
 pub struct Lsm6dso<S: SpiHandle> {
     spi: S
 }
@@ -863,7 +881,7 @@ impl <S: SpiHandle> Lsm6dso<S> {
      }
 
      /// returns a tuple with units of ug (10^-6)
-     pub async fn accel(&mut self) -> Result<(i32, i32, i32), <S::Bus as ErrorType>::Error> {
+     pub async fn accel(&mut self) -> Result<Accel, <S::Bus as ErrorType>::Error> {
           let (raw_x, raw_y, raw_z) = self.raw_accel().await?;
           //sensitivity mode TODO: read from chip
           let fs = self.accel_sensitivity().await?;
@@ -875,19 +893,27 @@ impl <S: SpiHandle> Lsm6dso<S> {
           let accel_y: i32 = scalar * (raw_y as i32);
           let accel_z: i32 = -scalar * (raw_z as i32);
 
-          Ok((accel_x, accel_y, accel_z))
+          Ok(Accel {
+               x: accel_x.with_units(),
+               y: accel_y.with_units(),
+               z: accel_z.with_units()
+          })
      }
 
-     pub async fn gyro(&mut self) -> Result<(i64, i64, i64), <S::Bus as ErrorType>::Error> {
+     pub async fn angular_vel(&mut self) -> Result<AngularVel, <S::Bus as ErrorType>::Error> {
           let (raw_pitch, raw_roll, raw_yaw) = self.raw_gyro().await?;
           //sensitivity mode TODO: read from chip
           let fs = self.gyro_sensitivity().await?;
           let scalar: i64 = 4375 * (fs as i64)/125;
-          let gyro_pitch: i64 = scalar * (raw_pitch as i64);
+          let gyro_pitch: i64 = -scalar * (raw_pitch as i64);
           let gyro_roll: i64 = scalar * (raw_roll as i64);
-          let gyro_yaw: i64 = scalar * (raw_yaw as i64);
+          let gyro_yaw: i64 = -scalar * (raw_yaw as i64);
 
-          Ok((gyro_pitch, gyro_roll, gyro_yaw))
+          Ok(AngularVel {
+               x_pitch: gyro_pitch.with_units(),
+               y_roll: gyro_roll.with_units(),
+               z_yaw: gyro_yaw.with_units()
+          })
      }
 
 
@@ -895,9 +921,10 @@ impl <S: SpiHandle> Lsm6dso<S> {
           Ok(self.whoami().await?)
      }
     
-     pub async fn accel_autoscale(&mut self) -> Result<(i32, i32, i32), <S::Bus as ErrorType>::Error> {
+     // TODO
+     pub async fn accel_autoscale(&mut self) -> Result<Accel, <S::Bus as ErrorType>::Error> {
           let (raw_x, raw_y, raw_z) = self.raw_accel().await?;
-          //sensitivity mode TODO: read from chip
+
           let fs = self.accel_sensitivity().await?;
           let scalar: i32 = 122 * fs/4;//* fs/4;
           //xyz are corrected so that
@@ -916,7 +943,11 @@ impl <S: SpiHandle> Lsm6dso<S> {
           };
           self.set_accel_sensitivity(sensitivity).await?;
           
-          Ok((accel_x, accel_y, accel_z))
+          Ok(Accel {
+               x: accel_x.with_units(),
+               y: accel_y.with_units(),
+               z: accel_z.with_units()
+          })
      }
 }
 

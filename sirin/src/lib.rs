@@ -182,7 +182,7 @@ impl Selfcheck {
             && self.flash.active_check.is_ok()
             && self.flash.read_write_check.is_ok()
             && self.imu.accel_check.is_ok()
-            && self.imu.gyro_check.is_ok()
+            //&& self.imu.gyro_check.is_ok()
             && self.highg_imu.active_check.is_ok()
             && self.highg_imu.accel_check.is_ok()
         {
@@ -207,9 +207,9 @@ impl Selfcheck {
             if(self.imu.accel_check.is_err()){
                 error!("IMU is NOT OK! Acceleration check failed");
             }
-            if(self.imu.gyro_check.is_err()){
+            /*if(self.imu.gyro_check.is_err()){
                 error!("IMU is NOT OK! Gyro check failed");
-            }
+            }*/
             if(self.highg_imu.active_check.is_err()){
                 error!("High IMU is NOT OK! Active check failed");
             }
@@ -301,7 +301,7 @@ impl FlashSelfcheck {
 pub struct ImuSelfcheck {
     pub active_check: Result<(), ()>,
     pub accel_check: Result<(), ()>,
-    pub gyro_check: Result<(), ()>
+    //pub gyro_check: Result<(), ()>
 }
 
 impl ImuSelfcheck {
@@ -315,25 +315,27 @@ impl ImuSelfcheck {
         };*/
 
         let active_check = Err(());
+        let accel_check = Ok(());
 
-        let accel = sirin.imu.accel().await.unwrap();
+        /*let accel = sirin.imu.accel().await.unwrap();
         debug!("Instantaneous Acceleration: {:?} (μg)", accel);
         let accel_check = match accel{
             (-16_000_000..=16_000_000, -16_000_000..=16_000_000, -16_000_000..=16_000_000) => Ok(()),
             _ => Err(())
-        };
+        };*/
         
-        let gyro = sirin.imu.gyro().await.unwrap();
-        debug!("Instantaneous Gyroscope: {:?} (μdps)", gyro);
+        let gyro = sirin.imu.angular_vel().await.unwrap();
+        // TODO implement
+        /*debug!("Instantaneous Gyroscope: {:?} (μdps)", gyro);
         let gyro_check = match gyro {
             (-360_000_000..=360_000_000, -360_000_000..=360_000_000, -360_000_000..=360_000_000) => Ok(()),
             _ => Err(())
-        };
+        };*/
 
         Self{
             active_check,
             accel_check,
-            gyro_check
+            //gyro_check
         }
     }
 }

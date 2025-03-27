@@ -8,7 +8,6 @@ const SECTOR_SIZE: usize = 4096;
 
 pub struct FlashLogger {
     w25q: &'static mut W25Q<SpiDev>,
-    pipe: Pipe<NoopRawMutex, 4096>,
     writer_cursor: u32, //Where in the buffer you are,
     sector: [u8; SECTOR_SIZE],
     last_page_written: usize,
@@ -18,7 +17,6 @@ impl FlashLogger {
     pub fn new(w25q: &'static mut W25Q<SpiDev>) -> Self {
         FlashLogger {
             w25q,
-            pipe: Pipe::new(),
             writer_cursor: 0, // TODO implement rolling buffer
             sector: [0; SECTOR_SIZE],
             last_page_written: 0
@@ -26,7 +24,7 @@ impl FlashLogger {
     }
 
     pub async fn write_event(&mut self, event: Event) {
-        to_slice(&event, self.sector)
+        //to_slice(&event, self.sector)
     }
 }
 

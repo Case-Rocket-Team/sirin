@@ -8,7 +8,9 @@ defmt = "0.3.8"
 dev-csr = { version = "0.1.0", path = "../dev-csr" }
 embedded-hal = "1.0.0"
 embedded-hal-async = "1.0.0"
+serde = { version = "1.0.219", default-features = false, features = ["derive"] }
 spi-handle = { version = "0.1.0", path = "../spi-handle" }
+uunit = { version = "0.1.0", path = "../../uunit" }
 
 [features]
 defmt = []
