@@ -23,6 +23,7 @@ pub mod triplet;
 pub mod measurement;
 pub mod flash_logger;
 pub mod event;
+pub mod state;
 
 pub struct Sirin {
     pub spawner: Spawner,

@@ -99,11 +99,14 @@ async fn main_task(sirin: &'static mut Sirin) {
     sirin.spawner.must_spawn(flash_writer(logger_mut, flash_sub));
 
     loop {
+        // TODO: Just call Kalman filter here directly
+
         publisher.publish(Event::Measurement(Measurement::Baro(sirin.baro.read().await.unwrap()))).await;
         publisher.publish(Event::Measurement(Measurement::ImuAccel(sirin.imu.accel().await.unwrap()))).await;
         publisher.publish(Event::Measurement(Measurement::ImuAngularVel(sirin.imu.angular_vel().await.unwrap()))).await;
     }
 }
+
 
 // TODO: airbreaks
 /*#[task]
