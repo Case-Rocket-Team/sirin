@@ -4,11 +4,12 @@
 use core::{f32, f64::consts::PI, mem::{self, MaybeUninit}};
 
 use bmp3::{hal::{Bmp3RawData, ReadBmp3, RegErrReg, RegStatus}, Bmp3Readout};
-use defmt::debug;
+use defmt::{debug, println, Debug2Format};
 use embassy_executor::{task, Executor, Spawner};
 use embassy_stm32::{bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, peripherals::{self, DMA1_CH0, DMA1_CH1, PD8, PD9, USART3}, usart::{self, Config, Uart}};
 use embassy_time::Timer;
 use embedded_hal_1::spi::ErrorKind;
+use postcard::take_from_bytes;
 use rfm9x::ReadRfm9x;
 use {defmt_rtt as _, panic_probe as _};
 use sirin::{event::Event, flash_logger::FlashLogger, measurement::Measurement, Sirin};
@@ -48,6 +49,32 @@ async fn main_task(sirin: &'static mut Sirin) {
     let publisher = sirin.event_channel.immediate_publisher();
     let flash_sub = sirin.event_channel.subscriber().unwrap();
 
+    let mut i = 0;
+    loop {
+        println!("First page:");
+        let mut sector = [0u8; 4096];
+
+        sirin.flash.read_data(i, &mut sector).await.unwrap();
+
+        let mut remaining = &sector[..];
+
+        loop {
+            let Ok((event, rem)) = take_from_bytes::<Event>(remaining) else {
+                break;
+            };
+
+            remaining = rem;
+
+            println!("Event: {:?}", Debug2Format(&event));
+        }
+
+        i += 4096;
+        
+        if i > 10_000 {
+            break;
+        }
+    }
+
     let mut logger = FlashLogger::new(&mut sirin.flash);
 
     let logger_mut = unsafe {
@@ -65,7 +92,7 @@ async fn main_task(sirin: &'static mut Sirin) {
 }
 
 // TODO: airbreaks
-#[task]
+/*#[task]
 async fn kalman(
     mut event_sub: Subscriber<'static, CriticalSectionRawMutex, Event, 100, 4, 4>
 ) {
@@ -86,7 +113,7 @@ async fn kalman(
         // Edit sirin-c crate and c project to add more functions
         sirin_c::cmsis_dsp_sin(f32::consts::PI / 2.0);
     }
-}
+}*/
 
 #[task]
 async fn flash_writer(
@@ -96,6 +123,6 @@ async fn flash_writer(
     loop {
         // TODO: Report error on lag
         let event = flash_sub.next_message_pure().await;
-        
+        let _ = logger.write_event(event).await;
     }
 }

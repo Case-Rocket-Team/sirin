@@ -1,49 +1,90 @@
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, pipe::Pipe};
-use embedded_io::{Write, ErrorType, ErrorKind};
+use embedded_hal::spi::ErrorKind;
+use embedded_io::{Write, ErrorType};
 use postcard::to_slice;
 use w25q::{W25Q};
 use crate::{event::Event, spi::SpiDev};
 
 const SECTOR_SIZE: usize = 4096;
+const PAGE_SIZE: usize = 256;
 
 pub struct FlashLogger {
     w25q: &'static mut W25Q<SpiDev>,
-    writer_cursor: u32, //Where in the buffer you are,
+    buffer_cursor: usize,
+    flash_cursor: usize,
     sector: [u8; SECTOR_SIZE],
     last_page_written: usize,
 }
+
+pub enum FlashLoggerError {
+    UnfilledPage,
+    SpiError(ErrorKind),
+    PostcardError(postcard::Error)
+}
+
+impl From<ErrorKind> for FlashLoggerError {
+    fn from(value: ErrorKind) -> Self {
+        Self::SpiError(value)
+    }
+}
+
+impl From<postcard::Error> for FlashLoggerError {
+    fn from(value: postcard::Error) -> Self {
+        Self::PostcardError(value)
+    }
+}
+
 
 impl FlashLogger {
     pub fn new(w25q: &'static mut W25Q<SpiDev>) -> Self {
         FlashLogger {
             w25q,
-            writer_cursor: 0, // TODO implement rolling buffer
+            buffer_cursor: 0, // TODO implement rolling buffer
+            flash_cursor: 0,
             sector: [0; SECTOR_SIZE],
             last_page_written: 0
         }
     }
 
-    pub async fn write_event(&mut self, event: Event) {
-        //to_slice(&event, self.sector)
-    }
-}
+    pub async fn write_event(&mut self, event: Event) -> Result<(), FlashLoggerError> {
+        let res = to_slice(&event, &mut self.sector);
 
-// TODO: Create a writer which we can write into synchronously, then set up a task to occasionally
-// write it asynchronously.
-impl ErrorType for FlashLogger {
-    type Error = ErrorKind;
-}
+        let err = match res {
+            Ok(slice) => {
+                self.buffer_cursor += slice.len();
+                let _ = self.try_write_page().await;
+                return Ok(());
+            },
+            Err(e) => e
+        };
 
-/*
-//Writes to a buffer, returns the amount of bytes written
-impl Write for FlashLogger {
-    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
-        let len = self.pipe.try_write(buf).map_err(|e| ErrorKind::OutOfMemory)?;
-        Ok(len)
-    }
-    
-    //I'm pretty sure this doesn't need to do anything because all data writing and buffering is handled in the buffer 
-    fn flush(&mut self) -> Result<(), Self::Error>{
+        let postcard::Error::SerializeBufferFull = err else {
+            return Err(err.into());
+        };
+
+        self.flash_cursor = (self.flash_cursor / SECTOR_SIZE + 1) * SECTOR_SIZE;
+        self.w25q.sector_erase(self.flash_cursor as u32).await?;
+        self.buffer_cursor = 0;
+
+        let slice = to_slice(&event, &mut self.sector)?;
+        self.buffer_cursor += slice.len();
+        let _ = self.try_write_page().await;
+
         Ok(())
     }
-}*/
+
+    async fn try_write_page(&mut self) -> Result<usize, FlashLoggerError> {
+        if (self.flash_cursor + PAGE_SIZE) % SECTOR_SIZE > self.buffer_cursor {
+            return Err(FlashLoggerError::UnfilledPage);
+        }
+
+        let start = self.flash_cursor % SECTOR_SIZE;
+        let end = start + PAGE_SIZE;
+
+        let bytes_written = self.w25q.page(self.flash_cursor as u32, &self.sector[start..end]).await?;
+
+        self.flash_cursor += bytes_written as usize;
+
+        Ok(bytes_written as usize)
+    }
+}

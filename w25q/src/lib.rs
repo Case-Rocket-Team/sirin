@@ -58,14 +58,14 @@ impl <S: SpiHandle> W25Q<S>{
     }
 
     //page program 02h
-    pub async fn page(&mut self, addr: u32, words: &[u8]) -> Result<(), ErrorKind> {
+    pub async fn page(&mut self, addr: u32, words: &[u8]) -> Result<u32, ErrorKind> {
         self.prepare_write().await?;
 
         let mut spi = self.spi.select().await;
         spi.write(&[0x02]).await?;
         spi.write(&[((addr >> 16) & 0xFF) as u8, ((addr >> 8) & 0xFF) as u8, ((addr & 0xFF) as u8)]).await?;
         spi.write(words).await?;
-        Ok(())
+        Ok(words.len() as u32)
     }
 
     /// sector erase 20h

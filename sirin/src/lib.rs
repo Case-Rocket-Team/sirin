@@ -76,7 +76,7 @@ impl Sirin {
                 config.rcc.voltage_scale = VoltageScale::Scale1;
             }
 
-            *ptr!(sirin.event_channel) = PubSubChannel::new();
+            ptr!(sirin.event_channel).write(PubSubChannel::new());
 
             let p = embassy_stm32::init(config);
             let mut spi_config = em_spi::Config::default();
