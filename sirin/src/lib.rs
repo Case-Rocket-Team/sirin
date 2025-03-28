@@ -153,7 +153,6 @@ impl Sirin {
             baro_ptr.write(baro_future.await.unwrap());
             (*radio_ptr).init().await.unwrap();
             (*radio_ptr).use_high_power().await.unwrap();
-            (*flash_ptr).chip_erase().await.unwrap();
             (*imu_ptr).setup().await.unwrap();
             (*highg_imu_ptr).setup().await.unwrap();
 

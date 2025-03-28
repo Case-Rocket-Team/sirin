@@ -46,12 +46,12 @@ bind_interrupts!(struct Irqs {
 });
 
 async fn main_task(sirin: &'static mut Sirin) {
-    let publisher = sirin.event_channel.immediate_publisher();
+    let publisher = sirin.event_channel.publisher().unwrap();
     let flash_sub = sirin.event_channel.subscriber().unwrap();
 
     let mut i = 0;
     loop {
-        println!("First page:");
+        println!("Sector:");
         let mut sector = [0u8; 4096];
 
         sirin.flash.read_data(i, &mut sector).await.unwrap();
@@ -59,11 +59,22 @@ async fn main_task(sirin: &'static mut Sirin) {
         let mut remaining = &sector[..];
 
         loop {
-            let Ok((event, rem)) = take_from_bytes::<Event>(remaining) else {
+            /*let Ok((event, rem)) = take_from_bytes::<Event>(remaining) else {
                 break;
-            };
+            };*/
 
-            remaining = rem;
+            let event;
+
+            match take_from_bytes::<Event>(remaining) {
+                Ok((e, r)) => {
+                    event = e;
+                    remaining = r;
+                }
+                Err(e) => {
+                    println!("Error: {}", Debug2Format(&e));
+                    break;
+                }
+            }
 
             println!("Event: {:?}", Debug2Format(&event));
         }
@@ -75,6 +86,9 @@ async fn main_task(sirin: &'static mut Sirin) {
         }
     }
 
+    println!("Finished reading logged events.");
+    Timer::after_millis(10_000).await;
+
     let mut logger = FlashLogger::new(&mut sirin.flash);
 
     let logger_mut = unsafe {
@@ -85,9 +99,9 @@ async fn main_task(sirin: &'static mut Sirin) {
     sirin.spawner.must_spawn(flash_writer(logger_mut, flash_sub));
 
     loop {
-        publisher.publish_immediate(Event::Measurement(Measurement::Baro(sirin.baro.read().await.unwrap())));
-        publisher.publish_immediate(Event::Measurement(Measurement::ImuAccel(sirin.imu.accel().await.unwrap())));
-        publisher.publish_immediate(Event::Measurement(Measurement::ImuAngularVel(sirin.imu.angular_vel().await.unwrap())));
+        publisher.publish(Event::Measurement(Measurement::Baro(sirin.baro.read().await.unwrap()))).await;
+        publisher.publish(Event::Measurement(Measurement::ImuAccel(sirin.imu.accel().await.unwrap()))).await;
+        publisher.publish(Event::Measurement(Measurement::ImuAngularVel(sirin.imu.angular_vel().await.unwrap()))).await;
     }
 }
 
@@ -123,6 +137,8 @@ async fn flash_writer(
     loop {
         // TODO: Report error on lag
         let event = flash_sub.next_message_pure().await;
-        let _ = logger.write_event(event).await;
+        logger.write_event(&event).await.unwrap();
+
+        //println!("Wrote event: {:?}", Debug2Format(&event));
     }
 }

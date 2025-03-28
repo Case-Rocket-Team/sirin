@@ -1,3 +1,4 @@
+use defmt::println;
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, pipe::Pipe};
 use embedded_hal::spi::ErrorKind;
 use embedded_io::{Write, ErrorType};
@@ -13,9 +14,9 @@ pub struct FlashLogger {
     buffer_cursor: usize,
     flash_cursor: usize,
     sector: [u8; SECTOR_SIZE],
-    last_page_written: usize,
 }
 
+#[derive(Clone, Debug)]
 pub enum FlashLoggerError {
     UnfilledPage,
     SpiError(ErrorKind),
@@ -42,17 +43,19 @@ impl FlashLogger {
             buffer_cursor: 0, // TODO implement rolling buffer
             flash_cursor: 0,
             sector: [0; SECTOR_SIZE],
-            last_page_written: 0
         }
     }
 
-    pub async fn write_event(&mut self, event: Event) -> Result<(), FlashLoggerError> {
-        let res = to_slice(&event, &mut self.sector);
+    pub async fn write_event(&mut self, event: &Event) -> Result<(), FlashLoggerError> {
+        let res = to_slice(&event, &mut self.sector[self.buffer_cursor..]);
 
         let err = match res {
             Ok(slice) => {
                 self.buffer_cursor += slice.len();
-                let _ = self.try_write_page().await;
+                if self.buffer_cursor > (self.flash_cursor / PAGE_SIZE + 1) * PAGE_SIZE {
+                    self.write_page().await?;
+                }
+
                 return Ok(());
             },
             Err(e) => e
@@ -62,28 +65,27 @@ impl FlashLogger {
             return Err(err.into());
         };
 
+        println!("Didn't fit. Erasing sector...");
         self.flash_cursor = (self.flash_cursor / SECTOR_SIZE + 1) * SECTOR_SIZE;
         self.w25q.sector_erase(self.flash_cursor as u32).await?;
         self.buffer_cursor = 0;
 
         let slice = to_slice(&event, &mut self.sector)?;
         self.buffer_cursor += slice.len();
-        let _ = self.try_write_page().await;
+        self.write_page().await?;
 
         Ok(())
     }
 
-    async fn try_write_page(&mut self) -> Result<usize, FlashLoggerError> {
-        if (self.flash_cursor + PAGE_SIZE) % SECTOR_SIZE > self.buffer_cursor {
-            return Err(FlashLoggerError::UnfilledPage);
-        }
-
+    async fn write_page(&mut self) -> Result<usize, FlashLoggerError> {
         let start = self.flash_cursor % SECTOR_SIZE;
-        let end = start + PAGE_SIZE;
+        let end = (start + (self.buffer_cursor % PAGE_SIZE)).min((self.flash_cursor / PAGE_SIZE + 1) * PAGE_SIZE);
 
         let bytes_written = self.w25q.page(self.flash_cursor as u32, &self.sector[start..end]).await?;
 
         self.flash_cursor += bytes_written as usize;
+
+        println!("Wrote page: {}", &self.sector[start..end]);
 
         Ok(bytes_written as usize)
     }
