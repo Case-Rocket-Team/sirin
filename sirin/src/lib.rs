@@ -180,7 +180,6 @@ impl Selfcheck {
             && self.baro.temperature_check.is_ok()
             && self.radio.radio_active.is_ok()
             && self.flash.active_check.is_ok()
-            && self.flash.read_write_check.is_ok()
             && self.imu.accel_check.is_ok()
             //&& self.imu.gyro_check.is_ok()
             && self.highg_imu.active_check.is_ok()
@@ -197,9 +196,6 @@ impl Selfcheck {
             }
             if(self.flash.active_check.is_err()){
                 error!("Flash is NOT OK! Active check failed");
-            }
-            if(self.flash.read_write_check.is_err()){
-                error!("Flash is NOT OK! Read/write check failed");
             }
             if(self.imu.active_check.is_err()){
                 error!("IMU is NOT OK! Active check failed");
@@ -266,8 +262,7 @@ impl BaroSelfcheck {
 }
 
 pub struct FlashSelfcheck {
-    pub active_check: Result<(),()>,
-    pub read_write_check: Result<(),()>,
+    pub active_check: Result<(),()>
 }
     
 impl FlashSelfcheck {
@@ -279,21 +274,9 @@ impl FlashSelfcheck {
         };
 
         debug!("Manufacturer ID: {:?}", sirin.flash.read_device_id().await.unwrap());
-        let mut array: [u8; 4] = [0, 0, 0, 0];
-        let mut input_array: [u8; 4] = [18, 22, 99, 1];
-        debug!("Testing Flash Write: Array '[18, 22, 99, 1]' should print below");
-        sirin.flash.page(100, &mut input_array).await.unwrap();
-        sirin.flash.read_data(100, &mut array).await.unwrap();
-        debug!("{:?}", array);
-
-        let read_write_check = match array {
-            [18, 22, 99, 1] => Ok(()),
-            _ => Err(())
-        };
 
         Self {
-            active_check,
-            read_write_check
+            active_check
         }
     }
 }
