@@ -1,8 +1,6 @@
-use serde::{Deserialize, Serialize};
-
 use crate::measurement::Measurement;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum Event {
     StateUpdate

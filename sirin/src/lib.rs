@@ -24,6 +24,7 @@ pub mod measurement;
 pub mod flash_logger;
 pub mod event;
 pub mod state;
+pub mod log_data;
 
 pub struct Sirin {
     pub spawner: Spawner,

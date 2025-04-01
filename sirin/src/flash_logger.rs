@@ -47,6 +47,7 @@ impl FlashLogger {
     }
 
     pub async fn write_event(&mut self, event: &Event) -> Result<(), FlashLoggerError> {
+        /*
         let res = to_slice(&event, &mut self.sector[self.buffer_cursor..]);
 
         let err = match res {
@@ -74,7 +75,8 @@ impl FlashLogger {
         self.buffer_cursor += slice.len();
         self.write_page().await?;
 
-        Ok(())
+        Ok(())*/
+        todo!()
     }
 
     async fn write_page(&mut self) -> Result<usize, FlashLoggerError> {
