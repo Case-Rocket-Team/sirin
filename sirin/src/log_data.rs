@@ -1,4 +1,5 @@
 use crate::state::State;
+use zerocopy::{IntoBytes, transmute_mut, transmute};
 
 pub trait SerializationSize {
     /// Number of bytes that this should be when serialized.
@@ -21,7 +22,8 @@ pub enum SerializationError {
 }
 
 pub enum DeserializationError {
-    NotEnoughBytes
+    NotEnoughBytes,
+    InvalidState
 }
 
 pub enum LogData {
@@ -69,20 +71,37 @@ impl Serialize for LogData {
 }
 
 impl SerializationSize for State {
+    /// This should be 80 
     fn serialization_size(self: &Self) -> usize {
-        todo!()
+        size_of::<State>()
     }
 }
 
 impl Serialize for State {
     fn serialize(&self, buf: &mut [u8]) -> Result<usize, SerializationError> {
-        todo!()
+        let size = self.serialization_size();
+        if buf.len() >= size {
+            let mut temp: [u8; 80];
+            temp = transmute!(self);
+            buf[0..80].copy_from_slice(&temp);
+            Ok(size)
+        } else {
+            Err(SerializationError::NotEnoughBytes)
+        }
     }
 }
 
 impl Deserialize for LogData {
     fn deserialize(buf: &[u8]) -> Result<Self, DeserializationError> {
-        todo!()
+        
+        if buf[0] == LogDataType::Null as u8{
+            Ok(LogData::Null)
+        } else if buf[1] == LogDataType::State as u8 {
+            let data = 
+            Ok(LogData::State((state)))
+        } else {
+            Err(DeserializationError::InvalidState)
+        }
     }
 }
 
