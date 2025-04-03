@@ -1,4 +1,6 @@
-use crate::state::State;
+use crate::state::{EcefPos, State};
+use byteorder::{ByteOrder, LittleEndian};
+use uunit::WithUnits;
 use zerocopy::{IntoBytes, transmute_mut, transmute};
 
 pub trait SerializationSize {
@@ -73,7 +75,7 @@ impl Serialize for LogData {
 impl SerializationSize for State {
     /// This should be 80 
     fn serialization_size(self: &Self) -> usize {
-        size_of::<State>()
+        80
     }
 }
 
@@ -81,9 +83,21 @@ impl Serialize for State {
     fn serialize(&self, buf: &mut [u8]) -> Result<usize, SerializationError> {
         let size = self.serialization_size();
         if buf.len() >= size {
-            let mut temp: [u8; 80];
-            temp = transmute!(self);
-            buf[0..80].copy_from_slice(&temp);
+            LittleEndian::write_f64(&mut buf[0..], self.pos.x.value);
+            
+            buf[8 ..].copy_from_slice(&self.pos.y.value.to_le_bytes());
+            buf[16..].copy_from_slice(&self.pos.z.value.to_le_bytes());
+
+            buf[24..].copy_from_slice(&self.vel.x.value.to_le_bytes());
+            buf[32..].copy_from_slice(&self.vel.y.value.to_le_bytes());
+            buf[40..].copy_from_slice(&self.vel.z.value.to_le_bytes());
+
+            buf[48..].copy_from_slice(&self.accel.x.value.to_le_bytes());
+            buf[56..].copy_from_slice(&self.accel.y.value.to_le_bytes());
+            buf[64..].copy_from_slice(&self.accel.z.value.to_le_bytes());
+
+            buf[72..].copy_from_slice(&self.altitude.value.to_le_bytes());
+
             Ok(size)
         } else {
             Err(SerializationError::NotEnoughBytes)
@@ -93,12 +107,10 @@ impl Serialize for State {
 
 impl Deserialize for LogData {
     fn deserialize(buf: &[u8]) -> Result<Self, DeserializationError> {
-        
         if buf[0] == LogDataType::Null as u8{
             Ok(LogData::Null)
-        } else if buf[1] == LogDataType::State as u8 {
-            let data = 
-            Ok(LogData::State((state)))
+        } else if buf[0] == LogDataType::State as u8 {
+            Ok(LogData::State(State::deserialize(&buf[1..])?))
         } else {
             Err(DeserializationError::InvalidState)
         }
@@ -107,6 +119,10 @@ impl Deserialize for LogData {
 
 impl Deserialize for State {
     fn deserialize(buf: &[u8]) -> Result<Self, DeserializationError> {
-        todo!()
+        Ok(State {
+            pos: EcefPos {
+                x: LittleEndian::read_f64(&buf[0..8]).with_units(),
+            }
+        })
     }
 }

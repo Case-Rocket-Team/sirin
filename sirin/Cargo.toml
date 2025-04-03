@@ -41,3 +41,4 @@ embedded-hal = "1.0.0"
 defmt-rtt = "*"
 embedded-io = "0.6.1"
 zerocopy = { git = "https://github.com/google/zerocopy", features = ["derive"] }
+byteorder = { version = "1.5.0", default-features = false }
