@@ -1,4 +1,4 @@
-use crate::state::{EcefPos, State};
+use crate::state::{EcefPos, State, Accel, Vel};
 use byteorder::{ByteOrder, LittleEndian};
 use uunit::WithUnits;
 use zerocopy::{IntoBytes, transmute_mut, transmute};
@@ -84,20 +84,18 @@ impl Serialize for State {
         let size = self.serialization_size();
         if buf.len() >= size {
             LittleEndian::write_f64(&mut buf[0..], self.pos.x.value);
+            LittleEndian::write_f64(&mut buf[8..], self.pos.y.value);
+            LittleEndian::write_f64(&mut buf[16..], self.pos.z.value);
             
-            buf[8 ..].copy_from_slice(&self.pos.y.value.to_le_bytes());
-            buf[16..].copy_from_slice(&self.pos.z.value.to_le_bytes());
-
-            buf[24..].copy_from_slice(&self.vel.x.value.to_le_bytes());
-            buf[32..].copy_from_slice(&self.vel.y.value.to_le_bytes());
-            buf[40..].copy_from_slice(&self.vel.z.value.to_le_bytes());
-
-            buf[48..].copy_from_slice(&self.accel.x.value.to_le_bytes());
-            buf[56..].copy_from_slice(&self.accel.y.value.to_le_bytes());
-            buf[64..].copy_from_slice(&self.accel.z.value.to_le_bytes());
-
-            buf[72..].copy_from_slice(&self.altitude.value.to_le_bytes());
-
+            LittleEndian::write_f64(&mut buf[24..], self.vel.x.value);
+            LittleEndian::write_f64(&mut buf[32..], self.vel.y.value);
+            LittleEndian::write_f64(&mut buf[40..], self.vel.z.value);
+            
+            LittleEndian::write_f64(&mut buf[48..], self.accel.x.value);
+            LittleEndian::write_f64(&mut buf[56..], self.accel.y.value);
+            LittleEndian::write_f64(&mut buf[64..], self.accel.z.value);
+            
+            LittleEndian::write_f64(&mut buf[72..], self.altitude.value);
             Ok(size)
         } else {
             Err(SerializationError::NotEnoughBytes)
@@ -122,7 +120,20 @@ impl Deserialize for State {
         Ok(State {
             pos: EcefPos {
                 x: LittleEndian::read_f64(&buf[0..8]).with_units(),
-            }
+                y: LittleEndian::read_f64(&buf[8..16]).with_units(),
+                z: LittleEndian::read_f64(&buf[16..24]).with_units()
+            },
+            vel: Vel {
+                x: LittleEndian::read_f64(&buf[24..32]).with_units(),
+                y: LittleEndian::read_f64(&buf[32..40]).with_units(),
+                z: LittleEndian::read_f64(&buf[40..48]).with_units(),
+            },
+            accel: Accel {
+                x: LittleEndian::read_f64(&buf[48..56]).with_units(),
+                y: LittleEndian::read_f64(&buf[56..64]).with_units(),
+                z: LittleEndian::read_f64(&buf[64..72]).with_units()
+            },
+            altitude: LittleEndian::read_f64(&buf[72..80]).with_units()
         })
     }
 }
