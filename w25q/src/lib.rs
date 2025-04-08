@@ -1,7 +1,8 @@
 #![no_std]
 
+#[allow(unused_imports)]
 use core::{future::{poll_fn, Future}, task::Poll};
-
+#[allow(unused_imports)]
 use embedded_hal_async::{digital::Wait, spi::ErrorKind};
 use spi_handle::SpiHandle;
 use embedded_hal_async::spi::SpiBus;
@@ -151,6 +152,7 @@ pub struct Logger {
     current_addr: u32
 }
 
+#[allow(unused_assignments)]
 impl Logger {
     pub fn new() -> Self {
         Logger {

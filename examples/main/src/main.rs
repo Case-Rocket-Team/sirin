@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![allow(unused_imports)]
 
 use core::{f32, f64::consts::PI, mem::{self, MaybeUninit}};
 

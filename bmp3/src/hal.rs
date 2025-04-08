@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use dev_csr::dev_csr;
 use embedded_hal::spi::ErrorType;
 use embedded_hal_async::spi::SpiBus;
@@ -98,7 +99,7 @@ pub struct Bmp3Io<S: SpiHandle> {
 }
 
 
-
+#[allow(unused_macros)]
 impl <S: SpiHandle> Bmp3Io<S> {
     pub async fn read_raw_trim_data(&mut self) -> Result<RawTrimData, <S::Bus as ErrorType>::Error> {
         let mut data = [0u8; 21];

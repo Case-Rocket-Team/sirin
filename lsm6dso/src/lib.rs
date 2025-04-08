@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(unused_imports)]
 
 use core::{fmt::Debug, i16::MAX, mem, ops::Div};
 

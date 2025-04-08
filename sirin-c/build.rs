@@ -30,6 +30,7 @@ fn recursive_dirs<P: AsRef<Path>>(dir: P) -> Vec<PathBuf> {
     return vec;
 }
 
+#[allow(dead_code)]
 fn recursive_files<P: AsRef<Path>>(dir: P) -> Vec<PathBuf> {
     let mut vec: Vec<PathBuf> = vec![];
 

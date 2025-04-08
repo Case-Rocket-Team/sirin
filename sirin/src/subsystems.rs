@@ -97,6 +97,7 @@ impl Subsystem for Bmp3<SpiDev> {
 }
 
 #[derive(Debug, Clone, Measurement)]
+#[allow(dead_code)]
 pub struct BaroData {
     pressure: Result<Pascals<f64>, SubsystemError>,
     temperature: Result<Celsius<f64>, SubsystemError>
@@ -179,6 +180,7 @@ impl Subsystem for H3lis<SpiDev> {
 }
 
 #[derive(Debug, Clone, Measurement)]
+#[allow(dead_code)]
 pub struct HighGImuData {
     // TODO: Put units on this!
     accel: Result<(i32, i32, i32), SubsystemError>

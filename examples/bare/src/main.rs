@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![allow(unused_imports)]
 
 use core::mem::{self, MaybeUninit};
 
@@ -42,6 +43,7 @@ bind_interrupts!(struct Irqs {
     USART3 => usart::InterruptHandler<peripherals::USART3>;
 });
 
+#[allow(unused_variables)]
 async fn main_task(sirin: &'static mut Sirin) {
     println!("Hello world!");
 }

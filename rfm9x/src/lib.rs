@@ -4,11 +4,11 @@ use core::{fmt::Debug, mem};
 
 use defmt::info;
 use dev_csr::dev_csr;
-use embassy_futures::yield_now;
+//use embassy_futures::yield_now;
 use embedded_hal::spi::{ ErrorKind as SpiError, ErrorType};
 use embedded_hal_async::spi::SpiBus;
 use spi_handle::SpiHandle;
-use uunit::{Milliamperes, Milliamps, WithUnits};
+use uunit::{Milliamps, WithUnits};
 
 dev_csr! {
     dev Rfm9x{

@@ -1,5 +1,5 @@
 #![no_std]
-
+#[allow(unused_imports)]
 use core::{borrow::Borrow, future::Future, marker::PhantomData, ops::{Deref, DerefMut}};
 use embedded_hal_async::spi::{Error, ErrorKind, ErrorType, SpiBus};
 

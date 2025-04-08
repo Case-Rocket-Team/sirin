@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![allow(unused_imports)]
 
 use core::mem::{self, MaybeUninit};
 
@@ -73,7 +74,7 @@ async fn main_task(sirin: &'static mut Sirin) {
     // println!("raw gyro: {}\nadjusted: {}", sirin.imu.raw_gyro().await.unwrap(), sirin.imu.gyro().await.unwrap());
 
     loop {
-        println!("raw accel: {} \nadjusted accel: {}", sirin.imu.raw_accel().await.unwrap(), sirin.imu.accel_autoscale().await.unwrap());
+        // println!("raw accel: {} \nadjusted accel: {}", sirin.imu.raw_accel().await.unwrap(), sirin.imu.accel_autoscale().await.unwrap());
         // println!("gyro: {}\n adjusted: {}", sirin.imu.raw_gyro().await.unwrap(), sirin.imu.gyro().await.unwrap());
 
     }

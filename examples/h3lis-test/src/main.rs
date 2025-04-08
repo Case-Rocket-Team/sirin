@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![allow(unused_imports)]
 
 use core::mem::{self, MaybeUninit};
 
@@ -38,16 +39,17 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
     main_task(sirin).await
 }
 
+#[allow(unused_variables)]
 async fn main_task(sirin: &'static mut Sirin) {
-    loop {
-        println!("{} {} {} {} {} {}", 
-        sirin.high_g_imu.acceleration().await.unwrap().0,
-        sirin.high_g_imu.acceleration().await.unwrap().1,
-        sirin.high_g_imu.acceleration().await.unwrap().2,  
-        sirin.imu.accel().await.unwrap().0,
-        sirin.imu.accel().await.unwrap().1,
-        sirin.imu.accel().await.unwrap().2,);
+    // loop {
+    //     println!("{} {} {} {} {} {}", 
+    //     sirin.high_g_imu.acceleration().await.unwrap().0,
+    //     sirin.high_g_imu.acceleration().await.unwrap().1,
+    //     sirin.high_g_imu.acceleration().await.unwrap().2,  
+    //     sirin.imu.accel().await.unwrap().0,
+    //     sirin.imu.accel().await.unwrap().1,
+    //     sirin.imu.accel().await.unwrap().2,);
         
-        Timer::after_millis(10).await;
-    }
+    //     Timer::after_millis(10).await;
+    // }
 }

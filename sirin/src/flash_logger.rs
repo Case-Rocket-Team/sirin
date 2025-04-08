@@ -1,9 +1,10 @@
+#![allow(unused_imports)]
 use defmt::println;
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, pipe::Pipe};
 use embedded_hal::spi::ErrorKind;
 use embedded_io::{Write, ErrorType};
 use postcard::to_slice;
-use w25q::{W25Q};
+use w25q::W25Q;
 use crate::{event::Event, log_data::{LogData, SerializationError, SerializationSize, Serialize}, spi::SpiDev};
 
 const SECTOR_SIZE: usize = 4096;

@@ -1,6 +1,7 @@
 //#![feature(error_in_core)]
 //#![feature(associated_type_defaults)]
 #![no_std]
+#![allow(unused_imports)]
 use core::{mem::MaybeUninit, ptr::addr_of_mut};
 use bmp3::Bmp3;
 use embassy_executor::{Executor, Spawner};
@@ -59,7 +60,6 @@ pub struct Sirin {
     pub baro: Bmp3<SpiDev>,
     pub imu: Lsm6dso<SpiDev>,
     pub high_g_imu: H3lis<SpiDev>,
-    //pub gps: S1315F8,
 
     pub data: SirinData,
     pub health: SirinHealth,

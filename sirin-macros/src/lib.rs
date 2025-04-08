@@ -1,5 +1,7 @@
 use proc_macro::TokenStream;
+#[allow(unused_imports)]
 use quote::ToTokens;
+#[allow(unused_imports)]
 use syn::{parse::Parser, parse_macro_input, DeriveInput};
 use quote::quote;
 

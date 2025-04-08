@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use core::{future::Future, marker::PhantomData};
 
 use derive_new::new;
