@@ -10,7 +10,7 @@ embedded-hal = "1.0.0"
 embedded-hal-async = "1.0.0"
 serde = { version = "1.0.219", default-features = false, features = ["derive"] }
 spi-handle = { version = "0.1.0", path = "../spi-handle" }
-uunit = { version = "0.1.0", path = "../../uunit" }
+uunit = { version = "0.1.0", git = "https://github.com/Nautki/uunit" }
 
 [features]
 defmt = []

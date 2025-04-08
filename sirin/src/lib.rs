@@ -1,43 +1,69 @@
 //#![feature(error_in_core)]
 //#![feature(associated_type_defaults)]
 #![no_std]
-use core::{mem::MaybeUninit, panic, ptr::addr_of_mut};
-use bmp3::{Bmp3};
+use core::{mem::MaybeUninit, ptr::addr_of_mut};
+use bmp3::Bmp3;
 use embassy_executor::{Executor, Spawner};
-use embassy_stm32::{ gpio::{Level, Output, Speed}, spi as em_spi, time::mhz, Config, Peripherals };
+use embassy_futures::join::{join, join5, join_array};
+use embassy_stm32::{ bind_interrupts, gpio::{Level, Output, Speed}, spi as em_spi, time::mhz, Config, Peripherals };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
 use event::Event;
 use gpio::GpioPins;
 use rfm9x::{ReadRfm9x, Rfm9x};
+use snafu::{ensure, Snafu};
+use subsystems::{BaroData, HighGImuData, ImuData, Measurement, SirinData, Subsystem, SubsystemError};
+use uunit::{Celsius, Pascals};
 use w25q::W25Q;
 use lsm6dso::Lsm6dso;
 use h3lis::H3lis;
 use spi::{Spi, SpiConfig, SpiConfigStruct, SpiDev, SpiInstance, WithSpiHandle};
-use defmt::{debug, error, info, println, write, Format};
-use bmp3::Bmp3Readout;
+use embassy_stm32::{usb, peripherals};
+
+pub use uunit;
 pub mod spi;
 pub mod delay;
 pub mod gpio;
 pub mod sync;
 pub mod triplet;
-pub mod measurement;
 pub mod flash_logger;
 pub mod event;
 pub mod state;
 pub mod log_data;
+pub mod subsystems;
+
+bind_interrupts!(pub struct Irqs {
+    OTG_FS => usb::InterruptHandler<peripherals::USB_OTG_FS>;
+});
+
+#[derive(Debug, Clone)]
+pub struct SirinHealth {
+    pub flash: Result<(), SubsystemError>,
+    pub radio: Result<(), SubsystemError>,
+    pub baro: Result<(), SubsystemError>,
+    pub imu: Result<(), SubsystemError>,
+    pub high_g_imu: Result<(), SubsystemError>,
+}
 
 pub struct Sirin {
     pub spawner: Spawner,
     pub spi1: SpiInstance,
     pub spi2: SpiInstance,
+
     pub gpio: GpioPins,
-    pub baro: Bmp3<SpiDev>,
+
+    // Subsystems:
     pub flash: W25Q<SpiDev>,
-    pub imu: Lsm6dso<SpiDev>,
-    pub highg_imu: H3lis<SpiDev>,
     pub radio: Rfm9x<SpiDev>,
+
+    // Instrument subsytems
+    pub baro: Bmp3<SpiDev>,
+    pub imu: Lsm6dso<SpiDev>,
+    pub high_g_imu: H3lis<SpiDev>,
     //pub gps: S1315F8,
-    pub health: Selfcheck,
+
+    pub data: SirinData,
+    pub health: SirinHealth,
+
     pub event_channel: PubSubChannel<CriticalSectionRawMutex, Event, 100, 4, 4>
 }
 
@@ -146,10 +172,11 @@ impl Sirin {
             let imu_cs = Output::new(p.PE11, Level::High, Speed::High);
             imu_ptr.write(Lsm6dso::new((*spi1).handle(imu_cs)));
 
-            let highg_imu_ptr: *mut H3lis<SpiDev> = ptr!(sirin.highg_imu);
+            let highg_imu_ptr: *mut H3lis<SpiDev> = ptr!(sirin.high_g_imu);
             let highg_imu_cs = Output::new(p.PE13,Level::High, Speed::High);
             highg_imu_ptr.write(H3lis::new((*spi1).handle(highg_imu_cs)));
 
+            ptr!(sirin.data).write(SirinData::unmeasured());
             
             // TODO: JOIN FUTURES, AWAIT
             baro_ptr.write(baro_future.await.unwrap());
@@ -158,226 +185,26 @@ impl Sirin {
             (*imu_ptr).setup().await.unwrap();
             (*highg_imu_ptr).setup().await.unwrap();
 
-            let sirin: &'static mut _ = sirin.assume_init_mut();
+            {
+                let (flash, radio, baro, imu, high_g_imu) = join5(
+                    (*flash_ptr).selfcheck(),
+                    (*radio_ptr).selfcheck(),
+                    (*baro_ptr).selfcheck(),
+                    (*imu_ptr).selfcheck(),
+                    (*highg_imu_ptr).selfcheck()
+                ).await;
 
-            sirin.health = Selfcheck::selfcheck(sirin).await;
-            sirin.health.result();
+                ptr!(sirin.health).write(SirinHealth {
+                    flash,
+                    radio,
+                    baro,
+                    imu,
+                    high_g_imu,
+                });
+            }
+
+            let sirin: &'static mut _ = sirin.assume_init_mut();
             sirin
         }
-    }
-}
-
-pub struct Selfcheck {
-    pub baro: BaroSelfcheck,
-    pub radio: RadioSelfcheck,
-    pub flash: FlashSelfcheck,
-    pub imu: ImuSelfcheck,
-    pub highg_imu: HighgImuSelfcheck,
-}
-
-impl Selfcheck {
-    pub fn result(&self) -> Result<(),()> {
-        if self.baro.pressure_check.is_ok()
-            && self.baro.temperature_check.is_ok()
-            && self.radio.radio_active.is_ok()
-            && self.flash.active_check.is_ok()
-            && self.imu.accel_check.is_ok()
-            //&& self.imu.gyro_check.is_ok()
-            && self.highg_imu.active_check.is_ok()
-            && self.highg_imu.accel_check.is_ok()
-        {
-            debug!("All chips funcional");
-            Ok(())
-        } else {
-            if(self.baro.temperature_check.is_err()){
-                error!("Baro is NOT OK! Temperature check failed")
-            }
-            if(self.baro.pressure_check.is_err()){
-                error!("Baro is NOT OK! Pressure check failed");
-            }
-            if(self.flash.active_check.is_err()){
-                error!("Flash is NOT OK! Active check failed");
-            }
-            if(self.imu.active_check.is_err()){
-                error!("IMU is NOT OK! Active check failed");
-            }
-            if(self.imu.accel_check.is_err()){
-                error!("IMU is NOT OK! Acceleration check failed");
-            }
-            /*if(self.imu.gyro_check.is_err()){
-                error!("IMU is NOT OK! Gyro check failed");
-            }*/
-            if(self.highg_imu.active_check.is_err()){
-                error!("High IMU is NOT OK! Active check failed");
-            }
-            if(self.highg_imu.accel_check.is_err()){
-                error!("High IMU is NOT OK! Acceleration check failed");
-            }
-            Err(())
-        }
-    }
-
-    pub async fn selfcheck(sirin: &mut Sirin) -> Self {
-        Self {
-            baro: BaroSelfcheck::selfcheck(sirin).await,
-            flash: FlashSelfcheck::selfcheck(sirin).await,
-            imu: ImuSelfcheck::selfcheck(sirin).await,
-            highg_imu: HighgImuSelfcheck::selfcheck(sirin).await,
-            radio: RadioSelfcheck::selfcheck(sirin).await
-        }
-    }
-}
-
-impl Format for Selfcheck {
-    fn format(&self, fmt: defmt::Formatter) {
-        write!(fmt, "");
-    }
-}
-
-pub struct BaroSelfcheck {
-    pub pressure_check: Result<(),()>,
-    pub temperature_check: Result<(),()>,
-}
-
-impl BaroSelfcheck {
-    pub async fn selfcheck(sirin: &mut Sirin) -> Self {
-        debug!("Baro:");
-        let baro_data = sirin.baro.read().await.unwrap();
-        let pressure_check = match baro_data.pressure.value {
-            90_000.0..=110_000.0 => Ok(()),
-            _ => Err(())
-        };
-        debug!("Pressure: {:?} (Pa)", baro_data.pressure.value);
-        
-        let temperature_check = match baro_data.temperature.value {
-            10.0..=35.0 => Ok(()),
-            _ => Err(())
-        };
-        debug!("Temperature: {:?} (C)", baro_data.temperature.value);
-
-        Self {
-            pressure_check,
-            temperature_check
-        }
-    }
-}
-
-pub struct FlashSelfcheck {
-    pub active_check: Result<(),()>
-}
-    
-impl FlashSelfcheck {
-    pub async fn selfcheck(sirin: &mut Sirin) -> Self {
-        debug!("Flash:");
-        let active_check = match sirin.flash.read_device_id().await.unwrap(){
-            21 => Ok(()),
-            _ => Err(())
-        };
-
-        debug!("Manufacturer ID: {:?}", sirin.flash.read_device_id().await.unwrap());
-
-        Self {
-            active_check
-        }
-    }
-}
-
-pub struct ImuSelfcheck {
-    pub active_check: Result<(), ()>,
-    pub accel_check: Result<(), ()>,
-    //pub gyro_check: Result<(), ()>
-}
-
-impl ImuSelfcheck {
-    pub async fn selfcheck(sirin: &mut Sirin) -> Self {
-        // TODO figure out why this an error on VSCode
-        /*let imu_id = sirin.imu.read_manufacturer_id().await.unwrap();
-        debug!("Manufacturer ID: {:?}", imu_id);
-        let active_check = match imu_id{
-            108 => Ok(()),
-            _ => Err(())
-        };*/
-
-        let active_check = Err(());
-        let accel_check = Ok(());
-
-        /*let accel = sirin.imu.accel().await.unwrap();
-        debug!("Instantaneous Acceleration: {:?} (μg)", accel);
-        let accel_check = match accel{
-            (-16_000_000..=16_000_000, -16_000_000..=16_000_000, -16_000_000..=16_000_000) => Ok(()),
-            _ => Err(())
-        };*/
-        
-        let gyro = sirin.imu.angular_vel().await.unwrap();
-        // TODO implement
-        /*debug!("Instantaneous Gyroscope: {:?} (μdps)", gyro);
-        let gyro_check = match gyro {
-            (-360_000_000..=360_000_000, -360_000_000..=360_000_000, -360_000_000..=360_000_000) => Ok(()),
-            _ => Err(())
-        };*/
-
-        Self{
-            active_check,
-            accel_check,
-            //gyro_check
-        }
-    }
-}
-
-pub struct HighgImuSelfcheck {
-    pub active_check: Result<(),()>,
-    pub accel_check: Result<(),()>,
-}
-
-impl HighgImuSelfcheck {
-    pub async fn selfcheck(sirin: &mut Sirin) -> Self {
-        debug!("H3LIS:");
-        let h3lis_id = sirin.highg_imu.manufacturer_id().await.unwrap();
-        debug!("Manufacturer ID: {:?} ",h3lis_id);
-
-        let active_check = match h3lis_id {
-            50 => Ok(()),
-            _ => Err(())
-        };
-        let accel = sirin.highg_imu.acceleration().await.unwrap();
-        debug!("Instantaneous Acceleration: {:?} (μg)", accel);
-
-        let accel_check = match accel {
-            (-16_000_000..=16_000_000, -16_000_000..=16_000_000, -16_000_000..=16_000_000) => Ok(()),
-            _ => Err(())
-        };
-
-        Self {
-            accel_check,
-            active_check
-        }
-    }
-}
-
-pub struct RadioSelfcheck {
-    pub radio_active: Result<(), ()>,
-}
-
-impl RadioSelfcheck {
-    pub async fn selfcheck(sirin: &mut Sirin) -> Self {
-        debug!("Radio:");
-        let radio_num = sirin.radio.version().await.unwrap();
-        let radio_active = match radio_num {
-            18 => Ok(()),
-            _ => Err(())
-        };
-        debug!("Radio Version: {:?}", radio_num);
-        Self {
-            radio_active
-        }
-    }
-}
-
-pub struct PostcardTest {
-    write: Result<(), ()>,
-}
-impl PostcardTest {
-    pub async fn write(){
-        
     }
 }

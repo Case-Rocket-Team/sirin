@@ -12,7 +12,7 @@ use embedded_hal_1::spi::ErrorKind;
 use postcard::take_from_bytes;
 use rfm9x::ReadRfm9x;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{event::Event, flash_logger::FlashLogger, measurement::Measurement, Sirin};
+use sirin::{event::Event, flash_logger::FlashLogger, log_data::{Deserialize, LogData, SerializationSize}, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, uunit::WithUnits, Sirin};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::{Publisher, Subscriber}};
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
@@ -45,66 +45,72 @@ bind_interrupts!(struct Irqs {
     USART3 => usart::InterruptHandler<peripherals::USART3>;
 });
 
-async fn main_task(sirin: &'static mut Sirin) {
-    let publisher = sirin.event_channel.publisher().unwrap();
-    let flash_sub = sirin.event_channel.subscriber().unwrap();
+async fn main_task(mut sirin: &'static mut Sirin) {
+    let mut i: u32 = 0;
 
-    let mut i = 0;
+    // going to change this later
+    let mut state: State;
+
+    // maybe consider moving this into Sirin
+    let mut flash_logger = FlashLogger::new();
+
     loop {
-        println!("Sector:");
-        let mut sector = [0u8; 4096];
+        sirin.data = SirinData::measure(
+            &mut sirin.baro,
+            &mut sirin.imu,
+            &mut sirin.high_g_imu
+        ).await;
 
-        sirin.flash.read_data(i, &mut sector).await.unwrap();
+        // TODO: Replace with call to C code
+        unsafe {
+            let mut _state: MaybeUninit<State> = MaybeUninit::uninit();
+            run_kalman_filter(&mut _state, &sirin.data);
+            state = _state.assume_init();
+        }
 
-        let mut remaining = &sector[..];
+        if i % 10 == 0 {
+            let log = LogData::State(state);
 
-        loop {
-            /*let Ok((event, rem)) = take_from_bytes::<Event>(remaining) else {
-                break;
-            };*/
-
-            let event;
-
-            match take_from_bytes::<Event>(remaining) {
-                Ok((e, r)) => {
-                    event = e;
-                    remaining = r;
-                }
-                Err(e) => {
-                    println!("Error: {}", Debug2Format(&e));
-                    break;
-                }
+            // TODO: figure out how to do this without another task while also not
+            // freezing up the main task. Maybe break up erasing into a separate function?
+            if !sirin.flash.is_busy().await.is_ok_and(|b| b) {
+                // TODO: what should we do with this error? It's not like we can log it...
+                let _ = flash_logger.log(&mut sirin.flash, &log).await;
             }
-
-            println!("Event: {:?}", Debug2Format(&event));
         }
 
-        i += 4096;
-        
-        if i > 10_000 {
-            break;
-        }
+        call_user_code(&mut sirin);
+
+        i = i.wrapping_add(1);
     }
+}
 
-    println!("Finished reading logged events.");
-    Timer::after_millis(10_000).await;
+#[allow(unused)]
+fn call_user_code(sirin: &mut Sirin) {
+    // Dummy function to ensure that we can get ownership of Sirin
+}
 
-    let mut logger = FlashLogger::new(&mut sirin.flash);
+unsafe fn run_kalman_filter(state: *mut MaybeUninit<State>, data: *const SirinData) {
+    let accel = (*data).imu.accel.as_ref().unwrap();
 
-    let logger_mut = unsafe {
-        // Safety: this main task ought to live forever
-        transmute_into_static(&mut logger)
-    };
-
-    sirin.spawner.must_spawn(flash_writer(logger_mut, flash_sub));
-
-    loop {
-        // TODO: Just call Kalman filter here directly
-
-        publisher.publish(Event::Measurement(Measurement::Baro(sirin.baro.read().await.unwrap()))).await;
-        publisher.publish(Event::Measurement(Measurement::ImuAccel(sirin.imu.accel().await.unwrap()))).await;
-        publisher.publish(Event::Measurement(Measurement::ImuAngularVel(sirin.imu.angular_vel().await.unwrap()))).await;
-    }
+    state.write(MaybeUninit::new(State {
+        pos: EcefPos {
+            x: 0.0.with_units(),
+            y: 0.0.with_units(),
+            z: 0.0.with_units(),
+        },
+        vel: Vel {
+            x: 0.0.with_units(),
+            y: 0.0.with_units(),
+            z: 0.0.with_units(),
+        },
+        accel: Accel {
+            x: (accel.x.value as f64).with_units(),
+            y: (accel.y.value as f64).with_units(),
+            z: (accel.z.value as f64).with_units(),
+        },
+        altitude: 0.0.with_units()
+    }));
 }
 
 
@@ -131,17 +137,3 @@ async fn kalman(
         sirin_c::cmsis_dsp_sin(f32::consts::PI / 2.0);
     }
 }*/
-
-#[task]
-async fn flash_writer(
-    logger: &'static mut FlashLogger,
-    mut flash_sub: Subscriber<'static, CriticalSectionRawMutex, Event, 100, 4, 4>
-) {
-    loop {
-        // TODO: Report error on lag
-        let event = flash_sub.next_message_pure().await;
-        logger.write_event(&event).await.unwrap();
-
-        //println!("Wrote event: {:?}", Debug2Format(&event));
-    }
-}

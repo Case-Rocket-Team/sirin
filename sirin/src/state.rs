@@ -7,7 +7,6 @@ type MetersPerSecond<T> = Quantity<T, <UnitMeters as Div<UnitSeconds>>::Output>;
 type MetersPerSecond2<T> = Quantity<T, <UnitMeters as Div<<UnitMeters as Div<UnitSeconds>>::Output>>::Output>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(zerocopy::KnownLayout, zerocopy::Immutable, zerocopy::FromBytes, zerocopy::IntoBytes)]
 #[repr(C)]
 pub struct Vel {
     pub x: MetersPerSecond<f64>,
@@ -16,7 +15,6 @@ pub struct Vel {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(zerocopy::KnownLayout, zerocopy::Immutable, zerocopy::FromBytes, zerocopy::IntoBytes)]
 #[repr(C)]
 pub struct Accel {
     pub x: MetersPerSecond2<f64>,
@@ -27,7 +25,6 @@ pub struct Accel {
 /// ECEF Position
 /// https://en.wikipedia.org/wiki/Earth-centered,_Earth-fixed_coordinate_system
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(zerocopy::KnownLayout, zerocopy::Immutable, zerocopy::FromBytes, zerocopy::IntoBytes)]
 #[repr(C)]
 pub struct EcefPos {
     pub x: Meters<f64>,
@@ -36,7 +33,6 @@ pub struct EcefPos {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(zerocopy::KnownLayout, zerocopy::Immutable, zerocopy::FromBytes, zerocopy::IntoBytes)]
 #[repr(C)]
 pub struct State {
     pub pos: EcefPos,

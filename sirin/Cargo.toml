@@ -21,6 +21,7 @@ cortex-m-rt = "0.7.3"
 embassy-executor = { git = "https://github.com/embassy-rs/embassy", features = ["arch-cortex-m", "executor-thread", "defmt"] }
 embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", features = [ "stm32h743ii" ]}
 embassy-sync = { git = "https://github.com/embassy-rs/embassy" }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy" }
 static_cell = "^2.1.0"
 async-trait = "0.1.74"
 enum-display-derive = "0.1.1"
@@ -42,3 +43,5 @@ defmt-rtt = "*"
 embedded-io = "0.6.1"
 zerocopy = { git = "https://github.com/google/zerocopy", features = ["derive"] }
 byteorder = { version = "1.5.0", default-features = false }
+snafu = { version = "0.8.5", default-features = false }
+paste = "1.0.15"

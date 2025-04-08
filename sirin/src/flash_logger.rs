@@ -4,23 +4,22 @@ use embedded_hal::spi::ErrorKind;
 use embedded_io::{Write, ErrorType};
 use postcard::to_slice;
 use w25q::{W25Q};
-use crate::{event::Event, spi::SpiDev};
+use crate::{event::Event, log_data::{LogData, SerializationError, SerializationSize, Serialize}, spi::SpiDev};
 
 const SECTOR_SIZE: usize = 4096;
 const PAGE_SIZE: usize = 256;
 
 pub struct FlashLogger {
-    w25q: &'static mut W25Q<SpiDev>,
-    buffer_cursor: usize,
-    flash_cursor: usize,
-    sector: [u8; SECTOR_SIZE],
+    page_n: usize,
+    i: usize,
+    i_last: usize,
+    buffer: [u8; SECTOR_SIZE],
 }
 
 #[derive(Clone, Debug)]
 pub enum FlashLoggerError {
-    UnfilledPage,
     SpiError(ErrorKind),
-    PostcardError(postcard::Error)
+    SerializationError(SerializationError)
 }
 
 impl From<ErrorKind> for FlashLoggerError {
@@ -29,66 +28,57 @@ impl From<ErrorKind> for FlashLoggerError {
     }
 }
 
-impl From<postcard::Error> for FlashLoggerError {
-    fn from(value: postcard::Error) -> Self {
-        Self::PostcardError(value)
-    }
-}
-
-
 impl FlashLogger {
-    pub fn new(w25q: &'static mut W25Q<SpiDev>) -> Self {
+    pub fn new() -> Self {
         FlashLogger {
-            w25q,
-            buffer_cursor: 0, // TODO implement rolling buffer
-            flash_cursor: 0,
-            sector: [0; SECTOR_SIZE],
+            page_n: 0,
+            i: 0,
+            i_last: 0,
+            buffer: [0; SECTOR_SIZE],
         }
     }
 
-    pub async fn write_event(&mut self, event: &Event) -> Result<(), FlashLoggerError> {
-        /*
-        let res = to_slice(&event, &mut self.sector[self.buffer_cursor..]);
+    pub async fn log(&mut self, flash: &mut W25Q<SpiDev>, data: &LogData) -> Result<(), FlashLoggerError> {
+        loop {
+            match data.serialize(&mut self.buffer[self.i..]) {
+                Ok(()) => {
+                    self.i += data.serialization_size();
+                    self.flush(flash).await?;
+                    return Ok(())
+                },
+                Err(SerializationError::NotEnoughBytes) => {
+                    self.buffer[
+                        self.i..SECTOR_SIZE
+                    ].fill(0);
 
-        let err = match res {
-            Ok(slice) => {
-                self.buffer_cursor += slice.len();
-                if self.buffer_cursor > (self.flash_cursor / PAGE_SIZE + 1) * PAGE_SIZE {
-                    self.write_page().await?;
-                }
+                    println!("Out of bytes!");
 
-                return Ok(());
-            },
-            Err(e) => e
-        };
+                    self.i = SECTOR_SIZE;
 
-        let postcard::Error::SerializeBufferFull = err else {
-            return Err(err.into());
-        };
+                    self.flush(flash).await?;
 
-        println!("Didn't fit. Erasing sector...");
-        self.flash_cursor = (self.flash_cursor / SECTOR_SIZE + 1) * SECTOR_SIZE;
-        self.w25q.sector_erase(self.flash_cursor as u32).await?;
-        self.buffer_cursor = 0;
+                    self.i = 0;
+                    self.i_last = 0;
 
-        let slice = to_slice(&event, &mut self.sector)?;
-        self.buffer_cursor += slice.len();
-        self.write_page().await?;
-
-        Ok(())*/
-        todo!()
+                    continue;
+                },
+                #[allow(unreachable_patterns)]
+                Err(e) => return Err(FlashLoggerError::SerializationError(e))
+            }
+        }
     }
 
-    async fn write_page(&mut self) -> Result<usize, FlashLoggerError> {
-        let start = self.flash_cursor % SECTOR_SIZE;
-        let end = (start + (self.buffer_cursor % PAGE_SIZE)).min((self.flash_cursor / PAGE_SIZE + 1) * PAGE_SIZE);
+    async fn flush(&mut self, flash: &mut W25Q<SpiDev>) -> Result<(), FlashLoggerError> {
+        while self.i - self.i_last >= PAGE_SIZE {
+            println!("Flushed: Wrote page to {}: {}", self.page_n * PAGE_SIZE, &self.buffer[self.i_last..(self.i_last + PAGE_SIZE)]);
+            flash.page(
+                (self.page_n * PAGE_SIZE) as u32,
+                &self.buffer[self.i_last..(self.i_last + PAGE_SIZE)]
+            ).await?;
+            self.page_n += 1;
+            self.i_last += PAGE_SIZE;
+        }
 
-        let bytes_written = self.w25q.page(self.flash_cursor as u32, &self.sector[start..end]).await?;
-
-        self.flash_cursor += bytes_written as usize;
-
-        println!("Wrote page: {}", &self.sector[start..end]);
-
-        Ok(bytes_written as usize)
+        Ok(())
     }
 }

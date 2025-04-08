@@ -36,3 +36,27 @@ pub fn derive_spi_error(item: TokenStream) -> TokenStream {
         }
     }.into()
 }
+
+#[proc_macro_derive(Measurement)]
+pub fn derive_measurement(item: TokenStream) -> TokenStream {
+    let item: DeriveInput = parse_macro_input!(item);
+    let name = item.ident;
+
+    let syn::Data::Struct(data) = item.data else {
+        return quote! {compile_error!("Only structs allowed")}.into()
+    };
+
+    let fields = data.fields.iter().map(|f| f.ident.clone());
+
+    let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
+
+    quote! {
+        impl #impl_generics crate::subsystems::Measurement for #name #ty_generics #where_clause {
+            fn unmeasured() -> Self {
+                Self {
+                    #(#fields: Err(crate::subsystems::SubsystemError::NotYetMeasured)),*
+                }
+            }
+        }
+    }.into()
+}

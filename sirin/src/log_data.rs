@@ -10,24 +10,28 @@ pub trait SerializationSize {
 
 pub trait Serialize: SerializationSize {
     /// Serialize `self`` into `buf`. Return the number of bytes written
-    fn serialize(&self, buf: &mut [u8]) -> Result<usize, SerializationError>;
+    fn serialize(&self, buf: &mut [u8]) -> Result<(), SerializationError>;
 }
 
 pub trait Deserialize: SerializationSize {
-    /// Deserialize from `buf` and return the deserialized struct.
+    /// Deserialize from `buf` and return the deserialized struct and bytes read
     fn deserialize(buf: &[u8]) -> Result<Self, DeserializationError> where Self: Sized;
 }
 
 // Fill out as needed.
+#[non_exhaustive]
+#[derive(Debug, Clone)]
 pub enum SerializationError {
     NotEnoughBytes
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DeserializationError {
     NotEnoughBytes,
-    InvalidState
+    InvalidInputData
 }
 
+#[derive(Debug, Clone)]
 pub enum LogData {
     Null,
     State(State)
@@ -43,18 +47,18 @@ impl SerializationSize for LogData {
     fn serialization_size(self: &Self) -> usize {
         match self {
             Self::Null => 1,
-            Self::State(state) => state.serialization_size()
+            Self::State(state) => 1 + state.serialization_size()
         }
     }
 }
 
 impl Serialize for LogData {
-    fn serialize(&self, buf: &mut [u8]) -> Result<usize, SerializationError> {
+    fn serialize(&self, buf: &mut [u8]) -> Result<(), SerializationError> {
         match self {
             Self::Null => {
                 if buf.len() >= 1 {
                     buf[0] = LogDataType::Null as u8;
-                    Ok(1)
+                    Ok(())
                 } else {
                     Err(SerializationError::NotEnoughBytes)
                 }
@@ -80,7 +84,7 @@ impl SerializationSize for State {
 }
 
 impl Serialize for State {
-    fn serialize(&self, buf: &mut [u8]) -> Result<usize, SerializationError> {
+    fn serialize(&self, buf: &mut [u8]) -> Result<(), SerializationError> {
         let size = self.serialization_size();
         if buf.len() >= size {
             LittleEndian::write_f64(&mut buf[0..], self.pos.x.value);
@@ -96,7 +100,7 @@ impl Serialize for State {
             LittleEndian::write_f64(&mut buf[64..], self.accel.z.value);
             
             LittleEndian::write_f64(&mut buf[72..], self.altitude.value);
-            Ok(size)
+            Ok(())
         } else {
             Err(SerializationError::NotEnoughBytes)
         }
@@ -105,18 +109,26 @@ impl Serialize for State {
 
 impl Deserialize for LogData {
     fn deserialize(buf: &[u8]) -> Result<Self, DeserializationError> {
-        if buf[0] == LogDataType::Null as u8{
+        let Some(&disc) = buf.get(0) else {
+            return Err(DeserializationError::NotEnoughBytes)
+        };
+
+        if disc == LogDataType::Null as u8 {
             Ok(LogData::Null)
-        } else if buf[0] == LogDataType::State as u8 {
+        } else if disc == LogDataType::State as u8 {
             Ok(LogData::State(State::deserialize(&buf[1..])?))
         } else {
-            Err(DeserializationError::InvalidState)
+            Err(DeserializationError::InvalidInputData)
         }
     }
 }
 
 impl Deserialize for State {
     fn deserialize(buf: &[u8]) -> Result<Self, DeserializationError> {
+        if buf.len() < 80 {
+            return Err(DeserializationError::NotEnoughBytes)
+        }
+
         Ok(State {
             pos: EcefPos {
                 x: LittleEndian::read_f64(&buf[0..8]).with_units(),

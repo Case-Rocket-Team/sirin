@@ -1,7 +1,8 @@
-use crate::measurement::Measurement;
+use crate::{state::State, subsystems::SirinData};
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum Event {
-    StateUpdate
+    DataUpdate(SirinData),
+    StateUpdate(State),
 }
