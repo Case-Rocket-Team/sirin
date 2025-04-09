@@ -2,26 +2,25 @@
 //#![feature(associated_type_defaults)]
 #![no_std]
 #![allow(unused_imports)]
-use core::{mem::MaybeUninit, ptr::addr_of_mut};
+use core::{marker::PhantomPinned, mem::MaybeUninit, pin::{pin, Pin}, ptr::addr_of_mut};
 use bmp3::Bmp3;
 use embassy_executor::{Executor, Spawner};
 use embassy_futures::join::{join, join5, join_array};
-use embassy_stm32::{ bind_interrupts, gpio::{Level, Output, Speed}, spi as em_spi, time::mhz, Config, Peripherals };
+use embassy_stm32::{ bind_interrupts, gpio::{Level, Output, Speed}, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, Config, Peripherals };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
 use event::Event;
 use gpio::GpioPins;
 use rfm9x::{ReadRfm9x, Rfm9x};
 use snafu::{ensure, Snafu};
 use subsystems::{BaroData, HighGImuData, ImuData, Measurement, SirinData, Subsystem, SubsystemError};
+use usb::{usb_serial, UsbSerial};
 use uunit::{Celsius, Pascals};
 use w25q::W25Q;
 use lsm6dso::Lsm6dso;
 use h3lis::H3lis;
 use spi::{Spi, SpiConfig, SpiConfigStruct, SpiDev, SpiInstance, WithSpiHandle};
-use embassy_stm32::{usb, peripherals};
-use embassy_stm32::usb::{Driver, Instance};
-use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
-use embassy_usb::Builder;
+use embassy_usb::class::cdc_acm::{CdcAcmClass, State as UsbState};
+use embassy_usb::Builder as UsbBuilder;
 
 pub use uunit;
 pub mod spi;
@@ -34,10 +33,7 @@ pub mod event;
 pub mod state;
 pub mod log_data;
 pub mod subsystems;
-
-bind_interrupts!(pub struct Irqs {
-    OTG_FS => usb::InterruptHandler<peripherals::USB_OTG_FS>;
-});
+pub mod usb;
 
 #[derive(Debug, Clone)]
 pub struct SirinHealth {
@@ -64,13 +60,16 @@ pub struct Sirin {
     pub imu: Lsm6dso<SpiDev>,
     pub high_g_imu: H3lis<SpiDev>,
     // pub gps: S1315F8,
-    //pub driver: Driver<'static, peripherals::USB_OTG_FS>,
-
+    //pub driver: Driver<'static, peripherals::USB_OTG_FS>
 
     pub data: SirinData,
     pub health: SirinHealth,
 
-    pub event_channel: PubSubChannel<CriticalSectionRawMutex, Event, 100, 4, 4>
+    pub event_channel: PubSubChannel<CriticalSectionRawMutex, Event, 100, 4, 4>,
+
+    pub usb: UsbSerial,
+
+    _phantom_pinned: PhantomPinned
 }
 
 impl Sirin {
@@ -182,29 +181,14 @@ impl Sirin {
             let highg_imu_cs = Output::new(p.PE13,Level::High, Speed::High);
             highg_imu_ptr.write(H3lis::new((*spi1).handle(highg_imu_cs)));
 
-            let mut usb_config = embassy_stm32::usb::Config::default();
-            let mut ep_out_buffer: [u8; 256] = [0; 256];
-            /*let driver_ptr = ptr!(sirin.driver);
-            driver_ptr.write(Driver::new_fs(p.USB_OTG_FS, Irqs, p.PA12, p.PA11, &mut EP_OUT_BUFFER , usb_config));*/
-            let driver: Driver<'static, peripherals::USB_OTG_FS>  = Driver::new_fs(p.USB_OTG_FS, Irqs, p.PA12, p.PA11, &mut ep_out_buffer, usb_config);
-
-            let builder_config = embassy_usb::Config::new(1, 1);
-            let mut config_descriptor = [0; 256];
-            let mut bos_descriptor = [0; 256];
-            let mut control_buf = [0; 64];
-
-            let mut state = State::new();
-
-            let mut builder = Builder::new(
-                driver,
-                builder_config,
-                &mut config_descriptor,
-                &mut bos_descriptor,
-                &mut [], // no msos descriptors
-                &mut control_buf,
-            );
-
             ptr!(sirin.data).write(SirinData::unmeasured());
+
+            ptr!(sirin.usb).write(usb_serial(
+                &spawner,
+                p.USB_OTG_FS,
+                p.PA12,
+                p.PA11
+            ));
             
             // TODO: JOIN FUTURES, AWAIT
             baro_ptr.write(baro_future.await.unwrap());

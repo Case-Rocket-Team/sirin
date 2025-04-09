@@ -2,7 +2,7 @@
 #![no_main]
 #![allow(unused_imports)]
 
-use core::{f32, f64::consts::PI, mem::{self, MaybeUninit}};
+use core::{f32, f64::consts::PI, mem::{self, transmute_copy, MaybeUninit}, pin::Pin};
 
 use bmp3::{hal::{Bmp3RawData, ReadBmp3, RegErrReg, RegStatus}, Bmp3Readout};
 use defmt::{debug, println, Debug2Format};
