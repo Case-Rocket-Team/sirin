@@ -19,6 +19,9 @@ use lsm6dso::Lsm6dso;
 use h3lis::H3lis;
 use spi::{Spi, SpiConfig, SpiConfigStruct, SpiDev, SpiInstance, WithSpiHandle};
 use embassy_stm32::{usb, peripherals};
+use embassy_stm32::usb::{Driver, Instance};
+use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
+use embassy_usb::Builder;
 
 pub use uunit;
 pub mod spi;
@@ -60,6 +63,9 @@ pub struct Sirin {
     pub baro: Bmp3<SpiDev>,
     pub imu: Lsm6dso<SpiDev>,
     pub high_g_imu: H3lis<SpiDev>,
+    // pub gps: S1315F8,
+    //pub driver: Driver<'static, peripherals::USB_OTG_FS>,
+
 
     pub data: SirinData,
     pub health: SirinHealth,
@@ -175,6 +181,28 @@ impl Sirin {
             let highg_imu_ptr: *mut H3lis<SpiDev> = ptr!(sirin.high_g_imu);
             let highg_imu_cs = Output::new(p.PE13,Level::High, Speed::High);
             highg_imu_ptr.write(H3lis::new((*spi1).handle(highg_imu_cs)));
+
+            let mut usb_config = embassy_stm32::usb::Config::default();
+            let mut ep_out_buffer: [u8; 256] = [0; 256];
+            /*let driver_ptr = ptr!(sirin.driver);
+            driver_ptr.write(Driver::new_fs(p.USB_OTG_FS, Irqs, p.PA12, p.PA11, &mut EP_OUT_BUFFER , usb_config));*/
+            let driver: Driver<'static, peripherals::USB_OTG_FS>  = Driver::new_fs(p.USB_OTG_FS, Irqs, p.PA12, p.PA11, &mut ep_out_buffer, usb_config);
+
+            let builder_config = embassy_usb::Config::new(1, 1);
+            let mut config_descriptor = [0; 256];
+            let mut bos_descriptor = [0; 256];
+            let mut control_buf = [0; 64];
+
+            let mut state = State::new();
+
+            let mut builder = Builder::new(
+                driver,
+                builder_config,
+                &mut config_descriptor,
+                &mut bos_descriptor,
+                &mut [], // no msos descriptors
+                &mut control_buf,
+            );
 
             ptr!(sirin.data).write(SirinData::unmeasured());
             
