@@ -4,13 +4,13 @@ use bmp3::Bmp3;
 use defmt::Str;
 use embedded_hal::spi::ErrorKind as SpiErrorKind;
 use h3lis::H3lis;
-use lsm6dso::{Accel, AngularVel, Lsm6dso};
+use lsm6dso_spi::{Accel, AngularVel, Lsm6dso};
 use paste::paste;
-use rfm9x::Rfm9x;
+use rfm9::Rfm9;
 use sirin_macros::Measurement;
 use snafu::prelude::*;
 use uunit::{Celsius, Pascals, WithUnits};
-use w25q::W25Q;
+use w25qx::W25Q;
 
 use crate::spi::SpiDev;
 
@@ -196,9 +196,9 @@ impl Instrument for H3lis<SpiDev> {
     }
 }
 
-impl Subsystem for Rfm9x<SpiDev> {
+impl Subsystem for Rfm9<SpiDev> {
     const NAME: &str = "LoRa Radio";
-    const PART: &str = "RFM9x";
+    const PART: &str = "Rfm9";
 
     async fn selfcheck(&mut self) -> Result<(), SubsystemError> {
         let radio_version = self.read_version().await.unwrap();

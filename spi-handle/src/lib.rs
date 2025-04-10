@@ -1,6 +1,7 @@
 #![no_std]
-#[allow(unused_imports)]
-use core::{borrow::Borrow, future::Future, marker::PhantomData, ops::{Deref, DerefMut}};
+#![doc = include_str!("../README.md")]
+
+use core::{future::Future, marker::PhantomData, ops::{Deref, DerefMut}};
 use embedded_hal_async::spi::{Error, ErrorKind, ErrorType, SpiBus};
 
 pub trait SpiHandle<W: 'static + Copy = u8> {
@@ -102,15 +103,15 @@ impl <'h, H: SpiHandle<W>, W: 'static + Copy> SpiBus<W> for SpiHandleBus<'h, H, 
     }
 }
 
-pub struct DerefSpiBus<D: DerefMut>(pub D)
+pub struct SpiBusHandle<D: DerefMut>(pub D)
 where D::Target: SpiBus;
 
-impl <D: DerefMut> ErrorType for DerefSpiBus<D>
+impl <D: DerefMut> ErrorType for SpiBusHandle<D>
 where D::Target: SpiBus {
-    type Error = ErrorKind;//<D::Target as ErrorType>::Error;
+    type Error = ErrorKind;
 }
 
-impl <D: DerefMut> Deref for DerefSpiBus<D>
+impl <D: DerefMut> Deref for SpiBusHandle<D>
 where D::Target: SpiBus {
     type Target = D;
 
@@ -119,7 +120,7 @@ where D::Target: SpiBus {
     }
 }
 
-impl <D: DerefMut> DerefMut for DerefSpiBus<D>
+impl <D: DerefMut> DerefMut for SpiBusHandle<D>
 where D::Target: SpiBus {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
@@ -128,7 +129,7 @@ where D::Target: SpiBus {
 
 type W = u8;
 
-impl <D: DerefMut> SpiBus for DerefSpiBus<D>
+impl <D: DerefMut> SpiBus for SpiBusHandle<D>
 where D::Target: SpiBus {
     async fn read(&mut self, words: &mut [W]) -> Result<(), Self::Error> {
         (**self).read(words).await.map_err(|e| e.kind())
@@ -150,9 +151,3 @@ where D::Target: SpiBus {
         (**self).flush().await.map_err(|e| e.kind())
     }
 }
-
-/*
-async fn test(mut handle: impl SpiHandle) {
-    let mut b = handle.select().await;
-    
-}*/

@@ -11,7 +11,7 @@ use spi_handle::SpiHandle;
 use uunit::{Milliamps, WithUnits};
 
 dev_csr! {
-    dev Rfm9x{
+    dev Rfm9{
         regs{
             /// LoRa base-band FIFO data input/output. FIFO is cleared an not 
             /// accessible when device is in SLEEPmode
@@ -336,26 +336,26 @@ pub enum Mode {
     Cad = 0b111,
 }
 
-pub struct Rfm9x<S: SpiHandle> {
+pub struct Rfm9<S: SpiHandle> {
     spi: S
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub enum Rfm9xError {
+pub enum Rfm9Error {
     Spi(SpiError),
     Crc,
     Timeout,
 }
 
-impl From<SpiError> for Rfm9xError {
+impl From<SpiError> for Rfm9Error {
     fn from(value: SpiError) -> Self {
-        Rfm9xError::Spi(value)
+        Rfm9Error::Spi(value)
     }
 }
 
-type Error = Rfm9xError;
+type Error = Rfm9Error;
 
-impl <S: SpiHandle> Rfm9x<S> {
+impl <S: SpiHandle> Rfm9<S> {
     pub fn new(spi: S) -> Self {
         Self {
             spi
@@ -478,7 +478,7 @@ impl <S: SpiHandle> Rfm9x<S> {
 
         if self.payload_crc_err().await? {
             self.set_mode(Mode::Stdby).await?;
-            return Err(Rfm9xError::Crc)
+            return Err(Rfm9Error::Crc)
         }
 
         let rx_cur_addr: u8 = self.fifo_rx_current_addr().await?;
@@ -491,7 +491,7 @@ impl <S: SpiHandle> Rfm9x<S> {
 }
 
 
-impl <S: SpiHandle> ReadRfm9x for Rfm9x<S> {
+impl <S: SpiHandle> ReadRfm9 for Rfm9<S> {
     type Error = <S::Bus as ErrorType>::Error;
 
     async fn read_contiguous_regs(
@@ -511,7 +511,7 @@ impl <S: SpiHandle> ReadRfm9x for Rfm9x<S> {
     }
 }
 
-impl <S: SpiHandle> WriteRfm9x for Rfm9x<S> {
+impl <S: SpiHandle> WriteRfm9 for Rfm9<S> {
     type Error = <S::Bus as ErrorType>::Error;
 
     async fn write_contiguous_regs(

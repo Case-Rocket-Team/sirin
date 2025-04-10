@@ -5,6 +5,9 @@ edition = "2021"
 name = "usb-test"
 version = "0.1.0"
 
+[package.metadata.release]
+release = false
+
 [dependencies]
 
 embassy-futures = { git = "https://github.com/embassy-rs/embassy" }
@@ -37,10 +40,10 @@ embedded-storage = "0.3.1"
 static_cell = "2"
 chrono = { version = "^0.4", default-features = false }
 
-sirin = { version = "0.1.0", path = "../../sirin" }
-bmp3 = { version = "0.1.0", path = "../../bmp3" }
-rfm9x = { version = "0.1.0", path = "../../rfm9x", features = ['defmt'] }
-sirin-c = { version = "0.1.0", path = "../../sirin-c" }
+sirin = { version = "0.1.1", path = "../../sirin" }
+bmp3 = { version = "0.1.1", path = "../../bmp3" }
+rfm9 = { version = "0.1.1", path = "../../rfm9", features = ['defmt'] }
+sirin-c = { version = "0.1.1", path = "../../sirin-c" }
 postcard = "1.1.1"
 #panic-halt = "0.2.0"
 

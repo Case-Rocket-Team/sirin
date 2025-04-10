@@ -1,9 +1,12 @@
 [package]
 name = "dev-csr"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
+license = "MIT"
+description = "Macro for developing code to manage control status registers"
+repository = "https://github.com/Nautki/sirin"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dev-csr-macro = { version = "0.1.0", path = "../dev-csr-macro" }
+dev-csr-macro = { version = "0.1.1", path = "../dev-csr-macro" }

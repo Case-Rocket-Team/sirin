@@ -1,13 +1,11 @@
 [package]
-name = "h3lis"
+name = "w25qx"
 version = "0.1.1"
 edition = "2021"
 license = "MIT"
-description = "H3LIS Accelerometer/IMU"
+description = "W25Qxx Flash Chips"
 repository = "https://github.com/Nautki/sirin"
 
 [dependencies]
-dev-csr = { version = "0.1.1", path = "../dev-csr" }
-embedded-hal = "1.0.0"
 embedded-hal-async = "1.0.0"
 spi-handle = { version = "0.1.1", path = "../spi-handle" }

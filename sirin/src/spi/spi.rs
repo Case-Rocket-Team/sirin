@@ -5,7 +5,7 @@ use derive_new::new;
 use embassy_stm32::gpio::Output;
 use embedded_hal_async::spi::{self as hal_spi, ErrorType, SpiBus};
 use sirin_macros::SpiError;
-use spi_handle::{DerefSpiBus, SpiHandle, SpiHandleBus};
+use spi_handle::{SpiBusHandle, SpiHandle, SpiHandleBus};
 
 use crate::sync::{Mutex, MutexGuard};
 
@@ -18,12 +18,12 @@ pub struct SpiDev {
 }
 
 impl SpiHandle for SpiDev {
-    type Bus = DerefSpiBus<MutexGuard<'static, Spi>>;
+    type Bus = SpiBusHandle<MutexGuard<'static, Spi>>;
 
     async fn select(&mut self) -> SpiHandleBus<'_, Self, u8> {
         let spi = self.spi.lock().await;
         self.cs.set_low();
-        SpiHandleBus::new(self, DerefSpiBus(spi))
+        SpiHandleBus::new(self, SpiBusHandle(spi))
     }
 
     fn deselect(bus: &mut spi_handle::SpiHandleBusDestructor<Self, u8>) {

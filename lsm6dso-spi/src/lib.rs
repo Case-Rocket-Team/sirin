@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use spi_handle::SpiHandle;
 use uunit::{MicroGs, Quantity, UnitMicrodegrees, UnitSeconds, WithUnits};
 
-
 dev_csr! {
     dev Lsm6dso{
         regs{

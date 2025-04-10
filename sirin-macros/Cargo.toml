@@ -1,15 +1,15 @@
 [package]
 name = "sirin-macros"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "Macros for Sirin"
+repository = "https://github.com/Nautki/sirin"
 
 [lib]
 proc-macro = true
 
 [dependencies]
-quote = "*"
-syn = { version = "*", features = ["extra-traits", "full"] }
-proc-macro2 = "*"
+quote = "1.0.40"
+syn = { version = "2.0.100", features = ["extra-traits", "full"] }
+proc-macro2 = "1.0.94"

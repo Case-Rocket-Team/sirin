@@ -1,8 +1,10 @@
 [package]
 name = "sirin"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
-license = "BSD0"
+license = "MIT"
+description = "Code for Sirin"
+repository = "https://github.com/Nautki/sirin"
 
 # Own the libs one crate at a time
 [lib]
@@ -13,10 +15,7 @@ bench = false
 s1 = []
 
 [dependencies]
-# internal
 sirin-macros = { path = "../sirin-macros" }
-
-# external
 cortex-m-rt = "0.7.3"
 embassy-executor = { git = "https://github.com/embassy-rs/embassy", features = ["arch-cortex-m", "executor-thread", "defmt"] }
 embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", features = [ "stm32h743ii" ]}
@@ -29,13 +28,13 @@ enum-display-derive = "0.1.1"
 embedded-hal-async = "1.0.0"
 unhygienic2 = "0.1.0"
 derive-new = "0.6.0"
-spi-handle = { version = "0.1.0", path = "../spi-handle" }
-bmp3 = { version = "0.1.0", path = "../bmp3" }
+spi-handle = { version = "0.1.1", path = "../spi-handle" }
+bmp3 = { version = "0.1.1", path = "../bmp3" }
 defmt = "0.3.8"
-rfm9x = { version = "0.1.0", path = "../rfm9x" }
-w25q = { version = "0.1.0", path = "../w25q" }
-lsm6dso = { version = "0.1.0", path = "../lsm6dso" }
-h3lis = { version = "0.1.0", path = "../h3lis" }
+rfm9 = { version = "0.1.1", path = "../rfm9" }
+w25qx = { version = "0.1.1", path = "../w25qx" }
+lsm6dso-spi = { version = "0.1.1", path = "../lsm6dso-spi" }
+h3lis = { version = "0.1.1", path = "../h3lis" }
 uunit = { git = "https://github.com/Nautki/uunit", version = "0.1.0" }
 serde = {version = "1.0.218", default-features = false }
 postcard = { version = "1.1.1", default-features = false, features = ["embedded-io-06"] }

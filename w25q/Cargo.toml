@@ -1,8 +1,0 @@
-[package]
-name = "w25q"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-embedded-hal-async = "1.0.0"
-spi-handle = { version = "0.1.0", path = "../spi-handle" }

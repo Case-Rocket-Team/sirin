@@ -1,7 +1,7 @@
-//#![feature(error_in_core)]
-//#![feature(associated_type_defaults)]
 #![no_std]
 #![allow(unused_imports)]
+#![doc = include_str!("../README.md")]
+
 use core::{marker::PhantomPinned, mem::MaybeUninit, pin::{pin, Pin}, ptr::addr_of_mut};
 use bmp3::Bmp3;
 use embassy_executor::{Executor, Spawner};
@@ -10,13 +10,13 @@ use embassy_stm32::{ bind_interrupts, gpio::{Level, Output, Speed}, peripherals:
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
 use event::Event;
 use gpio::GpioPins;
-use rfm9x::{ReadRfm9x, Rfm9x};
+use rfm9::{ReadRfm9, Rfm9};
 use snafu::{ensure, Snafu};
 use subsystems::{BaroData, HighGImuData, ImuData, Measurement, SirinData, Subsystem, SubsystemError};
 use usb::{usb_serial, UsbSerial};
 use uunit::{Celsius, Pascals};
-use w25q::W25Q;
-use lsm6dso::Lsm6dso;
+use w25qx::W25Q;
+use lsm6dso_spi::Lsm6dso;
 use h3lis::H3lis;
 use spi::{Spi, SpiConfig, SpiConfigStruct, SpiDev, SpiInstance, WithSpiHandle};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State as UsbState};
@@ -53,7 +53,7 @@ pub struct Sirin {
 
     // Subsystems:
     pub flash: W25Q<SpiDev>,
-    pub radio: Rfm9x<SpiDev>,
+    pub radio: Rfm9<SpiDev>,
 
     // Instrument subsytems
     pub baro: Bmp3<SpiDev>,
@@ -165,9 +165,9 @@ impl Sirin {
             let baro_cs = Output::new(p.PA2, Level::High, Speed::High);
             let baro_future = Bmp3::new((*spi1).handle(baro_cs));
 
-            let radio_ptr: *mut Rfm9x<SpiDev> = ptr!(sirin.radio);
+            let radio_ptr: *mut Rfm9<SpiDev> = ptr!(sirin.radio);
             let radio_cs = Output::new(p.PC8, Level::High, Speed::High);
-            radio_ptr.write(Rfm9x::new((*spi2).handle(radio_cs)));
+            radio_ptr.write(Rfm9::new((*spi2).handle(radio_cs)));
 
             let flash_ptr: *mut W25Q<SpiDev> = ptr!(sirin.flash);
             let flash_cs = Output::new(p.PD2, Level::High, Speed::High);

@@ -9,7 +9,7 @@ use defmt::*;
 use embassy_executor::{task, Executor, Spawner};
 use embassy_stm32::{bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, peripherals::{self, DMA1_CH0, DMA1_CH1, PD8, PD9, USART3}, usart::{self, Config, Uart}};
 use embassy_time::Timer;
-use rfm9x::ReadRfm9x;
+use rfm9::ReadRfm9;
 use {defmt_rtt as _, panic_probe as _};
 use sirin::Sirin;
 
