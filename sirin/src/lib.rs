@@ -107,6 +107,7 @@ impl Sirin {
                 config.rcc.apb3_pre = APBPrescaler::DIV2; // 100 Mhz
                 config.rcc.apb4_pre = APBPrescaler::DIV2; // 100 Mhz
                 config.rcc.voltage_scale = VoltageScale::Scale1;
+                config.rcc.mux.usbsel = mux::Usbsel::HSI48;
             }
 
             ptr!(sirin.event_channel).write(PubSubChannel::new());
