@@ -1,9 +1,9 @@
 [package]
-name = "sirin-macros"
+name = "sirin-song-macros"
 version = "0.1.1"
 edition = "2021"
 license = "MIT"
-description = "Macros for Sirin"
+description = "Macros for Sirin song"
 repository = "https://github.com/Nautki/sirin"
 
 [lib]

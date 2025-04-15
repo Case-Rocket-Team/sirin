@@ -5,7 +5,7 @@ use embedded_hal::spi::ErrorKind;
 use embedded_io::{Write, ErrorType};
 use postcard::to_slice;
 use w25qx::W25Q;
-use crate::{event::Event, log_data::{LogData, SerializationError, SerializationSize, Serialize}, spi::SpiDev};
+use crate::{event::Event, io::{OutPacket, SerializationError, SerializationSize, Serialize}, spi::SpiDev};
 
 const SECTOR_SIZE: usize = 4096;
 const PAGE_SIZE: usize = 256;
@@ -39,7 +39,7 @@ impl FlashLogger {
         }
     }
 
-    pub async fn log(&mut self, flash: &mut W25Q<SpiDev>, data: &LogData) -> Result<(), FlashLoggerError> {
+    pub async fn log(&mut self, flash: &mut W25Q<SpiDev>, data: &OutPacket) -> Result<(), FlashLoggerError> {
         loop {
             match data.serialize(&mut self.buffer[self.i..]) {
                 Ok(()) => {
@@ -47,7 +47,7 @@ impl FlashLogger {
                     self.flush(flash).await?;
                     return Ok(())
                 },
-                Err(SerializationError::NotEnoughBytes) => {
+                Err(SerializationError::OutOfSpace) => {
                     self.buffer[
                         self.i..SECTOR_SIZE
                     ].fill(0);

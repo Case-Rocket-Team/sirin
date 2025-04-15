@@ -31,7 +31,7 @@ pub mod triplet;
 pub mod flash_logger;
 pub mod event;
 pub mod state;
-pub mod log_data;
+pub mod io;
 pub mod subsystems;
 pub mod usb;
 
