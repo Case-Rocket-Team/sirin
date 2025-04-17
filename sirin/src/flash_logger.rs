@@ -5,7 +5,7 @@ use embedded_hal::spi::ErrorKind;
 use embedded_io::{Write, ErrorType};
 use postcard::to_slice;
 use w25qx::W25Q;
-use crate::{event::Event, log_data::{LogData, SerializationError, SerializationSize, Serialize}, spi::SpiDev};
+use crate::{event::Event, song::{OutPacket, ToSongError, SongSize, ToSong}, spi::SpiDev};
 
 const SECTOR_SIZE: usize = 4096;
 const PAGE_SIZE: usize = 256;
@@ -20,7 +20,7 @@ pub struct FlashLogger {
 #[derive(Clone, Debug)]
 pub enum FlashLoggerError {
     SpiError(ErrorKind),
-    SerializationError(SerializationError)
+    ToSongError(ToSongError)
 }
 
 impl From<ErrorKind> for FlashLoggerError {
@@ -39,15 +39,15 @@ impl FlashLogger {
         }
     }
 
-    pub async fn log(&mut self, flash: &mut W25Q<SpiDev>, data: &LogData) -> Result<(), FlashLoggerError> {
+    pub async fn log(&mut self, flash: &mut W25Q<SpiDev>, data: &impl ToSong) -> Result<(), FlashLoggerError> {
         loop {
-            match data.serialize(&mut self.buffer[self.i..]) {
+            match data.to_song(&mut self.buffer[self.i..]) {
                 Ok(()) => {
-                    self.i += data.serialization_size();
+                    self.i += data.song_size();
                     self.flush(flash).await?;
                     return Ok(())
                 },
-                Err(SerializationError::NotEnoughBytes) => {
+                Err(ToSongError::BufferOverflow) => {
                     self.buffer[
                         self.i..SECTOR_SIZE
                     ].fill(0);
@@ -64,7 +64,7 @@ impl FlashLogger {
                     continue;
                 },
                 #[allow(unreachable_patterns)]
-                Err(e) => return Err(FlashLoggerError::SerializationError(e))
+                Err(e) => return Err(FlashLoggerError::ToSongError(e))
             }
         }
     }

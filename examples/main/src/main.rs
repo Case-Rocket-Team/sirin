@@ -13,7 +13,7 @@ use embedded_hal_1::spi::ErrorKind;
 use postcard::take_from_bytes;
 use rfm9::ReadRfm9;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{event::Event, flash_logger::FlashLogger, log_data::{Deserialize, LogData, SerializationSize}, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, uunit::WithUnits, Sirin};
+use sirin::{event::Event, flash_logger::FlashLogger, song::{FromSong, OutPacket, SongSize}, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, uunit::WithUnits, Sirin};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::{Publisher, Subscriber}};
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {

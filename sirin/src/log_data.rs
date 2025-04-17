@@ -22,12 +22,12 @@ pub trait Deserialize: SerializationSize {
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub enum SerializationError {
-    NotEnoughBytes
+    BufferOverflow
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DeserializationError {
-    NotEnoughBytes,
+    BufferOverflow,
     InvalidInputData
 }
 
@@ -60,7 +60,7 @@ impl Serialize for LogData {
                     buf[0] = LogDataType::Null as u8;
                     Ok(())
                 } else {
-                    Err(SerializationError::NotEnoughBytes)
+                    Err(SerializationError::BufferOverflow)
                 }
             },
             Self::State(state) => {
@@ -69,7 +69,7 @@ impl Serialize for LogData {
                     buf[0] = LogDataType::State as u8;
                     state.serialize(&mut buf[1..])
                 } else {
-                    Err(SerializationError::NotEnoughBytes)
+                    Err(SerializationError::BufferOverflow)
                 }
             }
         }
@@ -102,7 +102,7 @@ impl Serialize for State {
             LittleEndian::write_f64(&mut buf[72..], self.altitude.value);
             Ok(())
         } else {
-            Err(SerializationError::NotEnoughBytes)
+            Err(SerializationError::BufferOverflow)
         }
     }
 }
@@ -110,7 +110,7 @@ impl Serialize for State {
 impl Deserialize for LogData {
     fn deserialize(buf: &[u8]) -> Result<Self, DeserializationError> {
         let Some(&disc) = buf.get(0) else {
-            return Err(DeserializationError::NotEnoughBytes)
+            return Err(DeserializationError::BufferOverflow)
         };
 
         if disc == LogDataType::Null as u8 {
@@ -126,7 +126,7 @@ impl Deserialize for LogData {
 impl Deserialize for State {
     fn deserialize(buf: &[u8]) -> Result<Self, DeserializationError> {
         if buf.len() < 80 {
-            return Err(DeserializationError::NotEnoughBytes)
+            return Err(DeserializationError::BufferOverflow)
         }
 
         Ok(State {
