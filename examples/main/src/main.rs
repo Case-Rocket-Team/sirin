@@ -13,7 +13,7 @@ use embedded_hal_1::spi::ErrorKind;
 use postcard::take_from_bytes;
 use rfm9::ReadRfm9;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{event::Event, flash_logger::FlashLogger, io::{Deserialize, OutPacket, SerializationSize}, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, uunit::WithUnits, Sirin};
+use sirin::{event::Event, flash_logger::FlashLogger, song::{FromSong, OutPacket, SongSize}, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, uunit::WithUnits, Sirin};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::{Publisher, Subscriber}};
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
@@ -70,13 +70,17 @@ async fn main_task(mut sirin: &'static mut Sirin) {
         }
 
         if i % 10 == 0 {
+<<<<<<< HEAD
             let log = OutPacket::State(state);
+=======
+            // let log = LogData::State(state);
+>>>>>>> song
 
             // TODO: figure out how to do this without another task while also not
             // freezing up the main task. Maybe break up erasing into a separate function?
             if !sirin.flash.is_busy().await.is_ok_and(|b| b) {
                 // TODO: what should we do with this error? It's not like we can log it...
-                let _ = flash_logger.log(&mut sirin.flash, &log).await;
+                // let _ = flash_logger.log(&mut sirin.flash, &log).await;
             }
         }
 

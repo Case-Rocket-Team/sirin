@@ -31,7 +31,11 @@ pub mod triplet;
 pub mod flash_logger;
 pub mod event;
 pub mod state;
+<<<<<<< HEAD
 pub mod io;
+=======
+pub mod song;
+>>>>>>> song
 pub mod subsystems;
 pub mod usb;
 
