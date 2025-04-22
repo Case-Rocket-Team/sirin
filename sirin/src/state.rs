@@ -1,5 +1,5 @@
 use core::ops::Div;
-use sirin_macros::{SongSize, ToSong};
+use sirin_macros::{SongSize, ToSong, FromSong};
 use zerocopy::{KnownLayout, Immutable, FromBytes, IntoBytes};
 use serde::{Deserialize, Serialize};
 use uunit::{Degrees, Meters, Quantity, UnitMeters, UnitSeconds};
@@ -9,7 +9,7 @@ type MetersPerSecond<T> = Quantity<T, <UnitMeters as Div<UnitSeconds>>::Output>;
 type MetersPerSecond2<T> = Quantity<T, <UnitMeters as Div<<UnitMeters as Div<UnitSeconds>>::Output>>::Output>;
 
 
-#[derive(Debug, Clone, SongSize, ToSong)]
+#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 #[repr(C)]
 pub struct Vel {
     pub x: MetersPerSecond<f64>,
@@ -17,7 +17,7 @@ pub struct Vel {
     pub z: MetersPerSecond<f64>,
 }
 
-#[derive(Debug, Clone, SongSize, ToSong)]
+#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 #[repr(C)]
 pub struct Accel {
     pub x: MetersPerSecond2<f64>,
@@ -27,7 +27,7 @@ pub struct Accel {
 
 /// ECEF Position
 /// https://en.wikipedia.org/wiki/Earth-centered,_Earth-fixed_coordinate_system
-#[derive(Debug, Clone, SongSize, ToSong)]
+#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 #[repr(C)]
 pub struct EcefPos {
     pub x: Meters<f64>,
@@ -35,7 +35,7 @@ pub struct EcefPos {
     pub z: Meters<f64>
 }
 
-#[derive(Debug, Clone, SongSize, ToSong)]
+#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 #[repr(C)]
 pub struct State {
     pub pos: EcefPos,

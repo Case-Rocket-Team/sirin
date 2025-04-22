@@ -70,13 +70,13 @@ async fn main_task(mut sirin: &'static mut Sirin) {
         }
 
         if i % 10 == 0 {
-            let log = LogData::State(state);
+            // let log = LogData::State(state);
 
             // TODO: figure out how to do this without another task while also not
             // freezing up the main task. Maybe break up erasing into a separate function?
             if !sirin.flash.is_busy().await.is_ok_and(|b| b) {
                 // TODO: what should we do with this error? It's not like we can log it...
-                let _ = flash_logger.log(&mut sirin.flash, &log).await;
+                // let _ = flash_logger.log(&mut sirin.flash, &log).await;
             }
         }
 

@@ -1,10 +1,10 @@
+#![allow(unused_imports)]
 use std::collections::HashMap;
 
 use proc_macro::TokenStream;
-#[allow(unused_imports)]
 use quote::ToTokens;
 use syn::{parse::{self, Parse}, punctuated::Punctuated, spanned::Spanned, token::Comma, Attribute, DataEnum, DataStruct, Error, Field, Fields, Ident, ItemEnum, Meta, Token, Variant, Visibility};
-#[allow(unused_imports)]
+
 use syn::{parse::Parser, parse_macro_input, DeriveInput};
 use quote::quote;
 use proc_macro2::{Delimiter, Span, TokenStream as TokenStream2, TokenTree};
@@ -202,6 +202,7 @@ fn derive_to_song_enum(enum_song: &EnumSong) -> syn::Result<TokenStream2> {
 
         let mut i = 0;
         for field in &var.fields {
+            // println!("Debug 100: {:?}", field);
             idents.push(
                 field.ident.clone().unwrap_or_else(
                     || Ident::new(&format!("t{}", i).to_string(), field.span())
@@ -328,6 +329,24 @@ fn derive_song_size_enum(enum_song: &EnumSong) -> syn::Result<TokenStream2> {
     })
 }
 
+#[proc_macro_derive(FromSong, attributes(song))]
+pub fn derive_from_song(tok: TokenStream) -> TokenStream {
+    let tok1 = tok.clone();
+    let item: DeriveInput = parse_macro_input!(tok1);
+    let ident = item.ident;
+
+    match item.data {
+        syn::Data::Struct(s) => derive_from_song_struct(ident, s).unwrap().into(),
+        syn::Data::Enum(e) => {
+            let enum_song: EnumSong = parse_macro_input!(tok);
+            let tok = derive_from_song_enum(&enum_song).unwrap();
+            // println!("{}", tok.to_string());
+            tok.into()
+        },
+        _ => todo!()
+    }
+}
+
 fn derive_from_song_struct(ident: Ident, item: DataStruct) -> Result<TokenStream2, anyhow::Error> {
     let mut from_song_out = vec![];
     
@@ -335,9 +354,9 @@ fn derive_from_song_struct(ident: Ident, item: DataStruct) -> Result<TokenStream
         let Field { ident, ty, .. } = field;
 
         from_song_out.push(quote! {
-            {
+            #ident: {
                 let value = <#ty as FromSong>::from_song(&buf[i..])?;
-                i += self.#ident.song_size();
+                i += value.song_size();
                 value
             }
         });
@@ -345,16 +364,95 @@ fn derive_from_song_struct(ident: Ident, item: DataStruct) -> Result<TokenStream
 
     Ok(quote! {
         impl FromSong for #ident {
-            fn from_song(&self, buf: &[u8]) -> Result<Self, FromSongError> {
-                let size = self.song_size();
-
-                if buf.len() < size {
-                    return Err(FromSongError::BufferOverflow)
-                }
-
-                Ok(#ident {
+            fn from_song(buf: &[u8]) -> Result<Self, FromSongError> {
+                let mut i = 0;
+                Ok(
+                #ident {
                     #(#from_song_out,)*
-                })
+                }
+                )
+            }
+        }
+    })
+}
+
+
+fn derive_from_song_enum(enum_song: &EnumSong) -> syn::Result<TokenStream2> {
+    let ident1 = &enum_song.item.ident;
+    let desc_ident = &enum_song.disc_name;
+    // let item = &enum_song.item;
+
+    let mut out = vec![];
+    let mut k = 0;
+    for var in &enum_song.item.variants {
+
+        let mut fields_out = vec![];
+        let mut idents = vec![];
+        
+        let mut i = 0;
+        for field in &var.fields {
+            let ident = field.ident.clone().unwrap_or_else(
+                || Ident::new(&format!("t{}", i).to_string(), field.span()));
+            idents.push(ident.clone());
+            
+            let typ = field.ty.clone();
+            
+            fields_out.push(quote! {
+                let #ident = #typ::from_song(&buf[i..])?;
+                i += #ident.song_size();
+            });
+            i += 1;
+        }   
+
+        let ident = &var.ident;
+
+
+        match &var.fields {
+            Fields::Unit => out.push(quote! {
+                    val if val == #desc_ident::#ident as u8 => Ok(#ident1::#ident)
+                }),
+            Fields::Unnamed(_) => out.push(quote! { 
+                val if val == #desc_ident::#ident as u8 => {
+                    let mut i = 1;
+                    #(#fields_out)*
+                    Ok(#ident1::#ident(#(#idents,)*))
+                }}),
+            Fields::Named(_) => todo!()
+
+        };
+
+        // println!("Debug 22: {:?}", out[k].to_string());
+        k += 1;
+    }
+
+    // let test = quote! {
+    //     impl FromSong for #ident1 {
+    //         fn from_song(buf: &[u8]) -> Result<Self, FromSongError> {
+    //             let Some(&disc) = buf.get(0) else {
+    //                 return Err(FromSongError::BufferOverflow)
+    //             };
+
+    //             match disc {
+    //                 #(#out,)*
+    //                 _ => Err(FromSongError::InvalidPacketId),
+    //             }
+    //         }
+    //     }
+    // };
+
+    // println!("Debug 3: {}", test.to_string());
+    
+    Ok(quote! {
+        impl FromSong for #ident1 {
+            fn from_song(buf: &[u8]) -> Result<Self, FromSongError> {
+                let Some(&disc) = buf.get(0) else {
+                    return Err(FromSongError::BufferOverflow)
+                };
+
+                match disc {
+                    #(#out,)*
+                    _ => Err(FromSongError::InvalidPacketId)
+                }
             }
         }
     })

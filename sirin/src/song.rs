@@ -1,6 +1,6 @@
 use crate::state::{EcefPos, State, Accel, Vel};
 use byteorder::{ByteOrder, LittleEndian};
-use sirin_macros::{SongSize, ToSong};
+use sirin_macros::{SongSize, ToSong, FromSong};
 use uunit::{Dimension, Quantity, WithUnits};
 use zerocopy::{IntoBytes, transmute_mut, transmute};
 
@@ -76,8 +76,11 @@ macro_rules! numeric_impl {
 
             impl FromSong for $ty {
                 fn from_song(buf: &[u8]) -> Result<Self, FromSongError> {
+                    if buf.len() < $size {
+                        return Err(FromSongError::BufferOverflow);
+                    }
                     let mut arr = [0u8; $size];
-                    arr.copy_from_slice(buf);
+                    arr.copy_from_slice(&buf[0..$size]);
                     Ok(<$ty>::from_le_bytes(arr))
                 }
             }
@@ -100,52 +103,52 @@ numeric_impl!(
     f64 => 8
 );
 
-#[derive(Debug, Clone, SongSize, ToSong)]
+#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 #[song(discriminant(OutPacketType = u8))]
 pub enum OutPacket {
     Null,
-    State(State)
+    State(State),
 }
 
-impl FromSong for OutPacket {
-    fn from_song(buf: &[u8]) -> Result<Self, FromSongError> {
-        let Some(&disc) = buf.get(0) else {
-            return Err(FromSongError::BufferOverflow)
-        };
+// impl FromSong for OutPacket {
+//     fn from_song(buf: &[u8]) -> Result<Self, FromSongError> {
+//         let Some(&disc) = buf.get(0) else {
+//             return Err(FromSongError::BufferOverflow)
+//         };
 
-        if disc == OutPacketType::Null as u8 {
-            Ok(OutPacket::Null)
-        } else if disc == OutPacketType::State as u8 {
-            Ok(OutPacket::State(State::from_song(&buf[1..])?))
-        } else {
-            Err(FromSongError::InvalidPacketId)
-        }
-    }
-}
+//         if disc == OutPacketType::Null as u8 {
+//             Ok(OutPacket::Null)
+//         } else if disc == OutPacketType::State as u8 {
+//             Ok(OutPacket::State(State::from_song(&buf[1..])?))
+//         } else {
+//             Err(FromSongError::InvalidPacketId)
+//         }
+//     }
+// }
 
-impl FromSong for State {
-    fn from_song(buf: &[u8]) -> Result<Self, FromSongError> {
-        if buf.len() < 80 {
-            return Err(FromSongError::BufferOverflow)
-        }
+// impl FromSong for State {
+//     fn from_song(buf: &[u8]) -> Result<Self, FromSongError> {
+//         if buf.len() < 80 {
+//             return Err(FromSongError::BufferOverflow)
+//         }
 
-        Ok(State {
-            pos: EcefPos {
-                x: LittleEndian::read_f64(&buf[0..8]).with_units(),
-                y: LittleEndian::read_f64(&buf[8..16]).with_units(),
-                z: LittleEndian::read_f64(&buf[16..24]).with_units()
-            },
-            vel: Vel {
-                x: LittleEndian::read_f64(&buf[24..32]).with_units(),
-                y: LittleEndian::read_f64(&buf[32..40]).with_units(),
-                z: LittleEndian::read_f64(&buf[40..48]).with_units(),
-            },
-            accel: Accel {
-                x: LittleEndian::read_f64(&buf[48..56]).with_units(),
-                y: LittleEndian::read_f64(&buf[56..64]).with_units(),
-                z: LittleEndian::read_f64(&buf[64..72]).with_units()
-            },
-            altitude: LittleEndian::read_f64(&buf[72..80]).with_units()
-        })
-    }
-}
+//         Ok(State {
+//             pos: EcefPos {
+//                 x: LittleEndian::read_f64(&buf[0..8]).with_units(),
+//                 y: LittleEndian::read_f64(&buf[8..16]).with_units(),
+//                 z: LittleEndian::read_f64(&buf[16..24]).with_units()
+//             },
+//             vel: Vel {
+//                 x: LittleEndian::read_f64(&buf[24..32]).with_units(),
+//                 y: LittleEndian::read_f64(&buf[32..40]).with_units(),
+//                 z: LittleEndian::read_f64(&buf[40..48]).with_units(),
+//             },
+//             accel: Accel {
+//                 x: LittleEndian::read_f64(&buf[48..56]).with_units(),
+//                 y: LittleEndian::read_f64(&buf[56..64]).with_units(),
+//                 z: LittleEndian::read_f64(&buf[64..72]).with_units()
+//             },
+//             altitude: LittleEndian::read_f64(&buf[72..80]).with_units()
+//         })
+//     }
+// }
