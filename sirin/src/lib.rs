@@ -112,7 +112,7 @@ impl Sirin {
                 p4: p.PB0,
                 p5: p.PB1,
                 p6: p.PB2,
-                p7: p.PE7,
+                p7: p.PE7, 
                 p8: p.PE8,
                 p9: p.PE9,
                 p10: p.PE10,

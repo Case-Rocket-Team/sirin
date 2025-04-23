@@ -1,12 +1,13 @@
 #![no_std]
 #![no_main]
+#![allow(unused_imports)]
 
 use core::mem::{self, MaybeUninit};
 
 use bmp3::{hal::{Bmp3RawData, ReadBmp3, RegErrReg, RegStatus}, Bmp3Readout};
 use defmt::*;
 use embassy_executor::{task, Executor, Spawner};
-use embassy_stm32::{bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, peripherals::{self, DMA1_CH0, DMA1_CH1, PD8, PD9, USART3}, usart::{self, Config, Uart}};
+use embassy_stm32::{bind_interrupts, gpio::{Level, Output, Speed}, peripherals::{self, DMA1_CH0, DMA1_CH1, PD8, PD9, USART3}, usart::{self, Config, Uart}};
 use embassy_time::Timer;
 use rfm9x::ReadRfm9x;
 use sirin_c::cmsis_dsp_sin;
@@ -45,6 +46,7 @@ bind_interrupts!(struct Irqs {
     USART3 => usart::InterruptHandler<peripherals::USART3>;
 });
 
+#[allow(unused_variables)]
 async fn main_task(sirin: &'static mut Sirin) {
     println!("Hello world!");
 }

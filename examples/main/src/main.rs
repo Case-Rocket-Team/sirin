@@ -1,12 +1,13 @@
 #![no_std]
 #![no_main]
+#[allow(unused_imports)]
 
 use core::{f32, f64::consts::PI, mem::{self, MaybeUninit}};
 
 use bmp3::{hal::{Bmp3RawData, ReadBmp3, RegErrReg, RegStatus}, Bmp3Readout};
 use defmt::debug;
 use embassy_executor::{task, Executor, Spawner};
-use embassy_stm32::{bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, peripherals::{self, DMA1_CH0, DMA1_CH1, PD8, PD9, USART3}, usart::{self, Config, Uart}};
+use embassy_stm32::{bind_interrupts, gpio::{Level, Output, Speed}, peripherals::{self, DMA1_CH0, DMA1_CH1, PD8, PD9, USART3}, usart::{self, Config, Uart}};
 use embassy_time::Timer;
 use embedded_hal_1::spi::ErrorKind;
 use rfm9x::ReadRfm9x;
@@ -66,6 +67,7 @@ async fn main_task(sirin: &'static mut Sirin) {
 
 // TODO: airbreaks
 #[task]
+#[allow(unused_variables)]
 async fn kalman(
     mut event_sub: Subscriber<'static, CriticalSectionRawMutex, Event, 100, 4, 4>
 ) {
@@ -89,6 +91,7 @@ async fn kalman(
 }
 
 #[task]
+#[allow(unused_variables)]
 async fn flash_writer(
     logger: &'static mut FlashLogger,
     mut flash_sub: Subscriber<'static, CriticalSectionRawMutex, Event, 100, 4, 4>

@@ -11,9 +11,7 @@ members = [
     "spi-handle",
     "w25q",
     "sirin-c",
-    "examples/imu-test",
     "examples/bare",
-    "examples/h3lis-test",
     "examples/cmsis-dsp-test",
     "examples/main"
 ]
