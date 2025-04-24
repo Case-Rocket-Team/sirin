@@ -1,6 +1,7 @@
 use crate::song::ToSongError;
 use embassy_sync::pubsub::Error as PubSubError;
 use rfm9::Rfm9Error;
+use embassy_usb::driver::EndpointError as USBError;
 
 macro_rules! join_error {
     (enum $err:ident ($($specialized_err:ident),*)) => {
@@ -25,5 +26,6 @@ macro_rules! join_error {
 join_error!(enum SirinError (
     PubSubError,
     ToSongError,
-    Rfm9Error
+    Rfm9Error,
+    USBError
 ));
