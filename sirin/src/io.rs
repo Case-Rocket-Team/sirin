@@ -20,11 +20,6 @@ pub struct RadioOutPacket {
     packet: OutPacket
 }
 
-pub struct USBOutPacket {
-    callsign: [u8; 16],
-    packet: OutPacket
-}
-
 impl RadioOutPacket {
     pub fn new(packet: OutPacket) -> Self {
         let mut callsign = [0u8; 16];
