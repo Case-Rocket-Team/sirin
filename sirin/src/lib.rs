@@ -37,6 +37,13 @@ pub mod state;
 pub mod song;
 pub mod subsystems;
 pub mod usb;
+pub mod io;
+
+mod error;
+
+pub type Radio = Rfm9<SpiDev>;
+pub type Flash = W25Q<SpiDev>;
+pub type UsbSerial = UsbSerialClass;
 
 #[derive(Debug, Clone)]
 pub struct SirinHealth {

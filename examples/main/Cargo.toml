@@ -45,6 +45,7 @@ bmp3 = { version = "0.1.1", path = "../../bmp3" }
 rfm9 = { version = "0.1.1", path = "../../rfm9", features = ['defmt'] }
 sirin-c = { version = "0.1.1", path = "../../sirin-c" }
 postcard = "1.1.1"
+w25qx = { version = "0.1.1", path = "../../w25qx" }
 #panic-halt = "0.2.0"
 
 [[bin]]

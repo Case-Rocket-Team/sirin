@@ -1049,6 +1049,7 @@ dependencies = [
  "sirin-c",
  "static_cell",
  "stm32-fmc",
+ "w25qx",
 ]
 
 [[package]]

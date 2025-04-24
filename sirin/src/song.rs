@@ -1,4 +1,4 @@
-use core::mem::MaybeUninit;
+use core::{marker::PhantomData, mem::MaybeUninit};
 
 use crate::state::{EcefPos, State, Accel, Vel};
 use byteorder::{ByteOrder, LittleEndian};
@@ -30,15 +30,78 @@ pub trait Song: ToSong + FromSong {}
 #[derive(Debug, Clone)]
 pub enum ToSongError {
     BufferOverflow,
-    NotImplemented
+    NotImplemented,
+    StringTooLong
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FromSongError {
     BufferOverflow,
     NotImplemented,
-    InvalidPacketId
+    InvalidPacketId,
+    Utf8Error
 }
+
+//TODO: add annotation for derive macro that allows you to specify the size of a &str
+impl SongSize for &str {
+    fn song_size(self: &Self) -> usize {
+        2 + self.len()
+    }
+}
+
+impl ToSong for &str {
+    fn to_song(&self, buf: &mut [u8]) -> Result<(), ToSongError> {
+        if buf[2..(2 + self.len())].len() != self.len() {
+            return Err(ToSongError::BufferOverflow)
+        }
+        self.len().to_song(buf)?;
+        buf[2..(2 + self.len())].copy_from_slice(self.as_bytes());
+        Ok(())
+    }
+}
+
+// This is not implemented correctly
+/*
+impl <const N: usize> SongSize for heapless::String<N> {
+    fn song_size(self: &Self) -> usize {
+        N
+    }
+}
+
+impl <const N: usize> ToSong for heapless::String<N> {
+    fn to_song(&self, buf: &mut [u8]) -> Result<(), ToSongError> {
+        if buf.len() < N {
+            return Err(ToSongError::BufferOverflow)
+        }
+
+        buf.copy_from_slice(self.as_bytes());
+        Ok(())
+    }
+}
+
+impl <const N: usize> FromSong for heapless::String<N> {
+    fn from_song(buf: &[u8]) -> Result<Self, FromSongError> where Self: Sized {
+        if buf.len() < N {
+            return Err(FromSongError::BufferOverflow)
+        }
+
+        let vec = heapless::Vec::from_slice(&buf[0..N]).unwrap();
+        Ok(Self::from_utf8(vec).map_err(|_| FromSongError::Utf8Error)?)
+    }
+}*/
+
+// TODO -- How are we going to handle reading this out?
+/*impl <'a> FromSong for &'a str {
+    fn from_song(buf: &[u8]) -> Result<Self, FromSongError> where Self: Sized {
+        let len = u16::from_song(buf)?;
+        if len as usize + 2 > buf.len() {
+            return Err(FromSongError::BufferOverflow)
+        }
+        let str = core::str::from_utf8(&buf[2..(len as usize)]).map_err(|e| FromSongError::Utf8Error)?;
+        
+        Ok(str)
+    }
+}*/
 
 impl <T: SongSize, D: Dimension> SongSize for Quantity<T, D> {
     fn song_size(self: &Self) -> usize {
@@ -59,11 +122,12 @@ impl <T: FromSong, D: Dimension> FromSong for Quantity<T, D> {
 }
 
 macro_rules! numeric_impl {
-    ($($ty: ty => $size:expr),*) => {
+    ($($ty: ty),*) => {
         $(
             impl SongSize for $ty {
+                #[inline]
                 fn song_size(&self) -> usize {
-                    $size
+                    core::mem::size_of::<$ty>()
                 }
             }
 
@@ -80,11 +144,11 @@ macro_rules! numeric_impl {
 
             impl FromSong for $ty {
                 fn from_song(buf: &[u8]) -> Result<Self, FromSongError> {
-                    if buf.len() < $size {
+                    if buf.len() < core::mem::size_of::<$ty>() {
                         return Err(FromSongError::BufferOverflow);
                     }
-                    let mut arr = [0u8; $size];
-                    arr.copy_from_slice(&buf[0..$size]);
+                    let mut arr = [0u8; core::mem::size_of::<$ty>()];
+                    arr.copy_from_slice(&buf[0..core::mem::size_of::<$ty>()]);
                     Ok(<$ty>::from_le_bytes(arr))
                 }
             }
@@ -93,18 +157,20 @@ macro_rules! numeric_impl {
 }
 
 numeric_impl!(
-    u8 => 1,
-    u16 => 2,
-    u32 => 4,
-    u64 => 8,
-    u128 => 16,
-    i8 => 1,
-    i16 => 2,
-    i32 => 4,
-    i64 => 8,
-    i128 => 16,
-    f32 => 4,
-    f64 => 8
+    u8,
+    u16,
+    u32,
+    u64,
+    u128,
+    usize,
+    i8,
+    i16,
+    i32,
+    i64,
+    i128,
+    isize,
+    f32,
+    f64
 );
 
 impl <T: SongSize, const N: usize> SongSize for [T; N] {
@@ -149,9 +215,7 @@ impl <T: SongSize + FromSong, const N: usize> FromSong for [T; N] {
     }
 }
 
-pub struct OutPacketChannel<const N: usize, const L: usize> {
-    
-}
+pub const MAX_OUT_PACKET_SIZE: usize = 512;
 
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 #[song(discriminant(OutPacketType = u8))]

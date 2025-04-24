@@ -11,10 +11,11 @@ use embassy_stm32::{bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, p
 use embassy_time::Timer;
 use embedded_hal_1::spi::ErrorKind;
 use postcard::take_from_bytes;
-use rfm9::ReadRfm9;
+use rfm9::{ReadRfm9, Rfm9};
+use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{event::Event, flash_logger::FlashLogger, song::{FromSong, OutPacket, SongSize}, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, uunit::WithUnits, Sirin};
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::{Publisher, Subscriber}};
+use sirin::{event::Event, flash_logger::FlashLogger, io::{out, radio_io_task}, song::{FromSong, OutPacket, SongSize}, spi::SpiDev, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, uunit::WithUnits, Flash, Radio, Sirin, UsbSerial};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{Publisher, Subscriber}};
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
     core::mem::transmute(item)
@@ -49,6 +50,8 @@ bind_interrupts!(struct Irqs {
 async fn main_task(mut sirin: &'static mut Sirin) {
     let mut i: u32 = 0;
 
+    sirin.spawner.spawn(radio_io_task(&mut sirin.radio)).unwrap();
+
     // going to change this later
     let mut state: State;
 
@@ -67,25 +70,12 @@ async fn main_task(mut sirin: &'static mut Sirin) {
         }
 
         if i % 10 == 0 {
-            // let log = LogData::State(state);
-
-            // TODO: figure out how to do this without another task while also not
-            // freezing up the main task. Maybe break up erasing into a separate function?
-            if !sirin.flash.is_busy().await.is_ok_and(|b| b) {
-                // TODO: what should we do with this error? It's not like we can log it...
-                // let _ = flash_logger.log(&mut sirin.flash, &log).await;
-            }
+            // Do logging
+            out(OutPacket::State(state));
         }
-
-        call_user_code(&mut sirin);
 
         i = i.wrapping_add(1);
     }
-}
-
-#[allow(unused)]
-fn call_user_code(sirin: &mut Sirin) {
-    // Dummy function to ensure that we can get a mutable borrow of Sirin
 }
 
 unsafe fn run_kalman_filter(state: *mut MaybeUninit<State>, data: *const SirinData) {
