@@ -17,7 +17,7 @@ members = [
     "examples/cmsis-dsp-test",
     "examples/main",
     "examples/usb-test"
-, "sirin-song", "sirin-song-macros"]
+]
 resolver = "2"
 
 [profile.dev]

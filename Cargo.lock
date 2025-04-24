@@ -1311,6 +1311,7 @@ dependencies = [
  "embedded-io",
  "enum-display-derive",
  "h3lis",
+ "heapless 0.8.0",
  "lsm6dso-spi",
  "paste",
  "postcard",
@@ -1337,20 +1338,6 @@ dependencies = [
 
 [[package]]
 name = "sirin-macros"
-version = "0.1.1"
-dependencies = [
- "anyhow",
- "proc-macro2",
- "quote",
- "syn 2.0.100",
-]
-
-[[package]]
-name = "sirin-song"
-version = "0.1.0"
-
-[[package]]
-name = "sirin-song-macros"
 version = "0.1.1"
 dependencies = [
  "anyhow",

@@ -1,1 +1,0 @@
-Serialization/deserialization format for Sirin. Basically just a simple packed repr

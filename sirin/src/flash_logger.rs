@@ -39,34 +39,26 @@ impl FlashLogger {
         }
     }
 
-    pub async fn log(&mut self, flash: &mut W25Q<SpiDev>, data: &impl ToSong) -> Result<(), FlashLoggerError> {
-        loop {
-            match data.to_song(&mut self.buffer[self.i..]) {
-                Ok(()) => {
-                    self.i += data.song_size();
-                    self.flush(flash).await?;
-                    return Ok(())
-                },
-                Err(ToSongError::BufferOverflow) => {
-                    self.buffer[
-                        self.i..SECTOR_SIZE
-                    ].fill(0);
+    pub async fn log(&mut self, flash: &mut W25Q<SpiDev>, data: &[u8]) -> Result<(), FlashLoggerError> {
+        if data.len() > self.buffer.len() - self.i {
+            self.buffer[
+                self.i..SECTOR_SIZE
+            ].fill(0);
 
-                    println!("Out of bytes!");
+            println!("Out of bytes!");
 
-                    self.i = SECTOR_SIZE;
+            self.i = SECTOR_SIZE;
 
-                    self.flush(flash).await?;
+            self.flush(flash).await?;
 
-                    self.i = 0;
-                    self.i_last = 0;
-
-                    continue;
-                },
-                #[allow(unreachable_patterns)]
-                Err(e) => return Err(FlashLoggerError::ToSongError(e))
-            }
+            self.i = 0;
+            self.i_last = 0;
         }
+
+        self.i += data.len();
+        self.buffer[self.i..].copy_from_slice(data);
+        self.flush(flash).await?;
+        Ok(())
     }
 
     async fn flush(&mut self, flash: &mut W25Q<SpiDev>) -> Result<(), FlashLoggerError> {

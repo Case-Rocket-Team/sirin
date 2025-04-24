@@ -52,9 +52,6 @@ async fn main_task(mut sirin: &'static mut Sirin) {
     // going to change this later
     let mut state: State;
 
-    // maybe consider moving this into Sirin
-    let mut flash_logger = FlashLogger::new();
-
     loop {
         sirin.data = SirinData::measure(
             &mut sirin.baro,
@@ -70,11 +67,7 @@ async fn main_task(mut sirin: &'static mut Sirin) {
         }
 
         if i % 10 == 0 {
-<<<<<<< HEAD
-            let log = OutPacket::State(state);
-=======
             // let log = LogData::State(state);
->>>>>>> song
 
             // TODO: figure out how to do this without another task while also not
             // freezing up the main task. Maybe break up erasing into a separate function?
@@ -92,7 +85,7 @@ async fn main_task(mut sirin: &'static mut Sirin) {
 
 #[allow(unused)]
 fn call_user_code(sirin: &mut Sirin) {
-    // Dummy function to ensure that we can get ownership of Sirin
+    // Dummy function to ensure that we can get a mutable borrow of Sirin
 }
 
 unsafe fn run_kalman_filter(state: *mut MaybeUninit<State>, data: *const SirinData) {

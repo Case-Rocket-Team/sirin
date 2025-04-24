@@ -10,7 +10,7 @@ bind_interrupts!(pub struct Irqs {
     OTG_FS => embassy_stm32::usb::InterruptHandler<peripherals::USB_OTG_FS>;
 });
 
-pub type UsbSerial = CdcAcmClass<'static, Driver<'static, USB_OTG_FS>>;
+pub type UsbSerialClass = CdcAcmClass<'static, Driver<'static, USB_OTG_FS>>;
 
 // I wanted to do these statically allocated stuff similar to `main.rs` with
 // a local function variable where there's a `loop`, but you can't do that here
@@ -28,7 +28,7 @@ pub unsafe fn usb_serial(
     usb_fs: USB_OTG_FS,
     dp: PA12,
     dm: PA11
-) -> UsbSerial {
+) -> UsbSerialClass {
     // SAFETY: all of the static mut's above must only have one `&mut` taken of them.
 
     let mut usb_config = embassy_stm32::usb::Config::default();

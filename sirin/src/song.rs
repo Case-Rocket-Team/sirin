@@ -1,8 +1,12 @@
+use core::mem::MaybeUninit;
+
 use crate::state::{EcefPos, State, Accel, Vel};
 use byteorder::{ByteOrder, LittleEndian};
+use embassy_futures::join::join3;
 use sirin_macros::{SongSize, ToSong, FromSong};
 use uunit::{Dimension, Quantity, WithUnits};
 use zerocopy::{IntoBytes, transmute_mut, transmute};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
 
 pub trait SongSize {
     /// Number of bytes that this should be when serialized.
@@ -103,52 +107,72 @@ numeric_impl!(
     f64 => 8
 );
 
+impl <T: SongSize, const N: usize> SongSize for [T; N] {
+    fn song_size(self: &Self) -> usize {
+        let mut i = 0;
+        for item in self {
+            i += item.song_size();
+        }
+        i
+    }
+}
+
+impl <T: SongSize + ToSong, const N: usize> ToSong for [T; N] {
+    fn to_song(&self, buf: &mut [u8]) -> Result<(), ToSongError> {
+        let mut i = 0;
+        for item in self {
+            item.to_song(&mut buf[i..])?;
+            i += item.song_size();
+        }
+        Ok(())
+    }
+}
+
+impl <T: SongSize + FromSong, const N: usize> FromSong for [T; N] {
+    fn from_song(buf: &[u8]) -> Result<Self, FromSongError> where Self: Sized {
+        let mut i = 0;
+        let mut arr = [const { MaybeUninit::uninit() }; N];
+
+        for j in 0..N {
+            let item = T::from_song(&buf[i..])?;
+            i += item.song_size();
+            arr[j] = MaybeUninit::new(item);
+        }
+
+        unsafe {
+            // https://github.com/rust-lang/rust/issues/61956
+            let ptr = &mut arr as *mut _ as *mut [T; N];
+            let res = ptr.read();
+            core::mem::forget(arr);
+            Ok(res)
+        }
+    }
+}
+
+pub struct OutPacketChannel<const N: usize, const L: usize> {
+    
+}
+
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 #[song(discriminant(OutPacketType = u8))]
 pub enum OutPacket {
     Null,
     State(State),
+    FlashSectorDump(FlashPageDump)
 }
 
-// impl FromSong for OutPacket {
-//     fn from_song(buf: &[u8]) -> Result<Self, FromSongError> {
-//         let Some(&disc) = buf.get(0) else {
-//             return Err(FromSongError::BufferOverflow)
-//         };
+#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 
-//         if disc == OutPacketType::Null as u8 {
-//             Ok(OutPacket::Null)
-//         } else if disc == OutPacketType::State as u8 {
-//             Ok(OutPacket::State(State::from_song(&buf[1..])?))
-//         } else {
-//             Err(FromSongError::InvalidPacketId)
-//         }
-//     }
-// }
+pub struct FlashPageDump {
+    addr: u32,
+    data: [u8; 256]
+}
 
-// impl FromSong for State {
-//     fn from_song(buf: &[u8]) -> Result<Self, FromSongError> {
-//         if buf.len() < 80 {
-//             return Err(FromSongError::BufferOverflow)
-//         }
+#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
+#[song(discriminant(InPacketType = u8))]
+pub enum InPacket {
+    Null,
+    DumpFlash
+}
 
-//         Ok(State {
-//             pos: EcefPos {
-//                 x: LittleEndian::read_f64(&buf[0..8]).with_units(),
-//                 y: LittleEndian::read_f64(&buf[8..16]).with_units(),
-//                 z: LittleEndian::read_f64(&buf[16..24]).with_units()
-//             },
-//             vel: Vel {
-//                 x: LittleEndian::read_f64(&buf[24..32]).with_units(),
-//                 y: LittleEndian::read_f64(&buf[32..40]).with_units(),
-//                 z: LittleEndian::read_f64(&buf[40..48]).with_units(),
-//             },
-//             accel: Accel {
-//                 x: LittleEndian::read_f64(&buf[48..56]).with_units(),
-//                 y: LittleEndian::read_f64(&buf[56..64]).with_units(),
-//                 z: LittleEndian::read_f64(&buf[64..72]).with_units()
-//             },
-//             altitude: LittleEndian::read_f64(&buf[72..80]).with_units()
-//         })
-//     }
-// }
+//pub static EVENT_CHANNEL: PubSubChannel<CriticalSectionRawMutex, Event, 100, 4, 4>;

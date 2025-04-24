@@ -5,5 +5,4 @@
     "rust-analyzer.check.allTargets": false,
     "cmake.ignoreCMakeListsMissing": true,
     "clangd.arguments": [],
-    "rust-analyzer.checkOnSave": false,
 }

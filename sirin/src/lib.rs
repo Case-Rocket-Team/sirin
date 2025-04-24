@@ -5,15 +5,18 @@
 use core::{marker::PhantomPinned, mem::MaybeUninit, pin::{pin, Pin}, ptr::addr_of_mut};
 use bmp3::Bmp3;
 use embassy_executor::{Executor, Spawner};
-use embassy_futures::join::{join, join5, join_array};
+use embassy_futures::join::{join, join3, join5, join_array};
 use embassy_stm32::{ bind_interrupts, gpio::{Level, Output, Speed}, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, Config, Peripherals };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
 use event::Event;
+use flash_logger::FlashLogger;
 use gpio::GpioPins;
 use rfm9::{ReadRfm9, Rfm9};
 use snafu::{ensure, Snafu};
+use song::{OutPacket, ToSong, ToSongError};
 use subsystems::{BaroData, HighGImuData, ImuData, Measurement, SirinData, Subsystem, SubsystemError};
-use usb::{usb_serial, UsbSerial};
+use sync::Mutex;
+use usb::{usb_serial, UsbSerialClass};
 use uunit::{Celsius, Pascals};
 use w25qx::W25Q;
 use lsm6dso_spi::Lsm6dso;
@@ -31,11 +34,7 @@ pub mod triplet;
 pub mod flash_logger;
 pub mod event;
 pub mod state;
-<<<<<<< HEAD
-pub mod io;
-=======
 pub mod song;
->>>>>>> song
 pub mod subsystems;
 pub mod usb;
 
@@ -58,6 +57,8 @@ pub struct Sirin {
     // Subsystems:
     pub flash: W25Q<SpiDev>,
     pub radio: Rfm9<SpiDev>,
+    pub usb: UsbSerialClass,
+    pub led: Output<'static>,
 
     // Instrument subsytems
     pub baro: Bmp3<SpiDev>,
@@ -69,9 +70,7 @@ pub struct Sirin {
     pub data: SirinData,
     pub health: SirinHealth,
 
-    pub event_channel: PubSubChannel<CriticalSectionRawMutex, Event, 100, 4, 4>,
-
-    pub usb: UsbSerial,
+    pub flash_logger: FlashLogger,
 
     _phantom_pinned: PhantomPinned
 }
@@ -114,7 +113,7 @@ impl Sirin {
                 config.rcc.mux.usbsel = mux::Usbsel::HSI48;
             }
 
-            ptr!(sirin.event_channel).write(PubSubChannel::new());
+            //ptr!(sirin.event_channel).write(PubSubChannel::new());
 
             let p = embassy_stm32::init(config);
             let mut spi_config = em_spi::Config::default();
@@ -186,6 +185,7 @@ impl Sirin {
             let highg_imu_cs = Output::new(p.PE13,Level::High, Speed::High);
             highg_imu_ptr.write(H3lis::new((*spi1).handle(highg_imu_cs)));
 
+
             ptr!(sirin.data).write(SirinData::unmeasured());
 
             ptr!(sirin.usb).write(usb_serial(
@@ -194,7 +194,11 @@ impl Sirin {
                 p.PA12,
                 p.PA11
             ));
+
+            ptr!(sirin.led).write(Output::new(p.PA1, Level::Low, Speed::High));
             
+            ptr!(sirin.flash_logger).write(FlashLogger::new());
+
             // TODO: JOIN FUTURES, AWAIT
             baro_ptr.write(baro_future.await.unwrap());
             (*radio_ptr).init().await.unwrap();
