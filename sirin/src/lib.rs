@@ -8,12 +8,11 @@ use embassy_executor::{Executor, Spawner};
 use embassy_futures::join::{join, join3, join5, join_array};
 use embassy_stm32::{ bind_interrupts, gpio::{Level, Output, Speed}, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, Config, Peripherals };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
-use event::Event;
 use flash_logger::FlashLogger;
 use gpio::GpioPins;
 use rfm9::{ReadRfm9, Rfm9};
 use snafu::{ensure, Snafu};
-use song::{OutPacket, ToSong, ToSongError};
+use sirin_shared::song::{OutPacket, ToSong, ToSongError};
 use subsystems::{BaroData, HighGImuData, ImuData, Measurement, SirinData, Subsystem, SubsystemError};
 use sync::Mutex;
 use usb::{usb_serial, UsbSerialClass};
@@ -32,14 +31,14 @@ pub mod gpio;
 pub mod sync;
 pub mod triplet;
 pub mod flash_logger;
-pub mod event;
-pub mod state;
-pub mod song;
 pub mod subsystems;
 pub mod usb;
 pub mod io;
 
 mod error;
+
+pub use sirin_shared::song;
+pub use sirin_shared::state;
 
 pub type Radio = Rfm9<SpiDev>;
 pub type Flash = W25Q<SpiDev>;

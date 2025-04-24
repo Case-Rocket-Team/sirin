@@ -1319,6 +1319,7 @@ dependencies = [
  "rfm9",
  "serde",
  "sirin-macros",
+ "sirin-shared",
  "snafu",
  "spi-handle",
  "static_cell",
@@ -1345,6 +1346,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.100",
+]
+
+[[package]]
+name = "sirin-shared"
+version = "0.1.0"
+dependencies = [
+ "sirin-macros",
+ "uunit",
 ]
 
 [[package]]

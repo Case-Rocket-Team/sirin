@@ -1,4 +1,4 @@
-use crate::song::ToSongError;
+use sirin_shared::song::ToSongError;
 use embassy_sync::pubsub::Error as PubSubError;
 use rfm9::Rfm9Error;
 

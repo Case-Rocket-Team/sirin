@@ -3,7 +3,8 @@ use embassy_executor::task;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, PubSubChannel}};
 use sirin_macros::{FromSong, SongSize, ToSong};
 
-use crate::{error::SirinError, song::{OutPacket, SongSize, ToSong, FromSong, ToSongError, FromSongError, MAX_OUT_PACKET_SIZE}, Flash, Radio, UsbSerial};
+use crate::{error::SirinError, Flash, Radio, UsbSerial};
+use sirin_shared::song::{OutPacket, SongSize, ToSong, FromSong, ToSongError, FromSongError, MAX_OUT_PACKET_SIZE};
 
 //pub static OUT_CHANNEL: Channel<CriticalSectionRawMutex, OutPacket, 10> = Channel::new();
 pub static OUT_CHANNEL: PubSubChannel<CriticalSectionRawMutex, OutPacket, 32, 3, 0> = PubSubChannel::new();

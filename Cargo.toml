@@ -2,6 +2,7 @@
 members = [
     "sirin",
     "sirin-macros",
+    "sirin-shared",
     "bmp3",
     "dev-csr",
     "dev-csr-macro",
