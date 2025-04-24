@@ -2,6 +2,7 @@ use defmt::Debug2Format;
 use embassy_executor::task;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, PubSubChannel}};
 use sirin_macros::{FromSong, SongSize, ToSong};
+use crate::FlashLogger;
 
 use crate::{error::SirinError, song::{OutPacket, SongSize, ToSong, FromSong, ToSongError, FromSongError, MAX_OUT_PACKET_SIZE}, Flash, Radio, UsbSerial};
 
@@ -59,5 +60,29 @@ async fn radio_task_impl(
         packet.to_song(&mut buf)?;
 
         radio.transmit(&buf[0..packet.song_size()]).await?;
+    }
+}
+
+pub async fn flash_io_task(flash: &'static mut Flash){
+    let mut logger = FlashLogger::new();
+    loop {
+        match flash_task_impl(flash, &mut logger).await {
+            Ok(()) => {},
+            Err(e) => {
+                defmt::error!("Error in flash task: {}", Debug2Format(&e))
+            }
+        }
+    }
+}
+
+pub async fn flash_task_impl(flash: &mut Flash, logger: &mut FlashLogger) -> Result<(), SirinError> {
+    let mut sub = OUT_CHANNEL.subscriber()?;
+
+    let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
+
+    loop {
+        let packet = sub.next_message_pure().await;
+        packet.to_song(&mut buf)?;  
+        logger.log(flash, &buf[0..packet.song_size()]).await.unwrap();
     }
 }
