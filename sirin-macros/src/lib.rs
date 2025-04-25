@@ -194,6 +194,7 @@ fn derive_to_song_struct(ident: Ident, item: DataStruct) -> Result<TokenStream2,
 fn derive_to_song_enum(enum_song: &EnumSong) -> syn::Result<TokenStream2> {
     let ident = &enum_song.item.ident;
     let desc_ident = &enum_song.disc_name;
+    let desc_ty = &enum_song.disc_type;
 
     let mut out = vec![];
 
@@ -230,7 +231,8 @@ fn derive_to_song_enum(enum_song: &EnumSong) -> syn::Result<TokenStream2> {
 
         out.push(quote! {
             Self::#ident #destructure => {
-                let mut i = 0;
+                (#desc_ident::#ident as #desc_ty).to_song(buf)?;
+                let mut i = core::mem::size_of::<#desc_ty>();
                 #(#fields_out)*
                 Ok(())
             }

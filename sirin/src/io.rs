@@ -1,4 +1,4 @@
-use defmt::Debug2Format;
+use defmt::{println, Debug2Format};
 use embassy_executor::task;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, PubSubChannel}};
 use embassy_usb::{driver::Endpoint, UsbDevice};
@@ -79,7 +79,6 @@ pub async fn usb_io_task(
     }
 }
 
-
 async fn usb_task_impl(
     usb: &mut UsbSerial
 ) -> Result<(), SirinError > {
@@ -88,12 +87,19 @@ async fn usb_task_impl(
     let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
 
     loop {
-        usb.wait_connection().await;
         // todo handle lag error
         let packet = sub.next_message_pure().await;
 
         packet.to_song(&mut buf)?;
-        usb.write_packet(&buf[0..packet.song_size()]).await?;
+        let size = packet.song_size();
+        let mut i = 0;
+        while i < size {
+            println!("USB Out: {:?}", &buf[0..32]);
+            usb.write_packet(&buf[i..(i + 32)]).await?;
+            i += 32;
+        }
+        usb.write_packet(&buf[i..]).await?;
+        //usb.write_packet(b"Hello world!\n").await?;
     }
 }
 

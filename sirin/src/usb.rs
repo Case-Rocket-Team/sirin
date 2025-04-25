@@ -5,6 +5,7 @@ use embassy_executor::Spawner;
 use embassy_stm32::{bind_interrupts, peripherals::{self, PA11, PA12, USB_OTG_FS}, usb::{DmPin, DpPin, Driver}, Peripheral};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_usb::{class::cdc_acm::{CdcAcmClass, State}, Builder, UsbDevice};
+use sirin_shared::song::MAX_OUT_PACKET_SIZE;
 
 bind_interrupts!(pub struct Irqs {
     OTG_FS => embassy_stm32::usb::InterruptHandler<peripherals::USB_OTG_FS>;
@@ -15,7 +16,7 @@ pub type UsbSerialClass = CdcAcmClass<'static, Driver<'static, USB_OTG_FS>>;
 // I wanted to do these statically allocated stuff similar to `main.rs` with
 // a local function variable where there's a `loop`, but you can't do that here
 // because we need to return the USB device class from the function.
-static mut EP_OUT_BUFFER: [u8; 256] = [0; 256];
+static mut EP_OUT_BUFFER: [u8; MAX_OUT_PACKET_SIZE * 2] = [0; MAX_OUT_PACKET_SIZE * 2];
 static mut CONFIG_DESCRIPTOR: [u8; 256] = [0; 256];
 static mut BOS_DESCRIPTOR: [u8; 256] = [0; 256];
 static mut CONTROL_BUF: [u8; 64] = [0; 64];
@@ -51,7 +52,7 @@ pub unsafe fn usb_serial(
         &mut CONTROL_BUF,
     );
 
-    let class = CdcAcmClass::new(&mut builder, STATE.as_mut().unwrap(), 64);
+    let class = CdcAcmClass::new(&mut builder, STATE.as_mut().unwrap(), MAX_OUT_PACKET_SIZE as u16);
 
     let usb = builder.build();
 

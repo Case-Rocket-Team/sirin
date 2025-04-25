@@ -131,11 +131,11 @@ macro_rules! numeric_impl {
 
             impl ToSong for $ty {
                 fn to_song(&self, buf: &mut [u8]) -> Result<(), ToSongError> {
-                    if buf.len() < self.song_size() {
+                    if buf.len() < core::mem::size_of::<$ty>() {
                         return Err(ToSongError::BufferOverflow);
                     }
 
-                    buf.copy_from_slice(&self.to_le_bytes());
+                    buf[0..core::mem::size_of::<$ty>()].copy_from_slice(&self.to_le_bytes());
                     Ok(())
                 }
             }
@@ -213,7 +213,7 @@ impl <T: SongSize + FromSong, const N: usize> FromSong for [T; N] {
     }
 }
 
-pub const MAX_OUT_PACKET_SIZE: usize = 512;
+pub const MAX_OUT_PACKET_SIZE: usize = 256;
 
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 #[song(discriminant(OutPacketType = u8))]
@@ -236,5 +236,21 @@ pub enum InPacket {
     Null,
     DumpFlash
 }
+
+/*
+
+pub struct ChunkedPacket<'a, const N: usize> {
+    data: &'a [u8; N]
+}
+
+pub struct Chunker<'a, const N: usize>(pub &'a [u8]);
+
+impl <'a, const N: usize> Iterator for Chunker<'a, N> {
+    type Item = ChunkedPacket<'a, N>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        
+    }
+}*/
 
 //pub static EVENT_CHANNEL: PubSubChannel<CriticalSectionRawMutex, Event, 100, 4, 4>;
