@@ -213,30 +213,6 @@ impl <T: SongSize + FromSong, const N: usize> FromSong for [T; N] {
     }
 }
 
-pub const MAX_OUT_PACKET_SIZE: usize = 256;
-
-#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
-#[song(discriminant(OutPacketType = u8))]
-pub enum OutPacket {
-    Null,
-    State(State),
-    FlashSectorDump(FlashPageDump)
-}
-
-#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
-
-pub struct FlashPageDump {
-    addr: u32,
-    data: [u8; 256]
-}
-
-#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
-#[song(discriminant(InPacketType = u8))]
-pub enum InPacket {
-    Null,
-    DumpFlash
-}
-
 /*
 
 pub struct ChunkedPacket<'a, const N: usize> {

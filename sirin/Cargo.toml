@@ -22,6 +22,7 @@ embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", features = [ "s
 embassy-sync = { git = "https://github.com/embassy-rs/embassy" }
 embassy-futures = { git = "https://github.com/embassy-rs/embassy" }
 embassy-usb = { git = "https://github.com/embassy-rs/embassy" }
+embassy-usb-driver = { git = "https://github.com/embassy-rs/embassy" }
 static_cell = "^2.1.0"
 async-trait = "0.1.74"
 enum-display-derive = "0.1.1"

@@ -12,10 +12,10 @@ use flash_logger::FlashLogger;
 use gpio::GpioPins;
 use rfm9::{ReadRfm9, Rfm9};
 use snafu::{ensure, Snafu};
-use sirin_shared::song::{OutPacket, ToSong, ToSongError};
+use sirin_shared::song::{ToSong, ToSongError};
 use subsystems::{BaroData, HighGImuData, ImuData, Measurement, SirinData, Subsystem, SubsystemError};
 use sync::Mutex;
-use usb::{usb_serial, UsbSerialClass};
+use usb::{usb_serial, EndpointIn, EndpointOut, SirinUsb, UsbSerialClass};
 use uunit::{Celsius, Pascals};
 use w25qx::W25Q;
 use lsm6dso_spi::Lsm6dso;
@@ -39,10 +39,10 @@ mod error;
 
 pub use sirin_shared::song;
 pub use sirin_shared::state;
+pub use sirin_shared::packet;
 
 pub type Radio = Rfm9<SpiDev>;
 pub type Flash = W25Q<SpiDev>;
-pub type UsbSerial = UsbSerialClass;
 
 #[derive(Debug, Clone)]
 pub struct SirinHealth {
@@ -63,7 +63,7 @@ pub struct Sirin {
     // Subsystems:
     pub flash: W25Q<SpiDev>,
     pub radio: Rfm9<SpiDev>,
-    pub usb: UsbSerialClass,
+    pub usb: SirinUsb,
     pub led: Output<'static>,
 
     // Instrument subsytems

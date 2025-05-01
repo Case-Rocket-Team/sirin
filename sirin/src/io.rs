@@ -3,10 +3,10 @@ use embassy_executor::task;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, PubSubChannel}};
 use embassy_usb::{driver::Endpoint, UsbDevice};
 use sirin_macros::{FromSong, SongSize, ToSong};
-use crate::FlashLogger;
+use crate::{usb::SirinUsb, FlashLogger};
 
-use crate::{error::SirinError, Flash, Radio, UsbSerial};
-use sirin_shared::song::{OutPacket, SongSize, ToSong, FromSong, ToSongError, FromSongError, MAX_OUT_PACKET_SIZE};
+use crate::{error::SirinError, Flash, Radio};
+use sirin_shared::{packet::{OutPacket, MAX_OUT_PACKET_SIZE}, song::{FromSong, FromSongError, SongSize, ToSong, ToSongError}};
 
 //pub static OUT_CHANNEL: Channel<CriticalSectionRawMutex, OutPacket, 10> = Channel::new();
 pub static OUT_CHANNEL: PubSubChannel<CriticalSectionRawMutex, OutPacket, 32, 3, 0> = PubSubChannel::new();
@@ -67,7 +67,7 @@ async fn radio_task_impl(
 
 #[task]
 pub async fn usb_io_task(
-    usb: &'static mut UsbSerial
+    usb: &'static mut SirinUsb
 ) {
     loop {
         match usb_task_impl(usb).await {
@@ -80,11 +80,12 @@ pub async fn usb_io_task(
 }
 
 async fn usb_task_impl(
-    usb: &mut UsbSerial
+    usb: &mut SirinUsb
 ) -> Result<(), SirinError > {
     let mut sub = OUT_CHANNEL.subscriber()?;
 
     let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
+    const CHUNK_SIZE: usize = 64;
 
     loop {
         // todo handle lag error
@@ -93,12 +94,13 @@ async fn usb_task_impl(
         packet.to_song(&mut buf)?;
         let size = packet.song_size();
         let mut i = 0;
-        while i < size {
-            println!("USB Out: {:?}", &buf[0..32]);
-            usb.write_packet(&buf[i..(i + 32)]).await?;
-            i += 32;
+        // Less than or equal to because we want to send an empty packet
+        // if the last packet is exactly 64 bytes.
+        while i <= size {
+            println!("USB Out: {:?}", &buf[i..(i + CHUNK_SIZE)]);
+            usb.writer.write(&buf[i..(i + CHUNK_SIZE)]).await;
+            i += CHUNK_SIZE;
         }
-        usb.write_packet(&buf[i..]).await?;
         //usb.write_packet(b"Hello world!\n").await?;
     }
 }

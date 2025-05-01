@@ -1307,6 +1307,7 @@ dependencies = [
  "embassy-stm32",
  "embassy-sync",
  "embassy-usb",
+ "embassy-usb-driver",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
  "embedded-io",

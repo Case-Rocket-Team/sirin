@@ -6,7 +6,6 @@ use crate::song::*;
 type MetersPerSecond<T> = Quantity<T, <UnitMeters as Div<UnitSeconds>>::Output>;
 type MetersPerSecond2<T> = Quantity<T, <UnitMeters as Div<<UnitMeters as Div<UnitSeconds>>::Output>>::Output>;
 
-
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 #[repr(C)]
 pub struct Vel {

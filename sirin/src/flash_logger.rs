@@ -5,7 +5,7 @@ use embedded_hal::spi::ErrorKind;
 use embedded_io::{Write, ErrorType};
 use postcard::to_slice;
 use w25qx::W25Q;
-use sirin_shared::song::{OutPacket, ToSongError, SongSize, ToSong};
+use sirin_shared::song::{ToSongError, SongSize, ToSong};
 use crate::spi::SpiDev;
 
 const SECTOR_SIZE: usize = 4096;

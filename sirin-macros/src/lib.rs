@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use proc_macro::TokenStream;
 use quote::ToTokens;
-use syn::{parse::{self, Parse}, punctuated::Punctuated, spanned::Spanned, token::Comma, Attribute, DataEnum, DataStruct, Error, Field, Fields, Ident, ItemEnum, Meta, Token, Variant, Visibility};
+use syn::{parse::{self, Parse}, punctuated::Punctuated, spanned::Spanned, token::Comma, Attribute, DataEnum, DataStruct, Error, Field, Fields, Ident, ItemEnum, ItemStruct, Meta, Token, Variant, Visibility};
 
 use syn::{parse::Parser, parse_macro_input, DeriveInput};
 use quote::quote;
@@ -52,15 +52,12 @@ pub fn derive_measurement(item: TokenStream) -> TokenStream {
 pub fn derive_song_size(tok: TokenStream) -> TokenStream {
     let tok1 = tok.clone();
     let item: DeriveInput = parse_macro_input!(tok1);
-    let ident = item.ident;
 
     match item.data {
-        syn::Data::Struct(s) => derive_song_size_struct(ident, s).unwrap().into(),
-        syn::Data::Enum(e) => {
+        syn::Data::Struct(ref s) => derive_song_size_struct(&item, s).unwrap().into(),
+        syn::Data::Enum(_) => {
             let enum_song: EnumSong = parse_macro_input!(tok);
-            let tok = derive_song_size_enum(&enum_song).unwrap();
-            //println!("{}", tok.to_string());
-            tok.into()
+            derive_song_size_enum(&enum_song).unwrap().into()
         },
         _ => todo!()
     }
@@ -71,15 +68,12 @@ pub fn derive_song_size(tok: TokenStream) -> TokenStream {
 pub fn derive_to_song(tok: TokenStream) -> TokenStream {
     let tok1 = tok.clone();
     let item: DeriveInput = parse_macro_input!(tok1);
-    let ident = item.ident;
 
     match item.data {
-        syn::Data::Struct(s) => derive_to_song_struct(ident, s).unwrap().into(),
-        syn::Data::Enum(e) => {
+        syn::Data::Struct(ref s) => derive_to_song_struct(&item, &s).unwrap().into(),
+        syn::Data::Enum(_) => {
             let enum_song: EnumSong = parse_macro_input!(tok);
-            let tok = derive_to_song_enum(&enum_song).unwrap();
-            //println!("{}", tok.to_string());
-            tok.into()
+            derive_to_song_enum(&enum_song).unwrap().into()
         },
         _ => todo!()
     }
@@ -143,19 +137,22 @@ impl Parse for EnumSong {
     }
 }
 
-fn derive_song_size_struct(ident: Ident, item: DataStruct) -> Result<TokenStream2, anyhow::Error> {
+fn derive_song_size_struct(item: &DeriveInput, data: &DataStruct) -> Result<TokenStream2, anyhow::Error> {
     let mut size_out = vec![];
 
-    for field in item.fields {
+    for field in &data.fields {
         let Field { ident, .. } = field;
 
         size_out.push(quote! {
             self.#ident.song_size()
         });
     }
+
+    let ident = &item.ident;
+    let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
     
     Ok(quote! {
-        impl SongSize for #ident {
+        impl #impl_generics SongSize for #ident #ty_generics #where_clause {
             fn song_size(&self) -> usize {
                 0 #( + #size_out)*
             }
@@ -163,11 +160,11 @@ fn derive_song_size_struct(ident: Ident, item: DataStruct) -> Result<TokenStream
     })
 }
 
-fn derive_to_song_struct(ident: Ident, item: DataStruct) -> Result<TokenStream2, anyhow::Error> {
+fn derive_to_song_struct(item: &DeriveInput, data: &DataStruct) -> Result<TokenStream2, anyhow::Error> {
     let mut fields_out = vec![];
 
-    for field in item.fields {
-        let ident = field.ident;
+    for field in &data.fields {
+        let ident = &field.ident;
 
         fields_out.push(quote! {
             self.#ident.to_song(&mut buf[i..])?;
@@ -175,8 +172,11 @@ fn derive_to_song_struct(ident: Ident, item: DataStruct) -> Result<TokenStream2,
         });
     }
 
+    let ident = &item.ident;
+    let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
+
     Ok(quote! {
-        impl ToSong for #ident {
+        impl #impl_generics ToSong for #ident #ty_generics #where_clause {
             fn to_song(&self, buf: &mut [u8]) -> Result<(), ToSongError> {
                 let size = self.song_size();
                 if buf.len() >= size {
@@ -186,6 +186,38 @@ fn derive_to_song_struct(ident: Ident, item: DataStruct) -> Result<TokenStream2,
                 } else {
                     Err(ToSongError::BufferOverflow)
                 }
+            }
+        }
+    })
+}
+
+fn derive_from_song_struct(item: &DeriveInput, data: &DataStruct) -> Result<TokenStream2, anyhow::Error> {
+    let mut from_song_out = vec![];
+    
+    for field in &data.fields {
+        let Field { ident, ty, .. } = field;
+
+        from_song_out.push(quote! {
+            #ident: {
+                let value = <#ty as FromSong>::from_song(&buf[i..])?;
+                i += value.song_size();
+                value
+            }
+        });
+    }
+
+    let ident = &item.ident;
+    let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
+
+    Ok(quote! {
+        impl #impl_generics FromSong for #ident #ty_generics #where_clause {
+            fn from_song(buf: &[u8]) -> Result<Self, FromSongError> {
+                let mut i = 0;
+                Ok(
+                    #ident {
+                        #(#from_song_out,)*
+                    }
+                )
             }
         }
     })
@@ -335,49 +367,16 @@ fn derive_song_size_enum(enum_song: &EnumSong) -> syn::Result<TokenStream2> {
 pub fn derive_from_song(tok: TokenStream) -> TokenStream {
     let tok1 = tok.clone();
     let item: DeriveInput = parse_macro_input!(tok1);
-    let ident = item.ident;
 
     match item.data {
-        syn::Data::Struct(s) => derive_from_song_struct(ident, s).unwrap().into(),
+        syn::Data::Struct(ref s) => derive_from_song_struct(&item, s).unwrap().into(),
         syn::Data::Enum(e) => {
             let enum_song: EnumSong = parse_macro_input!(tok);
-            let tok = derive_from_song_enum(&enum_song).unwrap();
-            // println!("{}", tok.to_string());
-            tok.into()
+            derive_from_song_enum(&enum_song).unwrap().into()
         },
         _ => todo!()
     }
 }
-
-fn derive_from_song_struct(ident: Ident, item: DataStruct) -> Result<TokenStream2, anyhow::Error> {
-    let mut from_song_out = vec![];
-    
-    for field in item.fields {
-        let Field { ident, ty, .. } = field;
-
-        from_song_out.push(quote! {
-            #ident: {
-                let value = <#ty as FromSong>::from_song(&buf[i..])?;
-                i += value.song_size();
-                value
-            }
-        });
-    }
-
-    Ok(quote! {
-        impl FromSong for #ident {
-            fn from_song(buf: &[u8]) -> Result<Self, FromSongError> {
-                let mut i = 0;
-                Ok(
-                #ident {
-                    #(#from_song_out,)*
-                }
-                )
-            }
-        }
-    })
-}
-
 
 fn derive_from_song_enum(enum_song: &EnumSong) -> syn::Result<TokenStream2> {
     let ident1 = &enum_song.item.ident;

@@ -14,7 +14,7 @@ use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{flash_logger::FlashLogger, io::{out, radio_io_task, usb_io_task}, song::{FromSong, OutPacket, SongSize}, spi::SpiDev, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, uunit::WithUnits, Flash, Radio, Sirin, UsbSerial};
+use sirin::{flash_logger::FlashLogger, io::{out, radio_io_task, usb_io_task}, song::{FromSong, SongSize}, packet::OutPacket, spi::SpiDev, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, uunit::WithUnits, Flash, Radio, Sirin};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{Publisher, Subscriber}};
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
