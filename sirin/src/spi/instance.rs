@@ -1,4 +1,4 @@
-use embassy_stm32::{gpio::Output, mode::Async, spi::{ self as em_spi, Instance as EmSpiInstance, MisoPin, MosiPin, RxDma, SckPin, Spi as EmSpi, TxDma }};
+use embassy_stm32::{Peri, gpio::Output, mode::Async, spi::{ self as em_spi, Instance as EmSpiInstance, MisoPin, MosiPin, RxDma, SckPin, Spi as EmSpi, TxDma }};
 use spi_handle::SpiHandle;
 
 use crate::sync::Mutex;
@@ -25,12 +25,12 @@ pub struct SpiConfigStruct<
         TTxDma: TxDma<Spi>,
         TRxDma: RxDma<Spi>,
     > {
-    pub spi: Spi,
-    pub sck: Sck,
-    pub miso: Miso,
-    pub mosi: Mosi,
-    pub dma_tx: TTxDma,
-    pub dma_rx: TRxDma,
+    pub spi: Peri<'static, Spi>,
+    pub sck: Peri<'static, Sck>,
+    pub miso: Peri<'static, Miso>,
+    pub mosi: Peri<'static, Mosi>,
+    pub dma_tx: Peri<'static, TTxDma>,
+    pub dma_rx: Peri<'static, TRxDma>,
     pub config: em_spi::Config
 }
 

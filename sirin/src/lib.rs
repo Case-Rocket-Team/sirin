@@ -1,10 +1,10 @@
 //#![feature(error_in_core)]
 //#![feature(associated_type_defaults)]
 #![no_std]
-use core::{mem::MaybeUninit, panic, ptr::addr_of_mut};
-use bmp3::{Bmp3};
-use embassy_executor::{Executor, Spawner};
-use embassy_stm32::{ gpio::{Level, Output, Speed}, spi as em_spi, time::mhz, Config, Peripherals };
+use core::{mem::MaybeUninit, ptr::addr_of_mut};
+use embassy_executor::Spawner;
+use bmp3::Bmp3;
+use embassy_stm32::{ gpio::{Level, Output, Speed}, spi as em_spi, time::mhz, Config};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
 use event::Event;
 use gpio::GpioPins;
@@ -12,9 +12,8 @@ use rfm9x::{ReadRfm9x, Rfm9x};
 use w25q::W25Q;
 use lsm6dso::Lsm6dso;
 use h3lis::H3lis;
-use spi::{Spi, SpiConfig, SpiConfigStruct, SpiDev, SpiInstance, WithSpiHandle};
-use defmt::{debug, error, info, println, write, Format};
-use bmp3::Bmp3Readout;
+use spi::{SpiConfigStruct, SpiDev, SpiInstance};
+use defmt::{debug, error, write, Format};
 pub mod spi;
 pub mod delay;
 pub mod gpio;
@@ -106,26 +105,26 @@ impl Sirin {
 
             let gpio: *mut GpioPins = ptr!(sirin.gpio);
             gpio.write(GpioPins {
-                p1: p.PA4,
-                p2: p.PC4,
-                p3: p.PC5,
-                p4: p.PB0,
-                p5: p.PB1,
-                p6: p.PB2,
-                p7: p.PE7, 
-                p8: p.PE8,
-                p9: p.PE9,
-                p10: p.PE10,
-                p11: p.PD7,
-                p12: p.PD6,
-                p13: p.PD5,
-                p14: p.PD4,
-                p15: p.PD3,
-                p16: p.PD1,
-                p17: p.PD0,
-                p18: p.PC12,
-                p19: p.PC11,
-                p20: p.PC10,
+                p1: *p.PA4,
+                p2: *p.PC4,
+                p3: *p.PC5,
+                p4: *p.PB0,
+                p5: *p.PB1,
+                p6: *p.PB2,
+                p7: *p.PE7, 
+                p8: *p.PE8,
+                p9: *p.PE9,
+                p10: *p.PE10,
+                p11: *p.PD7,
+                p12: *p.PD6,
+                p13: *p.PD5,
+                p14: *p.PD4,
+                p15: *p.PD3,
+                p16: *p.PD1,
+                p17: *p.PD0,
+                p18: *p.PC12,
+                p19: *p.PC11,
+                p20: *p.PC10,
             });
 
             let baro_ptr: *mut Bmp3<SpiDev> = ptr!(sirin.baro);
@@ -189,31 +188,31 @@ impl Selfcheck {
             debug!("All chips funcional");
             Ok(())
         } else {
-            if(self.baro.temperature_check.is_err()){
+            if self.baro.temperature_check.is_err(){
                 error!("Baro is NOT OK! Temperature check failed")
             }
-            if(self.baro.pressure_check.is_err()){
+            if self.baro.pressure_check.is_err(){
                 error!("Baro is NOT OK! Pressure check failed");
             }
-            if(self.flash.active_check.is_err()){
+            if self.flash.active_check.is_err() {
                 error!("Flash is NOT OK! Active check failed");
             }
-            if(self.flash.read_write_check.is_err()){
+            if self.flash.read_write_check.is_err() {
                 error!("Flash is NOT OK! Read/write check failed");
             }
-            if(self.imu.active_check.is_err()){
+            if self.imu.active_check.is_err() {
                 error!("IMU is NOT OK! Active check failed");
             }
-            if(self.imu.accel_check.is_err()){
+            if self.imu.accel_check.is_err() {
                 error!("IMU is NOT OK! Acceleration check failed");
             }
             /*if(self.imu.gyro_check.is_err()){
                 error!("IMU is NOT OK! Gyro check failed");
             }*/
-            if(self.highg_imu.active_check.is_err()){
+            if self.highg_imu.active_check.is_err() {
                 error!("High IMU is NOT OK! Active check failed");
             }
-            if(self.highg_imu.accel_check.is_err()){
+            if self.highg_imu.accel_check.is_err() {
                 error!("High IMU is NOT OK! Acceleration check failed");
             }
             Err(())
@@ -324,7 +323,7 @@ impl ImuSelfcheck {
             _ => Err(())
         };*/
         
-        let gyro = sirin.imu.angular_vel().await.unwrap();
+        let _gyro = sirin.imu.angular_vel().await.unwrap();
         // TODO implement
         /*debug!("Instantaneous Gyroscope: {:?} (μdps)", gyro);
         let gyro_check = match gyro {
