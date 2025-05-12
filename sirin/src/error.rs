@@ -1,4 +1,4 @@
-use sirin_shared::song::ToSongError;
+use sirin_shared::song::{ToSongError, FromSongError};
 use embassy_sync::pubsub::Error as PubSubError;
 use rfm9::Rfm9Error;
 use embassy_usb::driver::EndpointError as USBError;
@@ -26,6 +26,7 @@ macro_rules! join_error {
 join_error!(enum SirinError (
     PubSubError,
     ToSongError,
+    FromSongError,
     Rfm9Error,
     USBError
 ));

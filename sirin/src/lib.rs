@@ -2,20 +2,22 @@
 #![allow(unused_imports)]
 #![doc = include_str!("../README.md")]
 
-use core::{marker::PhantomPinned, mem::MaybeUninit, pin::{pin, Pin}, ptr::addr_of_mut};
+use core::{ffi::CStr, marker::PhantomPinned, mem::MaybeUninit, pin::{pin, Pin}, ptr::addr_of_mut};
 use bmp3::Bmp3;
+use defmt::{info, Display2Format};
 use embassy_executor::{Executor, Spawner};
 use embassy_futures::join::{join, join3, join5, join_array};
 use embassy_stm32::{ bind_interrupts, gpio::{Level, Output, Speed}, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, Config, Peripherals };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
-use flash_logger::FlashLogger;
+use flash::Flash;
 use gpio::GpioPins;
 use rfm9::{ReadRfm9, Rfm9};
+use sirin_macros::{FromSong, SongSize, ToSong};
 use snafu::{ensure, Snafu};
-use sirin_shared::song::{ToSong, ToSongError};
+use sirin_shared::{packet::SirinConfig, song::{FromSong, FromSongError, SongSize, ToSong, ToSongError}};
 use subsystems::{BaroData, HighGImuData, ImuData, Measurement, SirinData, Subsystem, SubsystemError};
 use sync::Mutex;
-use usb::{usb_serial, EndpointIn, EndpointOut, SirinUsb, UsbSerialClass};
+use usb::{setup_usb, WriteEp, ReadEp, SirinUsb, UsbSerialClass};
 use uunit::{Celsius, Pascals};
 use w25qx::W25Q;
 use lsm6dso_spi::Lsm6dso;
@@ -30,19 +32,17 @@ pub mod delay;
 pub mod gpio;
 pub mod sync;
 pub mod triplet;
-pub mod flash_logger;
+pub mod flash;
 pub mod subsystems;
 pub mod usb;
 pub mod io;
-
-mod error;
+pub mod error;
 
 pub use sirin_shared::song;
 pub use sirin_shared::state;
 pub use sirin_shared::packet;
 
 pub type Radio = Rfm9<SpiDev>;
-pub type Flash = W25Q<SpiDev>;
 
 #[derive(Debug, Clone)]
 pub struct SirinHealth {
@@ -61,7 +61,7 @@ pub struct Sirin {
     pub gpio: GpioPins,
 
     // Subsystems:
-    pub flash: W25Q<SpiDev>,
+    pub flash: Flash,
     pub radio: Rfm9<SpiDev>,
     pub usb: SirinUsb,
     pub led: Output<'static>,
@@ -75,8 +75,7 @@ pub struct Sirin {
 
     pub data: SirinData,
     pub health: SirinHealth,
-
-    pub flash_logger: FlashLogger,
+    pub config: SirinConfig,
 
     _phantom_pinned: PhantomPinned
 }
@@ -179,9 +178,14 @@ impl Sirin {
             let radio_cs = Output::new(p.PC8, Level::High, Speed::High);
             radio_ptr.write(Rfm9::new((*spi2).handle(radio_cs)));
 
-            let flash_ptr: *mut W25Q<SpiDev> = ptr!(sirin.flash);
+            let flash_ptr: *mut Flash = ptr!(sirin.flash);
             let flash_cs = Output::new(p.PD2, Level::High, Speed::High);
-            flash_ptr.write(W25Q::new((*spi2).handle(flash_cs)));
+            let flash_dev = W25Q::new((*spi2).handle(flash_cs));
+            flash_ptr.write(Flash::new(flash_dev));
+
+            let config = ptr!(sirin.config);
+            config.write((*flash_ptr).init().await.unwrap());
+            info!("{}", Display2Format(&*config));
 
             let imu_ptr: *mut Lsm6dso<SpiDev> = ptr!(sirin.imu);
             let imu_cs = Output::new(p.PE11, Level::High, Speed::High);
@@ -191,10 +195,9 @@ impl Sirin {
             let highg_imu_cs = Output::new(p.PE13,Level::High, Speed::High);
             highg_imu_ptr.write(H3lis::new((*spi1).handle(highg_imu_cs)));
 
-
             ptr!(sirin.data).write(SirinData::unmeasured());
 
-            ptr!(sirin.usb).write(usb_serial(
+            ptr!(sirin.usb).write(setup_usb(
                 &spawner,
                 p.USB_OTG_FS,
                 p.PA12,
@@ -202,8 +205,6 @@ impl Sirin {
             ));
 
             ptr!(sirin.led).write(Output::new(p.PA1, Level::Low, Speed::High));
-            
-            ptr!(sirin.flash_logger).write(FlashLogger::new());
 
             // TODO: JOIN FUTURES, AWAIT
             baro_ptr.write(baro_future.await.unwrap());
@@ -214,7 +215,7 @@ impl Sirin {
 
             {
                 let (flash, radio, baro, imu, high_g_imu) = join5(
-                    (*flash_ptr).selfcheck(),
+                    (*flash_ptr).w25q.selfcheck(),
                     (*radio_ptr).selfcheck(),
                     (*baro_ptr).selfcheck(),
                     (*imu_ptr).selfcheck(),

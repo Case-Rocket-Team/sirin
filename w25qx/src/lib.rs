@@ -69,8 +69,26 @@ impl <S: SpiHandle> W25Q<S>{
         Ok(words.len() as u32)
     }
 
+    /// Write `words` to the flash, possibly spanning multiple pages
+    pub async fn write(&mut self, addr: u32, words: &[u8]) -> Result<u32, ErrorKind> {
+        let addr = addr as usize;
+        let mut i = 0;
+
+        while i < words.len() {
+            let page_end = (addr + 256) / 256 * 256;
+            
+            let section_size = (page_end - addr).min(words.len() - i);
+            self.page(addr as u32, &words[i..(i + section_size)]).await?;
+
+            i += section_size;
+        }
+
+        Ok(words.len() as u32)
+    }
+
     /// sector erase 20h
     pub async fn sector_erase(&mut self, addr: u32) -> Result<(), ErrorKind>{
+        self.prepare_write().await?;
         let mut spi = self.spi.select().await;
         spi.write(&[0x20]).await?;
         spi.write(&[((addr >> 16) & 0xFF) as u8, ((addr >> 8) & 0xFF) as u8, ((addr & 0xFF) as u8)]).await?;

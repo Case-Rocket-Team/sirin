@@ -5,16 +5,16 @@
 use core::{f32, f64::consts::PI, mem::{self, transmute_copy, MaybeUninit}, pin::Pin};
 
 use bmp3::{hal::{Bmp3RawData, ReadBmp3, RegErrReg, RegStatus}, Bmp3Readout};
-use defmt::{debug, println, Debug2Format};
+use defmt::{debug, info, println, Debug2Format};
 use embassy_executor::{task, Executor, Spawner};
 use embassy_stm32::{bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, peripherals::{self, DMA1_CH0, DMA1_CH1, PD8, PD9, USART3}, usart::{self, Config, Uart}};
-use embassy_time::Timer;
+use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_1::spi::ErrorKind;
 use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{flash_logger::FlashLogger, io::{out, radio_io_task, usb_io_task}, song::{FromSong, SongSize}, packet::OutPacket, spi::SpiDev, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, uunit::WithUnits, Flash, Radio, Sirin};
+use sirin::{error::SirinError, flash::Flash, io::{broadcast, radio_io_task, send_packet, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoPacket, OutPacket}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, uunit::WithUnits, Radio, Sirin};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{Publisher, Subscriber}};
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
@@ -40,24 +40,58 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 
     debug!("End Sirin init");
 
-    main_task(sirin).await
+    match main_task(sirin).await {
+        Ok(()) => {
+            panic!("The main task ended! (It shouldn't do that)")
+        },
+        Err(e) => {
+            panic!("The main task ran into an error: {:?}", e)
+        }
+    }
 }
 
 bind_interrupts!(struct Irqs {
     USART3 => usart::InterruptHandler<peripherals::USART3>;
 });
 
-async fn main_task(mut sirin: &'static mut Sirin) {
+async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut i: u32 = 0;
 
     //sirin.spawner.spawn(radio_io_task(&mut sirin.radio)).unwrap();
-    sirin.spawner.spawn(usb_io_task(&mut sirin.usb)).unwrap();
+    sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
+    sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
 
     // going to change this later
-    let mut state: State;
+    let mut state: State;    
 
     loop {
-        //Timer::after_millis(500).await;
+        Timer::after_millis(100).await;
+
+        sirin.led.set_high();
+
+        while let Ok(io_packet) = try_receive_packet() {
+            match io_packet.packet {
+                InPacket::Null => {},
+                InPacket::DumpFlash => {
+                    todo!()
+                }
+                InPacket::QueryConfig => {
+                    send_packet(
+                        IoPacket::new(
+                            io_packet.channel,
+                            OutPacket::Config(sirin.config.clone())
+                        )
+                    );
+                }
+                InPacket::SetConfig(config) => {
+                    info!("Updating the config to {:?}", Debug2Format(&config));
+
+                    // todo
+                    sirin.flash.save_config(&config).await.unwrap();
+                    cortex_m::peripheral::SCB::sys_reset();
+                }
+            }
+        }
 
         sirin.data = SirinData::measure(
             &mut sirin.baro,
@@ -74,10 +108,12 @@ async fn main_task(mut sirin: &'static mut Sirin) {
 
         if i % 10 == 0 {
             // Do logging
-            out(OutPacket::State(state));
+            broadcast(OutPacket::State(state));
         }
 
         i = i.wrapping_add(1);
+
+        sirin.led.set_low();
     }
 }
 

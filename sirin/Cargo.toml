@@ -11,9 +11,6 @@ repository = "https://github.com/Nautki/sirin"
 test = false
 bench = false
 
-[features]
-s1 = []
-
 [dependencies]
 sirin-macros = { path = "../sirin-macros" }
 cortex-m-rt = "0.7.3"
