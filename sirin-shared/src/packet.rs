@@ -1,6 +1,7 @@
 use core::fmt::Display;
 
-use crate::{song::*, state::State};
+use crate::{config::{CallsignBuf, SirinConfig, SirinId}, mode::SirinMode, song::*, state::State};
+use derive_more::Display;
 use sirin_macros::*;
 
 pub const MAX_OUT_PACKET_SIZE: usize = 256;
@@ -69,46 +70,22 @@ impl <const SIZE: usize> ByteArrayStr for [u8; SIZE] {
     }
 }
 
-pub type NicknameBuf = [u8; 32];
-pub type CallsignBuf = [u8; 32];
-
-
-#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
-pub struct SirinConfig {
-    /// Nickname for this device. Pad end with null bytes.
-    pub nickname: NicknameBuf,
-
-    /// FAA HAM Callsign. Set to all zeros if you aren't using one. Pad end with null bytes.
-    pub callsign: CallsignBuf,
-}
-
-impl Default for SirinConfig {
-    fn default() -> Self {
-        Self {
-            nickname: byte_array_str!(32, b"Sirin"),
-            callsign: [0; 32] // Null callsign
-        }
-    }
-}
-
-impl Display for SirinConfig {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        writeln!(f,
-            "Nautki Sirin S1-R2\n    Nickname: {}\n    FAA Callsign: {}",
-            self.nickname.as_str(),
-            self.callsign.as_str()
-        )?;
-        Ok(())
-    }
-}
-
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 #[song(discriminant(OutPacketType = u8))]
 pub enum OutPacket {
     Null,
+    Error(PacketError),
     Config(SirinConfig),
+    Mode(SirinMode),
     State(State),
-    FlashSectorDump(FlashPageDump)
+    FlashPageDump(FlashPageDump)
+}
+
+#[derive(Debug, Display, Clone, PartialEq, Eq, SongSize, ToSong, FromSong)]
+#[song(discriminant(PacketErrorType = u8))]
+pub enum PacketError {
+    #[display("The packet type {_1:?} is not supported over {_0:?}")]
+    PacketNotSupportedOverChannel(IoChannel, InPacketType),
 }
 
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
@@ -124,11 +101,13 @@ pub enum InPacket {
     Null,
     QueryConfig,
     SetConfig(SirinConfig),
+    QueryMode,
+    SetMode(SirinMode),
     DumpFlash
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, SongSize, ToSong, FromSong)]
-#[song(discriminant(IoChannelType = u8))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, SongSize, ToSong, FromSong)]
+#[repr(u8)]
 pub enum IoChannel {
     Broadcast = 0,
     Usb,
@@ -136,7 +115,7 @@ pub enum IoChannel {
     Flash
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, SongSize, ToSong, FromSong)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IoPacket<P: SongSize + ToSong + FromSong> {
     pub channel: IoChannel,
     pub packet: P
@@ -146,6 +125,30 @@ impl <P: SongSize + ToSong + FromSong> IoPacket<P> {
     pub fn new(channel: IoChannel, packet: P) -> Self {
         Self {
             channel,
+            packet
+        }
+    }
+
+    /// TODO: implement full request-response with packet ids
+    pub fn reply<R: SongSize + ToSong + FromSong>(&self, packet: R) -> IoPacket<R> {
+        IoPacket::new(self.channel, packet)
+    }
+}
+
+#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
+pub struct RadioPacket<P: SongSize + ToSong + FromSong> {
+    id: SirinId,
+    callsign: CallsignBuf,
+    packet: P
+}
+
+impl <P: SongSize + ToSong + FromSong> RadioPacket<P> {
+    pub fn new(config: &SirinConfig, packet: P) -> Self {
+        let callsign = config.callsign.clone();
+
+        Self {
+            id: config.id,
+            callsign,
             packet
         }
     }

@@ -360,6 +360,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "derive_more"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "093242cf7570c207c83073cf82f79706fe7b8317e98620a47d5be7c3d8497678"
+dependencies = [
+ "derive_more-impl",
+]
+
+[[package]]
+name = "derive_more-impl"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bda628edc44c4bb645fbe0f758797143e4e07926f7ebf4e9bdfbd3d2ce621df3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
+ "unicode-xid",
+]
+
+[[package]]
 name = "dev-csr"
 version = "0.1.1"
 dependencies = [
@@ -1047,6 +1068,7 @@ dependencies = [
  "rfm9",
  "sirin",
  "sirin-c",
+ "sirin-shared",
  "static_cell",
  "stm32-fmc",
  "w25qx",
@@ -1302,6 +1324,7 @@ dependencies = [
  "defmt",
  "defmt-rtt",
  "derive-new",
+ "derive_more",
  "embassy-executor",
  "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
  "embassy-stm32",
@@ -1353,6 +1376,7 @@ dependencies = [
 name = "sirin-shared"
 version = "0.1.0"
 dependencies = [
+ "derive_more",
  "sirin-macros",
  "uunit",
 ]
@@ -1523,6 +1547,12 @@ name = "unicode-ident"
 version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a210d160f08b701c8721ba1c726c11662f877ea6b7094007e1ca9a1041945034"
+
+[[package]]
+name = "unicode-xid"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 
 [[package]]
 name = "usb-device"

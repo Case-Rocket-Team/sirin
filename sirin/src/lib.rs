@@ -14,7 +14,7 @@ use gpio::GpioPins;
 use rfm9::{ReadRfm9, Rfm9};
 use sirin_macros::{FromSong, SongSize, ToSong};
 use snafu::{ensure, Snafu};
-use sirin_shared::{packet::SirinConfig, song::{FromSong, FromSongError, SongSize, ToSong, ToSongError}};
+use sirin_shared::{config::SirinConfig, song::{FromSong, FromSongError, SongSize, ToSong, ToSongError}};
 use subsystems::{BaroData, HighGImuData, ImuData, Measurement, SirinData, Subsystem, SubsystemError};
 use sync::Mutex;
 use usb::{setup_usb, WriteEp, ReadEp, SirinUsb, UsbSerialClass};

@@ -14,8 +14,10 @@ use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{error::SirinError, flash::Flash, io::{broadcast, radio_io_task, send_packet, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoPacket, OutPacket}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, uunit::WithUnits, Radio, Sirin};
+use sirin::{error::SirinError, flash::Flash, io::{broadcast, radio_io_task, send_packet, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, OutPacket, PacketError}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, uunit::WithUnits, Radio, Sirin};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{Publisher, Subscriber}};
+use sirin_shared::mode::SirinMode;
+use sirin::song::SongDiscriminant;
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
     core::mem::transmute(item)
@@ -61,14 +63,10 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
     sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
 
-    // going to change this later
-    let mut state: State;    
+    let mut state: State;
+    let mut mode = SirinMode::Standby;
 
     loop {
-        Timer::after_millis(100).await;
-
-        sirin.led.set_high();
-
         while let Ok(io_packet) = try_receive_packet() {
             match io_packet.packet {
                 InPacket::Null => {},
@@ -76,22 +74,29 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     todo!()
                 }
                 InPacket::QueryConfig => {
-                    send_packet(
-                        IoPacket::new(
-                            io_packet.channel,
-                            OutPacket::Config(sirin.config.clone())
-                        )
-                    );
+                    send_packet(IoPacket::new(
+                        io_packet.channel,
+                        OutPacket::Config(sirin.config.clone())
+                    ));
                 }
                 InPacket::SetConfig(config) => {
                     info!("Updating the config to {:?}", Debug2Format(&config));
 
-                    // todo
                     sirin.flash.save_config(&config).await.unwrap();
                     cortex_m::peripheral::SCB::sys_reset();
                 }
+                InPacket::QueryMode => {
+                    send_packet(io_packet.reply(OutPacket::Mode(mode)));
+                }
+                InPacket::SetMode(m) => {
+                    mode = m;
+                }
             }
         }
+
+        Timer::after_millis(100).await;
+
+        sirin.led.set_high();
 
         sirin.data = SirinData::measure(
             &mut sirin.baro,

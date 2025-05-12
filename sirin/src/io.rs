@@ -7,7 +7,7 @@ use sirin_macros::{FromSong, SongSize, ToSong};
 use crate::usb::{SirinUsb, WriteEp, ReadEp};
 
 use crate::{error::SirinError, Flash, Radio};
-use sirin_shared::{packet::{InPacket, IoChannel, IoPacket, OutPacket, SirinConfig, MAX_OUT_PACKET_SIZE}, song::{FromSong, FromSongError, SongSize, ToSong, ToSongError}};
+use sirin_shared::{config::{CallsignBuf, SirinConfig}, packet::{InPacket, IoChannel, IoPacket, OutPacket, RadioPacket, MAX_OUT_PACKET_SIZE}, song::{FromSong, FromSongError, SongSize, ToSong, ToSongError}};
 
 //pub static OUT_CHANNEL: Channel<CriticalSectionRawMutex, OutPacket, 10> = Channel::new();
 
@@ -80,23 +80,6 @@ async fn next_out_packet(
     }
 }
 
-#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
-pub struct RadioOutPacket {
-    callsign: [u8; 32],
-    packet: OutPacket
-}
-
-impl RadioOutPacket {
-    pub fn new(config: &SirinConfig, packet: OutPacket) -> Self {
-        let callsign = config.callsign.clone();
-
-        Self {
-            callsign,
-            packet
-        }
-    }
-}
-
 #[task]
 pub async fn radio_io_task(
     config: &'static SirinConfig,
@@ -127,7 +110,7 @@ async fn radio_task_impl(
             &mut out_sub,
             IoChannel::Usb
         ).await;
-        let radio_packet = RadioOutPacket::new(config, packet);
+        let radio_packet = RadioPacket::new(config, packet);
 
         radio_packet.to_song(&mut buf)?;
 

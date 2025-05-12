@@ -86,11 +86,11 @@ impl Flash {
 
         if self.is_second_config {
             self.w25q.sector_erase(0).await?;
-            self.w25q.write(0, &buf[0..config.song_size()]).await?;
+            self.w25q.write(0, &buf[0..config.song_size() + 1]).await?;
             self.w25q.sector_erase(4096).await?;
         } else {
             self.w25q.sector_erase(4096).await?;
-            self.w25q.write(4096, &buf[0..config.song_size()]).await?;
+            self.w25q.write(4096, &buf[0..config.song_size() + 1]).await?;
             self.w25q.sector_erase(0).await?;
         }
 

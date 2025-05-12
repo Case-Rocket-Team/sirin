@@ -21,7 +21,11 @@ pub trait FromSong: SongSize {
     fn from_song(buf: &[u8]) -> Result<Self, FromSongError> where Self: Sized;
 }
 
-pub trait Song: ToSong + FromSong {}
+pub trait SongDiscriminant {
+    type Discriminant: Copy;
+
+    fn song_discriminant(&self) -> Self::Discriminant;
+}
 
 // Fill out as needed.
 #[non_exhaustive]
@@ -37,7 +41,8 @@ pub enum FromSongError {
     BufferOverflow,
     NotImplemented,
     InvalidPacketId,
-    Utf8Error
+    Utf8Error,
+    InvalidValue
 }
 
 //TODO: add annotation for derive macro that allows you to specify the size of a &str
@@ -100,6 +105,37 @@ impl <const N: usize> FromSong for heapless::String<N> {
         Ok(str)
     }
 }*/
+
+impl SongSize for bool {
+    fn song_size(self: &Self) -> usize {
+        1
+    }
+}
+
+impl ToSong for bool {
+    fn to_song(&self, buf: &mut [u8]) -> Result<(), ToSongError> {
+        if buf.len() < 1 {
+            return Err(ToSongError::BufferOverflow)
+        }
+
+        buf[0] = if *self { 1 } else { 0 };
+        Ok(())
+    }
+}
+
+impl FromSong for bool {
+    fn from_song(buf: &[u8]) -> Result<Self, FromSongError> where Self: Sized {
+        if buf.len() < 1 {
+            return Err(FromSongError::BufferOverflow)
+        }
+
+        match buf[0] {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(FromSongError::InvalidValue)
+        }
+    }
+}
 
 impl <T: SongSize, D: Dimension> SongSize for Quantity<T, D> {
     fn song_size(self: &Self) -> usize {

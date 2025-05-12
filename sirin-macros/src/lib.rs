@@ -48,6 +48,8 @@ pub fn derive_measurement(item: TokenStream) -> TokenStream {
     }.into()
 }
 
+// TODO: maybe do something about this code duplication...
+
 #[proc_macro_derive(SongSize, attributes(song))]
 pub fn derive_song_size(tok: TokenStream) -> TokenStream {
     let tok1 = tok.clone();
@@ -62,7 +64,6 @@ pub fn derive_song_size(tok: TokenStream) -> TokenStream {
         _ => todo!()
     }
 }
-
 
 #[proc_macro_derive(ToSong, attributes(song))]
 pub fn derive_to_song(tok: TokenStream) -> TokenStream {
@@ -79,10 +80,34 @@ pub fn derive_to_song(tok: TokenStream) -> TokenStream {
     }
 }
 
+#[proc_macro_derive(FromSong, attributes(song))]
+pub fn derive_from_song(tok: TokenStream) -> TokenStream {
+    let tok1 = tok.clone();
+    let item: DeriveInput = parse_macro_input!(tok1);
+
+    match item.data {
+        syn::Data::Struct(ref s) => derive_from_song_struct(&item, s).unwrap().into(),
+        syn::Data::Enum(_) => {
+            let enum_song: EnumSong = parse_macro_input!(tok);
+            derive_from_song_enum(&enum_song).unwrap().into()
+        },
+        _ => todo!()
+    }
+}
+
+enum EnumSongDisc {
+    Enum {
+        disc_name: Ident,
+        disc_type: Ident,
+    },
+    Repr {
+        ty: Ident
+    }
+}
+
 struct EnumSong {
     item: ItemEnum,
-    disc_name: Ident,
-    disc_type: Ident,
+    disc: EnumSongDisc
 }
 
 impl Parse for EnumSong {
@@ -100,6 +125,27 @@ impl Parse for EnumSong {
     
             Some(list.tokens.clone())
         }).collect();
+
+        let repr = item.attrs.iter()
+            .filter(|attr| attr.path().to_token_stream().to_string() == "repr")
+            .filter_map(|attr| attr.parse_args::<Ident>().ok())
+            .next();
+
+        if let Some(repr) = repr {
+            if attrs.len() != 0 {
+                return Err(Error::new(
+                    attrs.get(0).map(|i| i.span()).unwrap_or_else(|| item.span()),
+                    "Expected no attrs"
+                ));                
+            }
+
+            return Ok(EnumSong {
+                item,
+                disc: EnumSongDisc::Repr {
+                    ty: repr
+                }
+            })
+        }
 
         if attrs.len() != 1 {
             return Err(Error::new(
@@ -131,8 +177,10 @@ impl Parse for EnumSong {
 
         Ok(EnumSong {
             item,
-            disc_name,
-            disc_type,
+            disc: EnumSongDisc::Enum {
+                disc_name,
+                disc_type,
+            }
         })
     }
 }
@@ -223,238 +271,262 @@ fn derive_from_song_struct(item: &DeriveInput, data: &DataStruct) -> Result<Toke
     })
 }
 
-fn derive_to_song_enum(enum_song: &EnumSong) -> syn::Result<TokenStream2> {
-    let ident = &enum_song.item.ident;
-    let desc_ident = &enum_song.disc_name;
-    let desc_ty = &enum_song.disc_type;
-
-    let mut out = vec![];
-
-    for var in &enum_song.item.variants {
-        let mut idents = vec![];
-
-        let mut i = 0;
-        for field in &var.fields {
-            // println!("Debug 100: {:?}", field);
-            idents.push(
-                field.ident.clone().unwrap_or_else(
-                    || Ident::new(&format!("t{}", i).to_string(), field.span())
-                )
-            );
-            i += 1;
-        }
-
-        let mut fields_out = vec![];
-
-        for ident in &idents {
-            fields_out.push(quote! {
-                #ident.to_song(&mut buf[i..])?;
-                i += #ident.song_size();
-            });
-        }
-
-        let ident = &var.ident;
-
-        let destructure = match &var.fields {
-            Fields::Unit => quote!(),
-            Fields::Named(_) => quote!({ #(#idents),* }),
-            Fields::Unnamed(_) => quote!(( #(#idents),* ))
-        };
-
-        out.push(quote! {
-            Self::#ident #destructure => {
-                (#desc_ident::#ident as #desc_ty).to_song(buf)?;
-                let mut i = core::mem::size_of::<#desc_ty>();
-                #(#fields_out)*
-                Ok(())
-            }
-        });
-    }
-    
-    Ok(quote! {
-        impl ToSong for #ident {
-            fn to_song(&self, buf: &mut [u8]) -> Result<(), ToSongError> {
-                match self {
-                    #(#out),*
-                }
-            }
-        }
-    })
-}
-
 fn derive_song_size_enum(enum_song: &EnumSong) -> syn::Result<TokenStream2> {
     let ident = &enum_song.item.ident;
-    let disc_type = &enum_song.disc_type;
-
-    let mut out = vec![];
-
-    let mut disc_out = vec![];
-
-    for var in &enum_song.item.variants {
-        let disc_var_ident = &var.ident;
-
-        match &var.discriminant {
-            Some((eq, val)) => {
-                disc_out.push(quote! {
-                    #disc_var_ident #eq #val
-                });
-            }
-            None => {
-                disc_out.push(quote! {
-                    #disc_var_ident
-                });
-            }
-        }
-
-        let mut idents = vec![];
-
-        let mut i = 0;
-        for field in &var.fields {
-            idents.push(
-                field.ident.clone().unwrap_or_else(
-                    || Ident::new(&format!("t{}", i).to_string(), field.span())
-                )
-            );
-            i += 1;
-        }
-
-        let mut fields_out = vec![];
-
-        for ident in &idents {
-            fields_out.push(quote! {
-                i += #ident.song_size();
-            });
-        }
-
-        let ident = &var.ident;
-
-        let destructure = match &var.fields {
-            Fields::Unit => quote!(),
-            Fields::Named(_) => quote!({ #(#idents),* }),
-            Fields::Unnamed(_) => quote!(( #(#idents),* ))
-        };
-
-        out.push(quote! {
-            Self::#ident #destructure => {
-                let mut i = core::mem::size_of::<#disc_type>();
-                #(#fields_out)*
-                i
-            }
-        });
-    }
-
-    let disc_ident = &enum_song.disc_name;
-    let disc_type = &enum_song.disc_type;
-    let vis = &enum_song.item.vis;
-
-    Ok(quote! {
-        #[repr(#disc_type)]
-        #vis enum #disc_ident {
-            #(#disc_out),*
-        }
-
-        impl SongSize for #ident {
-            fn song_size(&self) -> usize {
-                match self {
-                    #(#out),*
+    
+    match &enum_song.disc {
+        EnumSongDisc::Repr { .. } => {
+            Ok(quote! {
+                impl SongSize for #ident {
+                    fn song_size(&self) -> usize {
+                        core::mem::size_of::<Self>()
+                    }
                 }
+            })
+        },
+        EnumSongDisc::Enum { disc_name, disc_type } => {
+            let mut out = vec![];
+            let mut disc_out = vec![];
+            let mut song_disc_out = vec![];
+
+            for var in &enum_song.item.variants {
+                let disc_var_ident = &var.ident;
+
+                match &var.discriminant {
+                    Some((eq, val)) => {
+                        disc_out.push(quote! {
+                            #disc_var_ident #eq #val
+                        });
+                    }
+                    None => {
+                        disc_out.push(quote! {
+                            #disc_var_ident
+                        });
+                    }
+                }
+
+                let mut idents = vec![];
+
+                let mut i = 0;
+                for field in &var.fields {
+                    idents.push(
+                        field.ident.clone().unwrap_or_else(
+                            || Ident::new(&format!("t{}", i).to_string(), field.span())
+                        )
+                    );
+                    i += 1;
+                }
+
+                let mut fields_out = vec![];
+
+                for ident in &idents {
+                    fields_out.push(quote! {
+                        i += #ident.song_size();
+                    });
+                }
+
+                let ident = &var.ident;
+
+                let destructure = match &var.fields {
+                    Fields::Unit => quote!(),
+                    Fields::Named(_) => quote!({ #(#idents),* }),
+                    Fields::Unnamed(_) => quote!(( #(#idents),* ))
+                };
+
+                out.push(quote! {
+                    Self::#ident #destructure => {
+                        let mut i = core::mem::size_of::<#disc_type>();
+                        #(#fields_out)*
+                        i
+                    }
+                });
+
+                song_disc_out.push(quote! {
+                    Self::#ident #destructure => #disc_name::#disc_var_ident
+                });
             }
+
+            let vis = &enum_song.item.vis;
+
+            Ok(quote! {
+                #[derive(Clone, Copy, PartialEq, Eq, Debug, SongSize, ToSong, FromSong)]
+                #[repr(#disc_type)]
+                #vis enum #disc_name {
+                    #(#disc_out),*
+                }
+
+                #[automatically_derived]
+                impl SongDiscriminant for #ident {
+                    type Discriminant = #disc_name;
+
+                    fn song_discriminant(&self) -> Self::Discriminant {
+                        match self {
+                            #(#song_disc_out),*
+                        }
+                    }
+                }
+
+                #[automatically_derived]
+                impl SongSize for #ident {
+                    fn song_size(&self) -> usize {
+                        match self {
+                            #(#out),*
+                        }
+                    }
+                }
+            })
         }
-    })
+    }
 }
 
-#[proc_macro_derive(FromSong, attributes(song))]
-pub fn derive_from_song(tok: TokenStream) -> TokenStream {
-    let tok1 = tok.clone();
-    let item: DeriveInput = parse_macro_input!(tok1);
+fn derive_to_song_enum(enum_song: &EnumSong) -> syn::Result<TokenStream2> {
+    let ident = &enum_song.item.ident;
 
-    match item.data {
-        syn::Data::Struct(ref s) => derive_from_song_struct(&item, s).unwrap().into(),
-        syn::Data::Enum(e) => {
-            let enum_song: EnumSong = parse_macro_input!(tok);
-            derive_from_song_enum(&enum_song).unwrap().into()
+    match &enum_song.disc {
+        EnumSongDisc::Repr { ty } => {
+            Ok(quote! {
+                impl ToSong for #ident {
+                    fn to_song(&self, buf: &mut [u8]) -> Result<(), ToSongError> {
+                        (self.clone() as #ty).to_song(buf)
+                    }
+                }
+            })
         },
-        _ => todo!()
+        EnumSongDisc::Enum { disc_name, disc_type } => {
+            let mut out = vec![];
+
+            for var in &enum_song.item.variants {
+                let mut idents = vec![];
+
+                let mut i = 0;
+                for field in &var.fields {
+                    // println!("Debug 100: {:?}", field);
+                    idents.push(
+                        field.ident.clone().unwrap_or_else(
+                            || Ident::new(&format!("t{}", i).to_string(), field.span())
+                        )
+                    );
+                    i += 1;
+                }
+
+                let mut fields_out = vec![];
+
+                for ident in &idents {
+                    fields_out.push(quote! {
+                        #ident.to_song(&mut buf[i..])?;
+                        i += #ident.song_size();
+                    });
+                }
+
+                let ident = &var.ident;
+
+                let destructure = match &var.fields {
+                    Fields::Unit => quote!(),
+                    Fields::Named(_) => quote!({ #(#idents),* }),
+                    Fields::Unnamed(_) => quote!(( #(#idents),* ))
+                };
+
+                out.push(quote! {
+                    Self::#ident #destructure => {
+                        (#disc_name::#ident as #disc_type).to_song(buf)?;
+                        let mut i = core::mem::size_of::<#disc_type>();
+                        #(#fields_out)*
+                        Ok(())
+                    }
+                });
+            }
+            
+            Ok(quote! {
+                impl ToSong for #ident {
+                    fn to_song(&self, buf: &mut [u8]) -> Result<(), ToSongError> {
+                        match self {
+                            #(#out),*
+                        }
+                    }
+                }
+            })
+        }
     }
 }
 
 fn derive_from_song_enum(enum_song: &EnumSong) -> syn::Result<TokenStream2> {
-    let ident1 = &enum_song.item.ident;
-    let desc_ident = &enum_song.disc_name;
-    // let item = &enum_song.item;
-
-    let mut out = vec![];
-    let mut k = 0;
-    for var in &enum_song.item.variants {
-
-        let mut fields_out = vec![];
-        let mut idents = vec![];
-        
-        let mut i = 0;
-        for field in &var.fields {
-            let ident = field.ident.clone().unwrap_or_else(
-                || Ident::new(&format!("t{}", i).to_string(), field.span()));
-            idents.push(ident.clone());
-            
-            let typ = field.ty.clone();
-            
-            fields_out.push(quote! {
-                let #ident = #typ::from_song(&buf[i..])?;
-                i += #ident.song_size();
-            });
-            i += 1;
-        }   
-
-        let ident = &var.ident;
-
-
-        match &var.fields {
-            Fields::Unit => out.push(quote! {
-                    val if val == #desc_ident::#ident as u8 => Ok(#ident1::#ident)
-                }),
-            Fields::Unnamed(_) => out.push(quote! { 
-                val if val == #desc_ident::#ident as u8 => {
-                    let mut i = 1;
-                    #(#fields_out)*
-                    Ok(#ident1::#ident(#(#idents,)*))
-                }}),
-            Fields::Named(_) => todo!()
-
-        };
-
-        // println!("Debug 22: {:?}", out[k].to_string());
-        k += 1;
-    }
-
-    // let test = quote! {
-    //     impl FromSong for #ident1 {
-    //         fn from_song(buf: &[u8]) -> Result<Self, FromSongError> {
-    //             let Some(&disc) = buf.get(0) else {
-    //                 return Err(FromSongError::BufferOverflow)
-    //             };
-
-    //             match disc {
-    //                 #(#out,)*
-    //                 _ => Err(FromSongError::InvalidPacketId),
-    //             }
-    //         }
-    //     }
-    // };
-
-    // println!("Debug 3: {}", test.to_string());
+    let ident = &enum_song.item.ident;
     
-    Ok(quote! {
-        impl FromSong for #ident1 {
-            fn from_song(buf: &[u8]) -> Result<Self, FromSongError> {
-                let Some(&disc) = buf.get(0) else {
-                    return Err(FromSongError::BufferOverflow)
+    match &enum_song.disc {
+        EnumSongDisc::Repr { ty } => {
+            let var = enum_song.item.variants.iter().map(|var| &var.ident);
+
+            Ok(quote! {
+                impl FromSong for #ident {
+                    fn from_song(buf: &[u8]) -> Result<Self, FromSongError> {
+                        if buf.len() < core::mem::size_of::<#ty>() {
+                            return Err(FromSongError::BufferOverflow);
+                        }
+
+                        match buf[0] {
+                            #(disc if disc == #ident::#var as #ty => Ok(#ident::#var),)*
+                            _ => Err(FromSongError::InvalidPacketId)
+                        }
+                    }
+                }
+            })
+        }
+        EnumSongDisc::Enum { disc_name, disc_type } => {
+            let mut out = vec![];
+            let mut k = 0;
+            for var in &enum_song.item.variants {
+
+                let mut fields_out = vec![];
+                let mut idents = vec![];
+                
+                let mut i = 0;
+                for field in &var.fields {
+                    let ident = field.ident.clone().unwrap_or_else(
+                        || Ident::new(&format!("t{}", i).to_string(), field.span()));
+                    idents.push(ident.clone());
+                    
+                    let typ = field.ty.clone();
+                    
+                    fields_out.push(quote! {
+                        let #ident = #typ::from_song(&buf[i..])?;
+                        i += #ident.song_size();
+                    });
+                    i += 1;
+                }   
+
+                let var_ident = &var.ident;
+
+
+                match &var.fields {
+                    Fields::Unit => out.push(quote! {
+                            val if val == #disc_name::#var_ident as #disc_type => Ok(#ident::#var_ident)
+                        }),
+                    Fields::Unnamed(_) => out.push(quote! { 
+                        val if val == #disc_name::#var_ident as #disc_type => {
+                            let mut i = 1;
+                            #(#fields_out)*
+                            Ok(#ident::#var_ident(#(#idents,)*))
+                        }}),
+                    Fields::Named(_) => todo!()
                 };
 
-                match disc {
-                    #(#out,)*
-                    _ => Err(FromSongError::InvalidPacketId)
-                }
+                k += 1;
             }
+            
+            Ok(quote! {
+                impl FromSong for #ident {
+                    fn from_song(buf: &[u8]) -> Result<Self, FromSongError> {
+                        let Some(&disc) = buf.get(0) else {
+                            return Err(FromSongError::BufferOverflow)
+                        };
+
+                        match disc {
+                            #(#out,)*
+                            _ => Err(FromSongError::InvalidPacketId)
+                        }
+                    }
+                }
+            })
         }
-    })
+    }
 }
