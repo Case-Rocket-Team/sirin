@@ -1,5 +1,5 @@
 
-use core::{marker::PhantomData, mem::MaybeUninit};
+use core::mem::MaybeUninit;
 
 use uunit::{Dimension, Quantity};
 

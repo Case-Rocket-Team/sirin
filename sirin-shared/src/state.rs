@@ -1,6 +1,6 @@
 use core::ops::Div;
 use sirin_macros::{SongSize, ToSong, FromSong};
-use uunit::{Degrees, Meters, Quantity, UnitMeters, UnitSeconds};
+use uunit::{Meters, Quantity, UnitMeters, UnitSeconds};
 use crate::song::*;
 
 type MetersPerSecond<T> = Quantity<T, <UnitMeters as Div<UnitSeconds>>::Output>;

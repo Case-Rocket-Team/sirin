@@ -1,5 +1,3 @@
-use core::fmt::Display;
-
 use crate::{config::{CallsignBuf, SirinConfig, SirinId}, mode::SirinMode, song::*, state::State};
 use derive_more::Display;
 use sirin_macros::*;
@@ -152,4 +150,44 @@ impl <P: SongSize + ToSong + FromSong> RadioPacket<P> {
             packet
         }
     }
+}
+
+#[derive(SongSize, ToSong, FromSong)]
+pub struct FlightHeader {
+    /// Tracking byte -- when this flight is overwritten in the cyclic flash, this byte is zeroed out.
+    /// This field must be first!
+    pub status: FlightHeaderStatus,
+
+    /// Address of the start of flight logs, without offset.
+    addr: [u8; 3],
+
+    /// Unix timestamp. 0 if not known.
+    /// Dates before 1970 map to after 2038 (unsigned)
+    pub timestamp: u32
+}
+
+impl FlightHeader {
+    pub fn new(addr: u32, timestamp: u32) -> Self {
+        let arr = addr.to_le_bytes();
+
+        Self {
+            status: FlightHeaderStatus::Valid,
+            addr: [arr[0], arr[1], arr[2]],
+            timestamp
+        }
+    }
+
+    pub fn addr(&self) -> u32 {
+        let arr = [self.addr[0], self.addr[1], self.addr[2], 0];
+        u32::from_le_bytes(arr)
+    }
+}
+
+#[derive(Clone, Copy, SongSize, ToSong, FromSong, PartialEq, Eq)]
+#[repr(u8)]
+pub enum FlightHeaderStatus {
+    // Initial value of NOR flash is 0xFF
+    Null = 0xFF,
+    Valid = 0x01,
+    Overwritten = 0x00
 }
