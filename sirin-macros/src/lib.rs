@@ -188,18 +188,28 @@ impl Parse for EnumSong {
 fn derive_song_size_struct(item: &DeriveInput, data: &DataStruct) -> Result<TokenStream2, anyhow::Error> {
     let mut size_out = vec![];
 
+    let mut has_song_size = quote! {()};
+
     for field in &data.fields {
-        let Field { ident, .. } = field;
+        let Field { ident, ty, .. } = field;
 
         size_out.push(quote! {
             self.#ident.song_size()
         });
+
+        has_song_size = quote! { (#has_song_size, ConstSongSizeImplFromConstSongSize<#ty>) }
     }
 
     let ident = &item.ident;
     let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
     
     Ok(quote! {
+        #[automatically_derived]
+        impl #impl_generics HasSongSize for #ident #ty_generics #where_clause {
+            type Size = #has_song_size;
+        }
+
+        #[automatically_derived]
         impl #impl_generics SongSize for #ident #ty_generics #where_clause {
             fn song_size(&self) -> usize {
                 0 #( + #size_out)*
@@ -277,6 +287,7 @@ fn derive_song_size_enum(enum_song: &EnumSong) -> syn::Result<TokenStream2> {
     match &enum_song.disc {
         EnumSongDisc::Repr { .. } => {
             Ok(quote! {
+                #[automatically_derived]
                 impl SongSize for #ident {
                     fn song_size(&self) -> usize {
                         core::mem::size_of::<Self>()
@@ -385,9 +396,10 @@ fn derive_to_song_enum(enum_song: &EnumSong) -> syn::Result<TokenStream2> {
     match &enum_song.disc {
         EnumSongDisc::Repr { ty } => {
             Ok(quote! {
+                #[automatically_derived]
                 impl ToSong for #ident {
                     fn to_song(&self, buf: &mut [u8]) -> Result<(), ToSongError> {
-                        (self.clone() as #ty).to_song(buf)
+                        (*self as #ty).to_song(buf)
                     }
                 }
             })
