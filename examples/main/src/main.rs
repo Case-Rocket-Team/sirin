@@ -14,7 +14,7 @@ use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{error::SirinError, flash::Flash, io::{broadcast, radio_io_task, send_packet, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, OutPacket, PacketError, Paginated}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, uunit::WithUnits, Radio, Sirin};
+use sirin::{error::SirinError, flash::Flash, io::{broadcast, flash_io_task, radio_io_task, send_packet, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, OutPacket, PacketError, Paginated}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, sync::Mutex, uunit::WithUnits, Radio, Sirin};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{Publisher, Subscriber}};
 use sirin_shared::mode::SirinMode;
 use sirin::song::SongDiscriminant;
@@ -66,6 +66,11 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut state: State;
     let mut mode = SirinMode::Standby;
 
+    let mut flash = Mutex::new(&mut sirin.flash);
+    sirin.spawner.spawn(flash_io_task(unsafe {
+        transmute_into_static(&mut flash)
+    })).unwrap();
+
     loop {
         while let Ok(io_packet) = try_receive_packet() {
             match io_packet.packet {
@@ -79,7 +84,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 InPacket::SetConfig(config) => {
                     info!("Updating the config to {:?}", Debug2Format(&config));
 
-                    sirin.flash.save_config(&config).await.unwrap();
+                    flash.lock().await.save_config(&config).await.unwrap();
                     cortex_m::peripheral::SCB::sys_reset();
                 }
                 InPacket::QueryMode => {
@@ -88,11 +93,12 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 InPacket::SetMode(m) => {
                     mode = m;
                     if mode == SirinMode::Flight {
-                        sirin.flash.new_flight().await?;
+                        flash.lock().await.new_flight().await?;
                     }
                 }
                 InPacket::QueryFlights => {
-                    let headers = sirin.flash.flight_headers();
+                    let flash = flash.lock().await;
+                    let headers = flash.flight_headers();
                     let len = headers.len();
 
                     for (i, header) in headers.enumerate() {

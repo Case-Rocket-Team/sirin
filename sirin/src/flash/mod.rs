@@ -11,7 +11,7 @@ use sirin_shared::song::ConstSongSize;
 use static_assertions::const_assert;
 use w25qx::W25Q;
 
-use crate::{coroutine::{CoroutineHandle, InnerCoroutine, RunningCoroutine}, error::SirinError, spi::SpiDev, time::absolute_time_reference, SirinConfig};
+use crate::{error::SirinError, spi::SpiDev, time::absolute_time_reference, SirinConfig};
 
 mod cyclic;
 
@@ -21,15 +21,11 @@ const FLIGHT_HEADER_COUNT: usize = 256;
 
 const_assert!(FLIGHT_HEADER_COUNT / 2 < SECTOR_SIZE as usize / FlightHeader::SONG_SIZE);
 
-// This will be init by Sirin with the ptr to the flash struct
-pub(crate) static mut FLASH_IO_COROUTINE: MaybeUninit<InnerCoroutine<Flash>> = MaybeUninit::uninit();
-
 pub struct Flash {
     pub w25q: W25Q<SpiDev>,
     flight_data: CyclicFlashSection,
     flight_headers: Deque<FlashFlightHeader, FLIGHT_HEADER_COUNT>,
     is_second_config: bool,
-    coroutine_handle: CoroutineHandle<Self>
 }
 
 #[derive(Clone, Debug)]
@@ -47,11 +43,6 @@ impl Flash {
             flight_data: CyclicFlashSection::new(4 * SECTOR_SIZE, FLASH_SIZE),
             flight_headers: Deque::new(),
             is_second_config: true,
-
-            // This is safe as long as the static mut is only ever written
-            // to once at the beginning of the program before this reference
-            // is created.
-            coroutine_handle: CoroutineHandle::new(FLASH_IO_COROUTINE.assume_init_ref())
         }
     }
 
@@ -106,14 +97,6 @@ impl Flash {
         Ok(config)
     }
 
-    pub async fn yield_now(&mut self) {
-        self.coroutine_handle.coroutine.yield_now().await
-    }
-
-    /*pub fn start_background_io<'a>(&mut self) -> RunningCoroutine<'a, Self> {
-        
-    }*/
-    
     pub fn flight_headers_deque(&self) -> &Deque<FlashFlightHeader, FLIGHT_HEADER_COUNT> {
         &self.flight_headers
     }

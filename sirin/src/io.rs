@@ -6,7 +6,7 @@ use embassy_futures::{join::join, select::{select, Either}};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TryReceiveError, TrySendError}, pubsub::{PubSubBehavior, PubSubChannel as EmbassyPubSubChannel, Subscriber}, signal::Signal};
 use embassy_usb::{driver::{Endpoint, EndpointIn, EndpointOut}, UsbDevice};
 use sirin_macros::{FromSong, SongSize, ToSong};
-use crate::usb::{SirinUsb, WriteEp, ReadEp};
+use crate::{sync::Mutex, usb::{ReadEp, SirinUsb, WriteEp}};
 
 use crate::{error::SirinError, Flash, Radio};
 use sirin_shared::{config::{CallsignBuf, SirinConfig}, packet::{InPacket, IoChannel, IoPacket, OutPacket, RadioPacket, MAX_OUT_PACKET_SIZE}, song::{FromSong, FromSongError, SongSize, ToSong, ToSongError}};
@@ -192,7 +192,8 @@ async fn usb_input_task_impl(
     Ok(())
 }
 
-pub async fn flash_io_task(flash: &'static mut Flash){
+#[task]
+pub async fn flash_io_task(flash: &'static Mutex<&'static mut Flash>){
     loop {
         match flash_task_impl(flash).await {
             Ok(()) => {},
@@ -203,11 +204,9 @@ pub async fn flash_io_task(flash: &'static mut Flash){
     }
 }
 
-pub async fn flash_task_impl(flash: &mut Flash) -> Result<(), SirinError> {
+pub async fn flash_task_impl(flash_mutex: &Mutex<&mut Flash>) -> Result<(), SirinError> {
     let mut broadcast_sub = BROADCAST_CHANNEL.subscriber()?;
     let mut out_sub = OUT_CHANNEL.subscriber()?;
-
-    let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
 
     loop {
         let packet = next_out_packet(
@@ -215,7 +214,10 @@ pub async fn flash_task_impl(flash: &mut Flash) -> Result<(), SirinError> {
             &mut out_sub,
             IoChannel::Flash
         ).await;
+
+        let mut flash = flash_mutex.lock().await;
         flash.log(&packet).await.unwrap();
+        drop(flash);
     }
 }
 
