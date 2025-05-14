@@ -15,6 +15,7 @@ bench = false
 sirin-macros = { path = "../sirin-macros" }
 cortex-m-rt = "0.7.3"
 embassy-executor = { git = "https://github.com/embassy-rs/embassy", features = ["arch-cortex-m", "executor-thread", "defmt"] }
+embassy-time = { git = "https://github.com/embassy-rs/embassy" }
 embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", features = [ "stm32h743ii" ]}
 embassy-sync = { git = "https://github.com/embassy-rs/embassy" }
 embassy-futures = { git = "https://github.com/embassy-rs/embassy" }
@@ -39,10 +40,10 @@ postcard = { version = "1.1.1", default-features = false, features = ["embedded-
 embedded-hal = "1.0.0"
 defmt-rtt = "*"
 embedded-io = "0.6.1"
-zerocopy = { git = "https://github.com/google/zerocopy", features = ["derive"] }
 byteorder = { version = "1.5.0", default-features = false }
 snafu = { version = "0.8.5", default-features = false }
 paste = "1.0.15"
 heapless = "0.8.0"
 sirin-shared = { version = "0.1.0", path = "../sirin-shared" }
 derive_more = { version = "2.0.1", features = ["from"], default-features = false }
+static_assertions = "1.1.0"

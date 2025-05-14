@@ -1,7 +1,9 @@
+use core::{future::Future, marker::PhantomData, mem::transmute};
+
 use defmt::{error, info, println, Debug2Format};
 use embassy_executor::task;
 use embassy_futures::{join::join, select::{select, Either}};
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TryReceiveError, TrySendError}, pubsub::{PubSubBehavior, PubSubChannel as EmbassyPubSubChannel, Subscriber}};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TryReceiveError, TrySendError}, pubsub::{PubSubBehavior, PubSubChannel as EmbassyPubSubChannel, Subscriber}, signal::Signal};
 use embassy_usb::{driver::{Endpoint, EndpointIn, EndpointOut}, UsbDevice};
 use sirin_macros::{FromSong, SongSize, ToSong};
 use crate::usb::{SirinUsb, WriteEp, ReadEp};
@@ -56,7 +58,7 @@ fn received_packet(mut packet: IoPacket<InPacket>) {
     }
 }
 
-async fn next_out_packet(
+pub async fn next_out_packet(
     broadcast: &mut Subscriber<'static, CriticalSectionRawMutex, OutPacket, 32, 3, 0>,
     out: &mut Subscriber<'static, CriticalSectionRawMutex, IoPacket<OutPacket>, 32, 3, 0>,
     channel: IoChannel
@@ -213,7 +215,32 @@ pub async fn flash_task_impl(flash: &mut Flash) -> Result<(), SirinError> {
             &mut out_sub,
             IoChannel::Flash
         ).await;
-        packet.to_song(&mut buf)?;  
-        flash.log(&buf[0..packet.song_size()]).await.unwrap();
+        flash.log(&packet).await.unwrap();
     }
 }
+
+/*
+#[task]
+fn background_task() {
+
+}
+
+pub trait BackgroundIo {
+    fn background_task(&mut self)
+
+    #[must_use]
+    fn background(&mut self) -> Backgrounded<&'static Self> {
+
+    }
+}
+
+pub struct Backgrounded<T> {
+    data: T,
+    premptor: Signal<CriticalSectionRawMutex, ()>
+}
+
+impl <T: 'static> Backgrounded<T> {
+    async fn preemptible<O>(&self, fut: impl Future<Output = O>) -> O {
+        select(self.premptor.wait(), fut).await
+    }
+}*/

@@ -1,4 +1,4 @@
-use crate::{config::{CallsignBuf, SirinConfig, SirinId}, mode::SirinMode, song::*, state::State};
+use crate::{config::{CallsignBuf, SirinConfig, SirinId}, mode::SirinMode, song::*, state::State, time::AbsoluteTimeReference};
 use derive_more::Display;
 use sirin_macros::*;
 
@@ -75,8 +75,27 @@ pub enum OutPacket {
     Error(PacketError),
     Config(SirinConfig),
     Mode(SirinMode),
+    FlightStart(u8),
     State(State),
-    FlashPageDump(FlashPageDump)
+    FlashPageDump(FlashPageDump),
+    FlightHeader(Paginated<FlightHeader>)
+}
+
+#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
+pub struct Paginated<T: SongSize + ToSong + FromSong> {
+    pub index: u16,
+    pub len: u16,
+    pub data: T
+}
+
+impl <T: SongSize + ToSong + FromSong> Paginated<T> {
+    pub fn new(index: u16, len: u16, data: T) -> Self {
+        Paginated {
+            index,
+            len,
+            data
+        }
+    }
 }
 
 #[derive(Debug, Display, Clone, PartialEq, Eq, SongSize, ToSong, FromSong)]
@@ -101,7 +120,7 @@ pub enum InPacket {
     SetConfig(SirinConfig),
     QueryMode,
     SetMode(SirinMode),
-    DumpFlash
+    QueryFlights
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SongSize, ToSong, FromSong)]
@@ -152,7 +171,7 @@ impl <P: SongSize + ToSong + FromSong> RadioPacket<P> {
     }
 }
 
-#[derive(SongSize, ToSong, FromSong)]
+#[derive(Clone, Debug, SongSize, ToSong, FromSong)]
 pub struct FlightHeader {
     /// Tracking byte -- when this flight is overwritten in the cyclic flash, this byte is zeroed out.
     /// This field must be first!
@@ -161,18 +180,20 @@ pub struct FlightHeader {
     /// Address of the start of flight logs, without offset.
     addr: [u8; 3],
 
-    /// Unix timestamp. 0 if not known.
-    /// Dates before 1970 map to after 2038 (unsigned)
-    pub timestamp: u32
+    pub time_reference: Option<AbsoluteTimeReference>,
+
+    /// Time of the flight in terms of ticks since boot
+    pub timestamp: u64
 }
 
 impl FlightHeader {
-    pub fn new(addr: u32, timestamp: u32) -> Self {
+    pub fn new(addr: u32, time_reference: Option<AbsoluteTimeReference>, timestamp: u64) -> Self {
         let arr = addr.to_le_bytes();
 
         Self {
             status: FlightHeaderStatus::Valid,
             addr: [arr[0], arr[1], arr[2]],
+            time_reference,
             timestamp
         }
     }
@@ -183,7 +204,7 @@ impl FlightHeader {
     }
 }
 
-#[derive(Clone, Copy, SongSize, ToSong, FromSong, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, SongSize, ToSong, FromSong, PartialEq, Eq)]
 #[repr(u8)]
 pub enum FlightHeaderStatus {
     // Initial value of NOR flash is 0xFF

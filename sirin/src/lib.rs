@@ -4,12 +4,13 @@
 
 use core::{ffi::CStr, marker::PhantomPinned, mem::MaybeUninit, pin::{pin, Pin}, ptr::addr_of_mut};
 use bmp3::Bmp3;
+use coroutine::InnerCoroutine;
 use defmt::{info, Display2Format};
 use embassy_executor::{Executor, Spawner};
 use embassy_futures::join::{join, join3, join5, join_array};
 use embassy_stm32::{ bind_interrupts, gpio::{Level, Output, Speed}, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, Config, Peripherals };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
-use flash::Flash;
+use flash::{Flash, FLASH_IO_COROUTINE};
 use gpio::GpioPins;
 use rfm9::{ReadRfm9, Rfm9};
 use sirin_macros::{FromSong, SongSize, ToSong};
@@ -37,6 +38,8 @@ pub mod subsystems;
 pub mod usb;
 pub mod io;
 pub mod error;
+pub mod time;
+pub mod coroutine;
 
 pub use sirin_shared::song;
 pub use sirin_shared::state;
@@ -179,6 +182,7 @@ impl Sirin {
             radio_ptr.write(Rfm9::new((*spi2).handle(radio_cs)));
 
             let flash_ptr: *mut Flash = ptr!(sirin.flash);
+            FLASH_IO_COROUTINE.write(InnerCoroutine::new(flash_ptr));
             let flash_cs = Output::new(p.PD2, Level::High, Speed::High);
             let flash_dev = W25Q::new((*spi2).handle(flash_cs));
             flash_ptr.write(Flash::new(flash_dev));

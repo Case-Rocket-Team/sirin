@@ -1,4 +1,5 @@
 use derive_more::From;
+use embedded_hal::spi::ErrorKind;
 use sirin_shared::song::{ToSongError, FromSongError};
 use embassy_sync::pubsub::Error as PubSubError;
 use rfm9::Rfm9Error;
@@ -10,5 +11,6 @@ pub enum SirinError {
     FromSongError(FromSongError),
     Rfm9Error(Rfm9Error),
     UsbError(USBError),
-    PubSubError(PubSubError)
+    PubSubError(PubSubError),
+    SpiError(ErrorKind)
 }

@@ -21,6 +21,17 @@ pub(crate) struct CyclicFlashSection {
     pub(crate) bitmap_subregion_size: u32,
 }
 
+pub struct AppendResult {
+    /// Address of the written data not including offset
+    pub index: u32,
+
+    /// Address of the written data including offset (e.g. absolute address)
+    pub addr: u32,
+
+    /// The sector that was erased, if any
+    pub sector_erased: Option<u32>
+}
+
 impl CyclicFlashSection {
     /// Must be multiples of sector size
     pub fn new(region_start: u32, region_end: u32) -> Self {
@@ -48,6 +59,11 @@ impl CyclicFlashSection {
         self.data_sector_index = i / SECTOR_SIZE;
 
         Ok(())
+    }
+
+    /// Get the current cursor address (Does not include offsets!)
+    pub fn cursor(&self) -> u32 {
+        self.data_byte_index + SECTOR_SIZE * self.data_sector_index
     }
 
     pub fn sector_index_byte_addr(&self, index: u32) -> u32 {
@@ -117,19 +133,31 @@ impl CyclicFlashSection {
 
     /// Append to the end of the cyclic buffer, deleting old sectors if necessary.
     /// Returns the address of what was written 
-    pub async fn append(&mut self, flash: &mut W25Q<SpiDev>, data: &[u8]) -> Result<u32, ErrorKind> {
+    pub async fn append(&mut self, flash: &mut W25Q<SpiDev>, data: &[u8]) -> Result<AppendResult, ErrorKind> {
         if data.len() as u32 + self.data_byte_index > SECTOR_SIZE {
             self.data_byte_index = 0;
             self.increment_sector_index();
         }
 
+        let sector_erased;
+
         if self.data_byte_index == 0 {
             self.write_sector_index(flash).await?;
-            flash.sector_erase(self.region_start + self.data_sector_index * SECTOR_SIZE).await?;
+            let sector_addr = self.region_start + self.data_sector_index * SECTOR_SIZE;
+            flash.sector_erase(sector_addr).await?;
+            sector_erased = Some(sector_addr);
+        } else {
+            sector_erased = None;
         }
 
-        let addr = self.region_start + self.data_sector_index * SECTOR_SIZE + self.data_byte_index;
+        let index = self.data_sector_index * SECTOR_SIZE + self.data_byte_index;
+        let addr = self.region_start + index;
         flash.write(addr, data).await?;
-        Ok(addr)
+        
+        Ok(AppendResult {
+            addr,
+            index,
+            sector_erased
+        })
     }
 }

@@ -14,7 +14,7 @@ use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{error::SirinError, flash::Flash, io::{broadcast, radio_io_task, send_packet, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, OutPacket, PacketError}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, uunit::WithUnits, Radio, Sirin};
+use sirin::{error::SirinError, flash::Flash, io::{broadcast, radio_io_task, send_packet, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, OutPacket, PacketError, Paginated}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, uunit::WithUnits, Radio, Sirin};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{Publisher, Subscriber}};
 use sirin_shared::mode::SirinMode;
 use sirin::song::SongDiscriminant;
@@ -70,9 +70,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         while let Ok(io_packet) = try_receive_packet() {
             match io_packet.packet {
                 InPacket::Null => {},
-                InPacket::DumpFlash => {
-                    todo!()
-                }
                 InPacket::QueryConfig => {
                     send_packet(IoPacket::new(
                         io_packet.channel,
@@ -90,13 +87,28 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 }
                 InPacket::SetMode(m) => {
                     mode = m;
+                    if mode == SirinMode::Flight {
+                        sirin.flash.new_flight().await?;
+                    }
+                }
+                InPacket::QueryFlights => {
+                    let headers = sirin.flash.flight_headers();
+                    let len = headers.len();
+
+                    for (i, header) in headers.enumerate() {
+                        send_packet(io_packet.reply(OutPacket::FlightHeader(
+                            Paginated::new(i as u16, len as u16, header.clone())
+                        )));
+                    }
                 }
             }
         }
 
         Timer::after_millis(100).await;
 
-        sirin.led.set_high();
+        if mode == SirinMode::Flight {
+            sirin.led.set_high();
+        }
 
         sirin.data = SirinData::measure(
             &mut sirin.baro,

@@ -86,6 +86,10 @@ impl <T> OptionHelperTrait<T> for OptionHelper<T> {
     }
 }
 
+impl <T: ConstSongSize + NonMaxBytesNiche> HasSongSize for Option<T> {
+    type Size = ConstSongSizeImplFromConstSongSize<T>;
+}
+
 impl <T: SongSize> SongSize for Option<T> {
     fn song_size(self: &Self) -> usize {
         (&OptionHelper(PhantomData)).helper_song_size(self)

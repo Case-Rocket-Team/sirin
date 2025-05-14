@@ -1329,6 +1329,7 @@ dependencies = [
  "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
  "embassy-stm32",
  "embassy-sync",
+ "embassy-time",
  "embassy-usb",
  "embassy-usb-driver",
  "embedded-hal 1.0.0",
@@ -1346,11 +1347,11 @@ dependencies = [
  "sirin-shared",
  "snafu",
  "spi-handle",
+ "static_assertions",
  "static_cell",
  "unhygienic2",
  "uunit",
  "w25qx",
- "zerocopy 0.8.25-alpha",
 ]
 
 [[package]]
@@ -1757,14 +1758,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zerocopy"
-version = "0.8.25-alpha"
-source = "git+https://github.com/google/zerocopy#3294fdafc192a915a84a2fbb2532b53ac104c7bb"
-dependencies = [
- "zerocopy-derive 0.8.25-alpha",
-]
-
-[[package]]
 name = "zerocopy-derive"
 version = "0.7.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1780,16 +1773,6 @@ name = "zerocopy-derive"
 version = "0.8.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a996a8f63c5c4448cd959ac1bab0aaa3306ccfd060472f85943ee0750f0169be"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.100",
-]
-
-[[package]]
-name = "zerocopy-derive"
-version = "0.8.25-alpha"
-source = "git+https://github.com/google/zerocopy#3294fdafc192a915a84a2fbb2532b53ac104c7bb"
 dependencies = [
  "proc-macro2",
  "quote",

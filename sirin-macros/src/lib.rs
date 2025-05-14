@@ -288,6 +288,11 @@ fn derive_song_size_enum(enum_song: &EnumSong) -> syn::Result<TokenStream2> {
         EnumSongDisc::Repr { .. } => {
             Ok(quote! {
                 #[automatically_derived]
+                impl HasSongSize for #ident {
+                    type Size = ConstSongSizeValue<{ core::mem::size_of::<Self>() }>;
+                }
+
+                #[automatically_derived]
                 impl SongSize for #ident {
                     fn song_size(&self) -> usize {
                         core::mem::size_of::<Self>()
@@ -485,7 +490,6 @@ fn derive_from_song_enum(enum_song: &EnumSong) -> syn::Result<TokenStream2> {
         }
         EnumSongDisc::Enum { disc_name, disc_type } => {
             let mut out = vec![];
-            let mut k = 0;
             for var in &enum_song.item.variants {
 
                 let mut fields_out = vec![];
@@ -500,7 +504,12 @@ fn derive_from_song_enum(enum_song: &EnumSong) -> syn::Result<TokenStream2> {
                     let typ = field.ty.clone();
                     
                     fields_out.push(quote! {
-                        let #ident = #typ::from_song(&buf[i..])?;
+                        let #ident = {
+                            // avoid turbofish problem
+                            type Ty = #typ;
+                            Ty::from_song(&buf[i..])?
+                        };
+
                         i += #ident.song_size();
                     });
                     i += 1;
@@ -520,9 +529,7 @@ fn derive_from_song_enum(enum_song: &EnumSong) -> syn::Result<TokenStream2> {
                             Ok(#ident::#var_ident(#(#idents,)*))
                         }}),
                     Fields::Named(_) => todo!()
-                };
-
-                k += 1;
+                }
             }
             
             Ok(quote! {
