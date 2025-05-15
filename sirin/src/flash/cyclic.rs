@@ -8,8 +8,8 @@ use w25qx::W25Q;
 use crate::{spi::{SpiDev, SpiError}, SirinConfig};
 
 const SECTOR_SIZE: u32 = 4096;
-const PAGE_SIZE: u32 = 256;
 
+#[allow(unused)]
 pub(crate) struct CyclicFlashSection {
     pub(crate) region_start: u32,
 
@@ -23,6 +23,7 @@ pub(crate) struct CyclicFlashSection {
     pub(crate) bitmap_subregion_size: u32,
 }
 
+#[allow(unused)]
 #[derive(Debug, Clone)]
 pub struct AppendResult {
     /// Address of the written data not including offset

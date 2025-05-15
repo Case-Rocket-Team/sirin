@@ -6,7 +6,6 @@ use core::{future::{poll_fn, Future}, task::Poll};
 use embedded_hal_async::{digital::Wait, spi::ErrorKind};
 use spi_handle::SpiHandle;
 use embedded_hal_async::spi::SpiBus;
-use yield_now::yield_now;
 
 mod yield_now;
 

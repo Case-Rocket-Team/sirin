@@ -14,7 +14,7 @@ use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{error::SirinError, flash::Flash, io::{broadcast, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, sync::Mutex, uunit::WithUnits, Radio, Sirin};
+use sirin::{error::SirinError, flash::Flash, io::{broadcast, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::WithUnits, Radio, Sirin};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{Publisher, Subscriber}};
 use sirin_shared::mode::SirinMode;
 use sirin::song::SongDiscriminant;
@@ -79,6 +79,17 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     continue;
                 },
                 InPacket::Ping => {}
+                InPacket::SetTime(ref reference) => {
+                    if duration_since_epoch().is_some() {
+                        continue;
+                    }
+
+                    set_duration_since_epoch(Duration::from_millis(reference.ms_since_epoch));
+                    flash.lock().await.set_absolute_time_reference(reference).await?;
+
+                    // skip OK packet
+                    continue;
+                }
                 InPacket::Reboot => {
                     Sirin::reboot();
                 }

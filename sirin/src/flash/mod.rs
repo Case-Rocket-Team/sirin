@@ -5,7 +5,7 @@ use core::{future::{poll_fn, Future, PollFn}, mem::MaybeUninit, ops::{Add, Neg, 
 use cyclic::{AppendResult, CyclicFlashSection};
 use defmt::{error, info, println, trace, Debug2Format, Display2Format};
 use embassy_time::{Instant, Timer};
-use sirin_shared::{packet::{FlightHeader, FlightHeaderStatus, LogEntry, OutPacket, MAX_OUT_PACKET_SIZE}, song::{FromSong, SongSize, ToSong}, time::AbsoluteTimeReference};
+use sirin_shared::{packet::{FlightHeader, FlightHeaderStatus, LogEntry, OutPacket, MAX_OUT_PACKET_SIZE}, song::{maybe_unwritten_max_bytes::MaybeUnwrittenMaxBytes, FromSong, SongSize, ToSong}, time::AbsoluteTimeReference};
 use sirin_shared::song::ConstSongSize;
 use static_assertions::const_assert;
 use w25qx::W25Q;
@@ -173,6 +173,24 @@ impl Flash {
         self.flight_headers.push_back(header).unwrap();
 
         Ok(&self.flight_headers.back().unwrap().header)
+    }
+
+    pub fn active_flight_header(&self) -> &FlashFlightHeader {
+        self.flight_headers.back().unwrap()
+    }
+
+    pub async fn set_absolute_time_reference(&mut self, reference: &AbsoluteTimeReference) -> Result<(), SirinError> {
+        let header = self.flight_headers.back_mut().unwrap();
+        header.header.time_reference = MaybeUnwrittenMaxBytes(Some(reference.clone()));
+        let mut buf = [0; FlightHeader::SONG_SIZE];
+        reference.to_song(&mut buf)?;
+
+        self.w25q.write(
+            flight_header_index_to_addr(header.index),
+            &buf
+        ).await?;
+
+        Ok(())
     }
 
     pub async fn log(&mut self, packet: &OutPacket) -> Result<(), SirinError> {

@@ -118,6 +118,7 @@ pub struct FlashPageDump {
 pub enum InPacket {
     Null,
     Ping,
+    SetTime(AbsoluteTimeReference),
     Reboot,
     QueryConfig,
     SetConfig(SirinConfig),
