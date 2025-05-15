@@ -1,13 +1,10 @@
 use core::ops::Div;
 use sirin_macros::{SongSize, ToSong, FromSong};
-use zerocopy::{KnownLayout, Immutable, FromBytes, IntoBytes};
-use serde::{Deserialize, Serialize};
-use uunit::{Degrees, Meters, Quantity, UnitMeters, UnitSeconds};
+use uunit::{Meters, Quantity, UnitMeters, UnitSeconds};
 use crate::song::*;
 
 type MetersPerSecond<T> = Quantity<T, <UnitMeters as Div<UnitSeconds>>::Output>;
 type MetersPerSecond2<T> = Quantity<T, <UnitMeters as Div<<UnitMeters as Div<UnitSeconds>>::Output>>::Output>;
-
 
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 #[repr(C)]

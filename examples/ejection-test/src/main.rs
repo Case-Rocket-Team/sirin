@@ -13,7 +13,7 @@ use embedded_hal_1::spi::ErrorKind;
 use postcard::take_from_bytes;
 use rfm9::ReadRfm9;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{event::Event, flash_logger::FlashLogger, song::{FromSong, OutPacket, SongSize}, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, uunit::WithUnits, Sirin};
+use sirin::{flash_logger::FlashLogger, song::{FromSong, OutPacket, SongSize}, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, uunit::WithUnits, Sirin};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::{Publisher, Subscriber}};
 use embassy_stm32::usb::{Driver, Instance};
 use embassy_usb::class::cdc_acm;
@@ -52,6 +52,8 @@ bind_interrupts!(struct Irqs {
 
 async fn main_task(sirin: &'static mut Sirin) {
     loop {
+        let mut packet = [0u8; 64];
+        sirin.usb.read_packet(&mut packet).await;
         sirin.usb.write_packet(b"Hello world!").await.unwrap();
         Timer::after_millis(500).await;
     }   

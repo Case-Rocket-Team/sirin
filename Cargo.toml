@@ -2,6 +2,7 @@
 members = [
     "sirin",
     "sirin-macros",
+    "sirin-shared",
     "bmp3",
     "dev-csr",
     "dev-csr-macro",
@@ -16,7 +17,6 @@ members = [
     "examples/h3lis-test",
     "examples/cmsis-dsp-test",
     "examples/main",
-    "examples/usb-test"
 ]
 resolver = "2"
 

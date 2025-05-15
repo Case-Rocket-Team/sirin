@@ -1,42 +1,104 @@
-use defmt::Debug2Format;
-use embassy_executor::task;
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, PubSubChannel}};
-use sirin_macros::{FromSong, SongSize, ToSong};
+use core::{future::{poll_fn, Future}, marker::PhantomData, mem::transmute, sync::atomic::{AtomicBool, Ordering}, task::Poll};
 
-use crate::{error::SirinError, song::{OutPacket, SongSize, ToSong, FromSong, ToSongError, FromSongError, MAX_OUT_PACKET_SIZE}, Flash, Radio, UsbSerial};
+use defmt::{error, info, println, Debug2Format};
+use embassy_executor::task;
+use embassy_futures::{join::join, select::{select, Either}};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TryReceiveError, TrySendError}, pubsub::{PubSubBehavior, PubSubChannel as EmbassyPubSubChannel, Subscriber}, signal::Signal, waitqueue::AtomicWaker};
+use embassy_usb::{driver::{Endpoint, EndpointIn, EndpointOut}, UsbDevice};
+use sirin_macros::{FromSong, SongSize, ToSong};
+use crate::{sync::Mutex, usb::{ReadEp, SirinUsb, WriteEp}};
+
+use crate::{error::SirinError, Flash, Radio};
+use sirin_shared::{config::{CallsignBuf, SirinConfig}, packet::{InPacket, IoChannel, IoPacket, OutPacket, RadioPacket, MAX_OUT_PACKET_SIZE}, song::{FromSong, FromSongError, SongSize, ToSong, ToSongError}};
 
 //pub static OUT_CHANNEL: Channel<CriticalSectionRawMutex, OutPacket, 10> = Channel::new();
-pub static OUT_CHANNEL: PubSubChannel<CriticalSectionRawMutex, OutPacket, 32, 3, 0> = PubSubChannel::new();
 
-pub fn out(packet: OutPacket) {
-    OUT_CHANNEL.publish_immediate(packet)
+type PubSubChannel<T, const SUBS: usize> = EmbassyPubSubChannel<CriticalSectionRawMutex, T, 32, SUBS, 0>;
+
+// Lower priority general broadcast channel.
+pub static BROADCAST_CHANNEL: PubSubChannel<OutPacket, 3> = EmbassyPubSubChannel::new();
+
+// High priority I/O channels
+pub static OUT_CHANNEL: PubSubChannel<IoPacket<OutPacket>, 3> = EmbassyPubSubChannel::new();
+pub static IN_CHANNEL: Channel<CriticalSectionRawMutex, IoPacket<InPacket>, 32> = Channel::new();
+
+static USB_BROADCASTING_ENABLED: AtomicBool = AtomicBool::new(false);
+
+pub fn broadcast(packet: OutPacket) {
+    info!("Broadcast log: {:?}", Debug2Format(&packet));
+    BROADCAST_CHANNEL.publish_immediate(packet);
 }
 
-#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
-pub struct RadioOutPacket {
-    callsign: [u8; 16],
-    packet: OutPacket
+pub fn send_packet(packet: IoPacket<OutPacket>) {
+    info!("{:?}", Debug2Format(&packet));
+    OUT_CHANNEL.publish_immediate(packet);
 }
 
-impl RadioOutPacket {
-    pub fn new(packet: OutPacket) -> Self {
-        let mut callsign = [0u8; 16];
-        // TODO: implement actual config
-        callsign[0..6].clone_from_slice(b"KF8BAA");
+pub async fn receive_packet() -> IoPacket<InPacket> {
+    IN_CHANNEL.receive().await
+}
 
-        Self {
-            callsign,
-            packet
+pub fn try_receive_packet() -> Result<IoPacket<InPacket>, TryReceiveError> {
+    IN_CHANNEL.try_receive()
+}
+
+fn received_packet(mut packet: IoPacket<InPacket>) {
+    while let Err(err) = IN_CHANNEL.try_send(packet) {
+        // drop the last packet in the queue
+        match try_receive_packet() {
+            Ok(p) => drop(p),
+            Err(err) => {
+                defmt::error!("Error trying to receive InPacket: {}", err);
+                return
+            }
+        }
+
+        // put the packet back (it was moved in `.try_send()`)
+        match err {
+            TrySendError::Full(p) => packet = p
+        }
+    }
+}
+
+pub async fn next_out_packet(
+    broadcast: &mut Subscriber<'static, CriticalSectionRawMutex, OutPacket, 32, 3, 0>,
+    out: &mut Subscriber<'static, CriticalSectionRawMutex, IoPacket<OutPacket>, 32, 3, 0>,
+    channel: IoChannel
+) -> OutPacket {
+    loop {
+        let res = select(
+            out.next_message_pure(),
+            broadcast.next_message_pure()
+        ).await;
+
+        return match res {
+            Either::First(p) => {
+                if p.channel == channel {
+                    p.packet
+                } else {
+                    continue;
+                }
+            },
+            Either::Second(p) => {
+                // TODO: I don't like how this is organized, i wish USB code could stick to its own
+                // functions
+                if channel == IoChannel::Usb && !USB_BROADCASTING_ENABLED.load(Ordering::Relaxed) {
+                    continue;
+                }
+
+                p
+            }
         }
     }
 }
 
 #[task]
 pub async fn radio_io_task(
+    config: &'static SirinConfig,
     radio: &'static mut Radio,
 ) {
     loop {
-        match radio_task_impl(radio).await {
+        match radio_task_impl(config, radio).await {
             Ok(()) => {},
             Err(e) => {
                 defmt::error!("Error in radio task: {}", Debug2Format(&e))
@@ -46,18 +108,152 @@ pub async fn radio_io_task(
 }
 
 async fn radio_task_impl(
+    config: &'static SirinConfig,
     radio: &mut Radio,
 ) -> Result<(), SirinError> {
-    let mut sub = OUT_CHANNEL.subscriber()?;
+    let mut broadcast_sub = BROADCAST_CHANNEL.subscriber()?;
+    let mut out_sub = OUT_CHANNEL.subscriber()?;
 
     let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
 
     loop {
-        // todo handle lag error
-        let packet = sub.next_message_pure().await;
+        let packet = next_out_packet(
+            &mut broadcast_sub,
+            &mut out_sub,
+            IoChannel::Usb
+        ).await;
+        let radio_packet = RadioPacket::new(config, packet);
 
-        packet.to_song(&mut buf)?;
+        radio_packet.to_song(&mut buf)?;
 
-        radio.transmit(&buf[0..packet.song_size()]).await?;
+        radio.transmit(&buf[0..radio_packet.song_size()]).await?;
     }
 }
+
+#[task]
+pub async fn usb_output_task(
+    usb: &'static mut WriteEp
+) {
+    loop {
+        match usb_output_task_impl(usb).await {
+            Ok(()) => {},
+            Err(e) => {
+                defmt::error!("Error in usb output task: {}", Debug2Format(&e))
+            }
+        }
+    }
+}
+
+pub fn set_usb_broadcasting_enabled(bool: bool) {
+    USB_BROADCASTING_ENABLED.store(bool, Ordering::Relaxed);
+}
+
+async fn usb_output_task_impl(
+    usb: &mut WriteEp
+) -> Result<(), SirinError> {
+    let mut broadcast_sub = BROADCAST_CHANNEL.subscriber()?;
+    let mut out_sub = OUT_CHANNEL.subscriber()?;
+
+    let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
+
+    loop {
+        usb.wait_enabled().await;
+
+        let packet = next_out_packet(
+            &mut broadcast_sub,
+            &mut out_sub,
+            IoChannel::Usb
+        ).await;
+
+        packet.to_song(&mut buf)?;
+        let len = packet.song_size();
+
+        // Need to chop it up into 64-byte sized packets (full speed device)
+        let mut i = 0;
+        while i < len {
+            let j = (i + 64).min(len);
+            usb.write(&buf[i..j]).await?;
+            i = j;
+        }
+    }
+}
+
+#[task]
+pub async fn usb_input_task(
+    usb: &'static mut ReadEp
+) {
+    loop {
+        match usb_input_task_impl(usb).await {
+            Ok(()) => {},
+            Err(e) => {
+                defmt::error!("Error in usb input task: {}", Debug2Format(&e))
+            }
+        }
+    }
+}
+
+async fn usb_input_task_impl(
+    usb: &mut ReadEp
+) -> Result<(), SirinError> {
+    let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
+    usb.wait_enabled().await;
+    usb.read(&mut buf).await?;
+    let packet = InPacket::from_song(&buf)?;
+    received_packet(IoPacket::new(IoChannel::Usb, packet));
+    Ok(())
+}
+
+#[task]
+pub async fn flash_io_task(flash: &'static Mutex<&'static mut Flash>){
+    loop {
+        match flash_task_impl(flash).await {
+            Ok(()) => {},
+            Err(e) => {
+                defmt::error!("Error in flash task: {}", Debug2Format(&e))
+            }
+        }
+    }
+}
+
+pub async fn flash_task_impl(flash_mutex: &Mutex<&mut Flash>) -> Result<(), SirinError> {
+    let mut broadcast_sub = BROADCAST_CHANNEL.subscriber()?;
+    let mut out_sub = OUT_CHANNEL.subscriber()?;
+
+    loop {
+        let packet = next_out_packet(
+            &mut broadcast_sub,
+            &mut out_sub,
+            IoChannel::Flash
+        ).await;
+
+        let mut flash = flash_mutex.lock().await;
+        flash.log(&packet).await.unwrap();
+        drop(flash);
+    }
+}
+
+/*
+#[task]
+fn background_task() {
+
+}
+
+pub trait BackgroundIo {
+    fn background_task(&mut self)
+
+    #[must_use]
+    fn background(&mut self) -> Backgrounded<&'static Self> {
+
+    }
+}
+
+pub struct Backgrounded<T> {
+    data: T,
+    premptor: Signal<CriticalSectionRawMutex, ()>
+}
+
+impl <T: 'static> Backgrounded<T> {
+    async fn preemptible<O>(&self, fut: impl Future<Output = O>) -> O {
+        select(self.premptor.wait(), fut).await
+    }
+}*/

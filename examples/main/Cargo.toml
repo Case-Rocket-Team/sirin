@@ -46,6 +46,7 @@ rfm9 = { version = "0.1.1", path = "../../rfm9", features = ['defmt'] }
 sirin-c = { version = "0.1.1", path = "../../sirin-c" }
 postcard = "1.1.1"
 w25qx = { version = "0.1.1", path = "../../w25qx" }
+sirin-shared = { version = "0.1.0", path = "../../sirin-shared" }
 #panic-halt = "0.2.0"
 
 [[bin]]

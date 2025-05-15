@@ -360,6 +360,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "derive_more"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "093242cf7570c207c83073cf82f79706fe7b8317e98620a47d5be7c3d8497678"
+dependencies = [
+ "derive_more-impl",
+]
+
+[[package]]
+name = "derive_more-impl"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bda628edc44c4bb645fbe0f758797143e4e07926f7ebf4e9bdfbd3d2ce621df3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
+ "unicode-xid",
+]
+
+[[package]]
 name = "dev-csr"
 version = "0.1.1"
 dependencies = [
@@ -1047,6 +1068,7 @@ dependencies = [
  "rfm9",
  "sirin",
  "sirin-c",
+ "sirin-shared",
  "static_cell",
  "stm32-fmc",
  "w25qx",
@@ -1298,15 +1320,19 @@ dependencies = [
  "async-trait",
  "bmp3",
  "byteorder",
+ "cortex-m",
  "cortex-m-rt",
  "defmt",
  "defmt-rtt",
  "derive-new",
+ "derive_more",
  "embassy-executor",
  "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
  "embassy-stm32",
  "embassy-sync",
+ "embassy-time",
  "embassy-usb",
+ "embassy-usb-driver",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
  "embedded-io",
@@ -1319,13 +1345,14 @@ dependencies = [
  "rfm9",
  "serde",
  "sirin-macros",
+ "sirin-shared",
  "snafu",
  "spi-handle",
+ "static_assertions",
  "static_cell",
  "unhygienic2",
  "uunit",
  "w25qx",
- "zerocopy 0.8.25-alpha",
 ]
 
 [[package]]
@@ -1345,6 +1372,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.100",
+]
+
+[[package]]
+name = "sirin-shared"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+ "sirin-macros",
+ "uunit",
 ]
 
 [[package]]
@@ -1515,6 +1551,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a210d160f08b701c8721ba1c726c11662f877ea6b7094007e1ca9a1041945034"
 
 [[package]]
+name = "unicode-xid"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
+
+[[package]]
 name = "usb-device"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1522,43 +1564,6 @@ checksum = "98816b1accafbb09085168b90f27e93d790b4bfa19d883466b5e53315b5f06a6"
 dependencies = [
  "heapless 0.8.0",
  "portable-atomic",
-]
-
-[[package]]
-name = "usb-test"
-version = "0.1.0"
-dependencies = [
- "bmp3",
- "chrono",
- "cortex-m",
- "cortex-m-rt",
- "critical-section",
- "defmt",
- "defmt-rtt",
- "embassy-executor",
- "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
- "embassy-net",
- "embassy-stm32",
- "embassy-sync",
- "embassy-time",
- "embassy-usb",
- "embedded-hal 0.2.7",
- "embedded-hal 1.0.0",
- "embedded-hal-async",
- "embedded-io-async",
- "embedded-nal-async 0.7.1",
- "embedded-storage",
- "futures",
- "heapless 0.8.0",
- "micromath",
- "panic-probe",
- "postcard",
- "rand_core",
- "rfm9",
- "sirin",
- "sirin-c",
- "static_cell",
- "stm32-fmc",
 ]
 
 [[package]]
@@ -1754,14 +1759,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zerocopy"
-version = "0.8.25-alpha"
-source = "git+https://github.com/google/zerocopy#3294fdafc192a915a84a2fbb2532b53ac104c7bb"
-dependencies = [
- "zerocopy-derive 0.8.25-alpha",
-]
-
-[[package]]
 name = "zerocopy-derive"
 version = "0.7.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1777,16 +1774,6 @@ name = "zerocopy-derive"
 version = "0.8.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a996a8f63c5c4448cd959ac1bab0aaa3306ccfd060472f85943ee0750f0169be"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.100",
-]
-
-[[package]]
-name = "zerocopy-derive"
-version = "0.8.25-alpha"
-source = "git+https://github.com/google/zerocopy#3294fdafc192a915a84a2fbb2532b53ac104c7bb"
 dependencies = [
  "proc-macro2",
  "quote",

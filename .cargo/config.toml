@@ -1,9 +1,14 @@
 [target.thumbv7em-none-eabihf]
-# TODO -- add specific chip
-#runner = 'probe-rs run --chip STM32H743ZITx'
+runner = 'probe-rs run --chip STM32H743VITx'
+# nucleo:
+# runner = 'probe-rs run --chip STM32H753ZITx'
 
 [build]
-target = "thumbv7em-none-eabihf" # Cortex-M4F and Cortex-M7F (with FPU)
+target = "thumbv7em-none-eabihf"
 
 [env]
-DEFMT_LOG = "trace"
+DEFMT_LOG = "info"
+
+[unstable]
+build-std = ["core"]
+build-std-features = ["panic_immediate_abort"]

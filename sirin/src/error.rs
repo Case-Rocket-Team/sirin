@@ -1,29 +1,17 @@
-use crate::song::ToSongError;
+use derive_more::From;
+use embedded_hal::spi::ErrorKind;
+use sirin_shared::song::{ToSongError, FromSongError};
 use embassy_sync::pubsub::Error as PubSubError;
 use rfm9::Rfm9Error;
+use embassy_usb::driver::EndpointError as USBError;
 
-macro_rules! join_error {
-    (enum $err:ident ($($specialized_err:ident),*)) => {
-        // Every possible Sirin error in one Big Beautiful Enum
-        #[derive(Debug, Clone)]
-        pub enum $err {
-            $(
-                $specialized_err($specialized_err)
-            ),*
-        }
-
-        $(
-            impl From<$specialized_err> for $err {
-                fn from(value: $specialized_err) -> Self {
-                    Self::$specialized_err(value)
-                }
-            }
-        )*
-    };
+#[derive(Debug, From)]
+pub enum SirinError {
+    ToSongError(ToSongError),
+    FromSongError(FromSongError),
+    Rfm9Error(Rfm9Error),
+    UsbError(USBError),
+    PubSubError(PubSubError),
+    SpiError(ErrorKind),
+    CorruptedData
 }
-
-join_error!(enum SirinError (
-    PubSubError,
-    ToSongError,
-    Rfm9Error
-));

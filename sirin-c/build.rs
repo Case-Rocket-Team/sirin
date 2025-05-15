@@ -11,6 +11,7 @@ pub fn main() {
         .file("src/sirin-c.c")
         .file("cmsis-dsp/Source/CommonTables/CommonTables.c")
         .file("cmsis-dsp/Source/FastMathFunctions/FastMathFunctions.c")
+        .target("thumbv7em-none-eabihf")
         .compile("sirin-c");
 }
 

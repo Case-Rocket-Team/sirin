@@ -2,7 +2,7 @@
 
 [package]
 edition = "2021"
-name = "usb-test"
+name = "ejection-test"
 version = "0.1.0"
 
 [package.metadata.release]
@@ -48,7 +48,7 @@ postcard = "1.1.1"
 #panic-halt = "0.2.0"
 
 [[bin]]
-name = "usb-test"
+name = "ejection-test"
 test = false
 bench = false
 

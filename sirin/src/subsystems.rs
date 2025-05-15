@@ -31,6 +31,7 @@ pub trait Measurement {
     fn unmeasured() -> Self;
 }
 
+// TODO: maybe change to `derive_more` crate and remove snafu
 #[derive(Debug, Clone, Snafu)]
 pub enum SubsystemError {
     #[snafu(display("{error_msg}"))]
