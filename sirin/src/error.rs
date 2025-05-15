@@ -12,5 +12,6 @@ pub enum SirinError {
     Rfm9Error(Rfm9Error),
     UsbError(USBError),
     PubSubError(PubSubError),
-    SpiError(ErrorKind)
+    SpiError(ErrorKind),
+    CorruptedData
 }

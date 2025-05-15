@@ -22,7 +22,6 @@ pub fn duration_since_epoch() -> Option<&'static Duration> {
 pub fn absolute_time_reference() -> Option<AbsoluteTimeReference> {
     let dur = duration_since_epoch()?;
     Some(AbsoluteTimeReference {
-        ticks_since_epoch: dur.as_ticks(),
-        tick_hz: TICK_HZ
+        ms_since_epoch: dur.as_millis(),
     })
 }

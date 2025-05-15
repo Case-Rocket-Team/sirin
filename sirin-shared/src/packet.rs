@@ -1,4 +1,4 @@
-use crate::{config::{CallsignBuf, SirinConfig, SirinId}, mode::SirinMode, song::*, state::State, time::AbsoluteTimeReference};
+use crate::{config::{CallsignBuf, SirinConfig, SirinId}, mode::SirinMode, song::{magic::MagicU8, maybe_unwritten_max_bytes::MaybeUnwrittenMaxBytes, *}, state::State, time::AbsoluteTimeReference};
 use derive_more::Display;
 use sirin_macros::*;
 
@@ -72,27 +72,25 @@ impl <const SIZE: usize> ByteArrayStr for [u8; SIZE] {
 #[song(discriminant(OutPacketType = u8))]
 pub enum OutPacket {
     Null,
+    Ok,
     Error(PacketError),
     Config(SirinConfig),
     Mode(SirinMode),
     FlightStart(u8),
-    State(State),
-    FlashPageDump(FlashPageDump),
-    FlightHeader(Paginated<FlightHeader>)
+    LogEntry(LogEntry),
+    FlightHeader(Page<FlightHeader>)
 }
 
-#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
-pub struct Paginated<T: SongSize + ToSong + FromSong> {
+#[derive(Debug, Clone, SongSize, FromSong, ToSong)]
+pub struct Page<T: SongSize + ToSong + FromSong> {
     pub index: u16,
-    pub len: u16,
     pub data: T
 }
 
-impl <T: SongSize + ToSong + FromSong> Paginated<T> {
-    pub fn new(index: u16, len: u16, data: T) -> Self {
-        Paginated {
+impl <T: SongSize + ToSong + FromSong> Page<T> {
+    pub fn new(index: u16, data: T) -> Self {
+        Page {
             index,
-            len,
             data
         }
     }
@@ -101,8 +99,11 @@ impl <T: SongSize + ToSong + FromSong> Paginated<T> {
 #[derive(Debug, Display, Clone, PartialEq, Eq, SongSize, ToSong, FromSong)]
 #[song(discriminant(PacketErrorType = u8))]
 pub enum PacketError {
-    #[display("The packet type {_1:?} is not supported over {_0:?}")]
+    #[display("The packet type {_1:?} is not supported over {_0:?}.")]
     PacketNotSupportedOverChannel(IoChannel, InPacketType),
+
+    #[display("Flight #{_0} could not be found.")]
+    FlightNotFound(u16),
 }
 
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
@@ -116,11 +117,37 @@ pub struct FlashPageDump {
 #[song(discriminant(InPacketType = u8))]
 pub enum InPacket {
     Null,
+    Ping,
+    Reboot,
     QueryConfig,
     SetConfig(SirinConfig),
     QueryMode,
     SetMode(SirinMode),
-    QueryFlights
+    QueryFlights,
+    ReadFlight(u16),
+    Tail(bool),
+    EraseFlash(MagicU8<0xA8>),
+}
+
+#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
+pub struct LogEntry {
+    pub time: u32,
+    pub log: Log
+}
+
+impl LogEntry {
+    pub fn new(time: u32, log: Log) -> Self {
+        Self {
+            time,
+            log
+        }
+    }
+}
+
+#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
+#[song(discriminant(LogDataType = u8))]
+pub enum Log {
+    State(State)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SongSize, ToSong, FromSong)]
@@ -180,7 +207,7 @@ pub struct FlightHeader {
     /// Address of the start of flight logs, without offset.
     addr: [u8; 3],
 
-    pub time_reference: Option<AbsoluteTimeReference>,
+    pub time_reference: MaybeUnwrittenMaxBytes<AbsoluteTimeReference>,
 
     /// Time of the flight in terms of ticks since boot
     pub timestamp: u64
@@ -193,12 +220,12 @@ impl FlightHeader {
         Self {
             status: FlightHeaderStatus::Valid,
             addr: [arr[0], arr[1], arr[2]],
-            time_reference,
+            time_reference: MaybeUnwrittenMaxBytes(time_reference),
             timestamp
         }
     }
 
-    pub fn addr(&self) -> u32 {
+    pub fn data_addr(&self) -> u32 {
         let arr = [self.addr[0], self.addr[1], self.addr[2], 0];
         u32::from_le_bytes(arr)
     }

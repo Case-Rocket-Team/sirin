@@ -1,9 +1,9 @@
-use core::{future::Future, marker::PhantomData, mem::transmute};
+use core::{future::{poll_fn, Future}, marker::PhantomData, mem::transmute, sync::atomic::{AtomicBool, Ordering}, task::Poll};
 
 use defmt::{error, info, println, Debug2Format};
 use embassy_executor::task;
 use embassy_futures::{join::join, select::{select, Either}};
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TryReceiveError, TrySendError}, pubsub::{PubSubBehavior, PubSubChannel as EmbassyPubSubChannel, Subscriber}, signal::Signal};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TryReceiveError, TrySendError}, pubsub::{PubSubBehavior, PubSubChannel as EmbassyPubSubChannel, Subscriber}, signal::Signal, waitqueue::AtomicWaker};
 use embassy_usb::{driver::{Endpoint, EndpointIn, EndpointOut}, UsbDevice};
 use sirin_macros::{FromSong, SongSize, ToSong};
 use crate::{sync::Mutex, usb::{ReadEp, SirinUsb, WriteEp}};
@@ -21,6 +21,8 @@ pub static BROADCAST_CHANNEL: PubSubChannel<OutPacket, 3> = EmbassyPubSubChannel
 // High priority I/O channels
 pub static OUT_CHANNEL: PubSubChannel<IoPacket<OutPacket>, 3> = EmbassyPubSubChannel::new();
 pub static IN_CHANNEL: Channel<CriticalSectionRawMutex, IoPacket<InPacket>, 32> = Channel::new();
+
+static USB_BROADCASTING_ENABLED: AtomicBool = AtomicBool::new(false);
 
 pub fn broadcast(packet: OutPacket) {
     info!("{:?}", Debug2Format(&packet));
@@ -77,7 +79,15 @@ pub async fn next_out_packet(
                     continue;
                 }
             },
-            Either::Second(p) => p
+            Either::Second(p) => {
+                // TODO: I don't like how this is organized, i wish USB code could stick to its own
+                // functions
+                if channel == IoChannel::Usb && !USB_BROADCASTING_ENABLED.load(Ordering::Relaxed) {
+                    continue;
+                }
+
+                p
+            }
         }
     }
 }
@@ -134,6 +144,10 @@ pub async fn usb_output_task(
     }
 }
 
+pub fn set_usb_broadcasting_enabled(bool: bool) {
+    USB_BROADCASTING_ENABLED.store(bool, Ordering::Relaxed);
+}
+
 async fn usb_output_task_impl(
     usb: &mut WriteEp
 ) -> Result<(), SirinError> {
@@ -161,8 +175,6 @@ async fn usb_output_task_impl(
             usb.write(&buf[i..j]).await?;
             i = j;
         }
-
-        info!("{}", packet.song_size())
     }
 }
 
@@ -186,7 +198,6 @@ async fn usb_input_task_impl(
     let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
     usb.wait_enabled().await;
     usb.read(&mut buf).await?;
-    error!("Read packet: {:?}", buf);
     let packet = InPacket::from_song(&buf)?;
     received_packet(IoPacket::new(IoChannel::Usb, packet));
     Ok(())

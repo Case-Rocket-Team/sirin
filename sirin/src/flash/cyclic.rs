@@ -1,5 +1,7 @@
 use core::{future::Future, ops::{Range, RangeBounds}};
 
+use defmt::info;
+use embassy_time::Timer;
 use embedded_hal::spi::ErrorKind;
 use w25qx::W25Q;
 
@@ -9,7 +11,7 @@ const SECTOR_SIZE: u32 = 4096;
 const PAGE_SIZE: u32 = 256;
 
 pub(crate) struct CyclicFlashSection {
-    region_start: u32,
+    pub(crate) region_start: u32,
 
     /// exclusive
     region_end: u32,
@@ -21,6 +23,7 @@ pub(crate) struct CyclicFlashSection {
     pub(crate) bitmap_subregion_size: u32,
 }
 
+#[derive(Debug, Clone)]
 pub struct AppendResult {
     /// Address of the written data not including offset
     pub index: u32,
@@ -54,9 +57,11 @@ impl CyclicFlashSection {
     }
 
     pub async fn init(&mut self, flash: &mut W25Q<SpiDev>) -> Result<(), ErrorKind> {
-        let i = self.search_data_index_from_bitmap(flash).await?;
-        self.data_byte_index = i % SECTOR_SIZE;
-        self.data_sector_index = i / SECTOR_SIZE;
+        let i = self.search_data_sector_index_from_bitmap(flash).await?;
+        self.data_sector_index = i;
+
+        info!("Starting at {}", self.cursor());
+        Timer::after_millis(1000).await;
 
         Ok(())
     }
@@ -72,10 +77,7 @@ impl CyclicFlashSection {
     }
 
     pub fn increment_sector_index(&mut self) {
-        self.data_sector_index += 1;
-        if self.data_sector_index >= self.data_subregion_size / SECTOR_SIZE {
-            self.data_sector_index = 0;
-        }
+        self.data_sector_index = (self.data_sector_index + 1) % (self.data_subregion_size / SECTOR_SIZE);
     }
 
     // assumption: you will not write a lower sector index unless its 0
@@ -84,7 +86,7 @@ impl CyclicFlashSection {
 
         if self.data_sector_index + 1 == self.data_subregion_size / SECTOR_SIZE {
             for i in 0..(self.bitmap_subregion_size / SECTOR_SIZE) {
-                flash.sector_erase(offset + i * SECTOR_SIZE).await?;
+                flash.checked_erase_sector(offset + i * SECTOR_SIZE).await?;
             }
         } else {
             let prev = self.sector_index_byte_addr(self.data_sector_index);
@@ -104,7 +106,7 @@ impl CyclicFlashSection {
     }
 
     /// binary search for the address of the sector index
-    pub async fn search_data_index_from_bitmap(&self, flash: &mut W25Q<SpiDev>) -> Result<u32, ErrorKind> {
+    pub async fn search_data_sector_index_from_bitmap(&self, flash: &mut W25Q<SpiDev>) -> Result<u32, ErrorKind> {
         let mut upper = self.bitmap_subregion_size;
         let mut lower = 0;
         let offset = self.data_subregion_size + self.region_start;
@@ -113,7 +115,7 @@ impl CyclicFlashSection {
             let i = (upper + lower) / 2;
 
             let mut buf = [0u8];
-            flash.read_data(offset + i, &mut buf).await?;
+            flash.read(offset + i, &mut buf).await?;
 
             if buf[0] == 0x00 {
                 // too low
@@ -134,7 +136,15 @@ impl CyclicFlashSection {
     /// Append to the end of the cyclic buffer, deleting old sectors if necessary.
     /// Returns the address of what was written 
     pub async fn append(&mut self, flash: &mut W25Q<SpiDev>, data: &[u8]) -> Result<AppendResult, ErrorKind> {
+        // do not write across two sectors
         if data.len() as u32 + self.data_byte_index > SECTOR_SIZE {
+            if self.data_byte_index < SECTOR_SIZE {
+                flash.checked_write(
+                    self.region_start + self.data_sector_index * SECTOR_SIZE + self.data_byte_index,
+                    &[0xFE]
+                ).await?;
+            }
+
             self.data_byte_index = 0;
             self.increment_sector_index();
         }
@@ -144,7 +154,7 @@ impl CyclicFlashSection {
         if self.data_byte_index == 0 {
             self.write_sector_index(flash).await?;
             let sector_addr = self.region_start + self.data_sector_index * SECTOR_SIZE;
-            flash.sector_erase(sector_addr).await?;
+            flash.checked_erase_sector(sector_addr).await?;
             sector_erased = Some(sector_addr);
         } else {
             sector_erased = None;
@@ -152,7 +162,10 @@ impl CyclicFlashSection {
 
         let index = self.data_sector_index * SECTOR_SIZE + self.data_byte_index;
         let addr = self.region_start + index;
-        flash.write(addr, data).await?;
+        flash.checked_write(addr, data).await?;
+
+        // due to the bounds check at the beginning this will surely be less the max
+        self.data_byte_index += data.len() as u32;
         
         Ok(AppendResult {
             addr,

@@ -1,5 +1,9 @@
-Sirin uses a NOR flash to store flight data. The chip is broken up into **sectors** of 4096 bytes each. Data can be written bytewise, but you cannot overwrite already written data; instead you must first erase the entire sector before writing again.
+> "We do things not because they are easy, but because we thought they would be easy."
+
+Sirin uses a NOR flash to store flight data. The chip is broken up into **sectors** of 4096 bytes each. Erased bytes are `0xFF`, and writes can turn any 1's into 0's, but **not the other way around.** Instead, you must first erase the entire sector before writing again.
 
 Config is stored in the first two sectors. The second sector has priority; if it is non-0xFF's then that is the config; otherwise the first sector is the config. When the config is updated, the non-active config sector is erased and overwritten.
 
-The rest of the sectors are cyclic flight logs. A pre-determined number of sectors at the end form a bitmap of already written sectors. The flight_id is simply the address (within these sectors) that the flight data starts at.
+The next two sectors store flight headers, and the rest of the sectors are cyclic flight logs. The idea is that packets are logged into a giant circular buffer, and we store pointers to where each flight begins in the flight header sectors. A pre-determined number of sectors at the end are used to track what current sector we're writing, these tracking sectors make up a bitmap, where each sector is 1 bit and we flip that bit from 1 to 0 when the sector has stuff in it. When we get to the end we erase the whole bitmap and start over to show that our index is now at 0. On startup, we can use a binary search on the bitmap to find the cursor.
+
+In hindsight, there are a lot of things that I would have done differently. The code ended up overly complex and confusing. The whole bitmap thing is neat but I don't think it's really needed, I don't think that a linear search from the last flight header would be "that bad". But now that it's there I don't see a reason to remove it, and it's one of the few parts of this that worked first try. Using a NOR flash to begin with was probably the wrong choice, maybe we can consider NAND in the future.

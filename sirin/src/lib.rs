@@ -38,6 +38,7 @@ pub mod usb;
 pub mod io;
 pub mod error;
 pub mod time;
+pub mod deque;
 
 pub use sirin_shared::song;
 pub use sirin_shared::state;
@@ -235,5 +236,9 @@ impl Sirin {
             let sirin: &'static mut _ = sirin.assume_init_mut();
             sirin
         }
+    }
+
+    pub fn reboot() {
+        cortex_m::peripheral::SCB::sys_reset();
     }
 }

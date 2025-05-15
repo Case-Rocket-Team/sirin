@@ -4,6 +4,8 @@ use core::mem::MaybeUninit;
 use uunit::{Dimension, Quantity};
 
 pub mod option;
+pub mod maybe_unwritten_max_bytes;
+pub mod magic;
 
 pub trait SongSize {
     /// Number of bytes that this should be when serialized.

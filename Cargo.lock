@@ -1320,6 +1320,7 @@ dependencies = [
  "async-trait",
  "bmp3",
  "byteorder",
+ "cortex-m",
  "cortex-m-rt",
  "defmt",
  "defmt-rtt",

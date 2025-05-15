@@ -2,7 +2,7 @@
 #![no_main]
 #![allow(unused_imports)]
 
-use core::{f32, f64::consts::PI, mem::{self, transmute_copy, MaybeUninit}, pin::Pin};
+use core::{f32, f64::consts::PI, mem::{self, transmute_copy, MaybeUninit}, pin::Pin, u16};
 
 use bmp3::{hal::{Bmp3RawData, ReadBmp3, RegErrReg, RegStatus}, Bmp3Readout};
 use defmt::{debug, info, println, Debug2Format};
@@ -14,7 +14,7 @@ use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{error::SirinError, flash::Flash, io::{broadcast, flash_io_task, radio_io_task, send_packet, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, OutPacket, PacketError, Paginated}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, sync::Mutex, uunit::WithUnits, Radio, Sirin};
+use sirin::{error::SirinError, flash::Flash, io::{broadcast, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, sync::Mutex, uunit::WithUnits, Radio, Sirin};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{Publisher, Subscriber}};
 use sirin_shared::mode::SirinMode;
 use sirin::song::SongDiscriminant;
@@ -73,41 +73,83 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
     loop {
         while let Ok(io_packet) = try_receive_packet() {
+            info!("Received packet: {:?}", Debug2Format(&io_packet));
             match io_packet.packet {
-                InPacket::Null => {},
+                InPacket::Null => {
+                    continue;
+                },
+                InPacket::Ping => {}
+                InPacket::Reboot => {
+                    Sirin::reboot();
+                }
                 InPacket::QueryConfig => {
                     send_packet(IoPacket::new(
                         io_packet.channel,
                         OutPacket::Config(sirin.config.clone())
                     ));
                 }
-                InPacket::SetConfig(config) => {
+                InPacket::SetConfig(ref config) => {
                     info!("Updating the config to {:?}", Debug2Format(&config));
 
                     flash.lock().await.save_config(&config).await.unwrap();
-                    cortex_m::peripheral::SCB::sys_reset();
+                    Sirin::reboot();
                 }
                 InPacket::QueryMode => {
                     send_packet(io_packet.reply(OutPacket::Mode(mode)));
                 }
                 InPacket::SetMode(m) => {
                     mode = m;
-                    if mode == SirinMode::Flight {
-                        flash.lock().await.new_flight().await?;
-                    }
                 }
                 InPacket::QueryFlights => {
                     let flash = flash.lock().await;
-                    let headers = flash.flight_headers();
-                    let len = headers.len();
 
-                    for (i, header) in headers.enumerate() {
+                    info!("Querying flights...");
+
+                    for (i, header) in flash.flight_headers.iter().enumerate() {
                         send_packet(io_packet.reply(OutPacket::FlightHeader(
-                            Paginated::new(i as u16, len as u16, header.clone())
+                            Page::new(i as u16, header.header.clone())
                         )));
                     }
                 }
+                InPacket::ReadFlight(index) => {
+                    let mut flash = flash.lock().await;
+                    let Some(header) = flash.flight_headers.get(index as usize) else {
+                        send_packet(io_packet.reply(OutPacket::Error(PacketError::FlightNotFound(index))));
+                        continue;
+                    };
+
+                    info!("Reading flight with header: {:?}", Debug2Format(&header));
+
+                    // borrow checker :(
+                    let header = header.clone();
+
+                    let mut iter = flash.read_logs(&header);
+                    while let Some(log) = iter.next().await {
+                        info!("Sent log: {}", Debug2Format(&log));
+                        send_packet(io_packet.reply(log?));
+                    }
+
+                    info!("Done writing logs.")
+                }
+                InPacket::Tail(enabled) => {
+                    set_usb_broadcasting_enabled(enabled);
+                    continue;
+                }
+                InPacket::EraseFlash(..) => {
+                    let mut flash = flash.lock().await;
+                    info!("Starting chip erase...");
+                    flash.w25q.chip_erase().await?;
+                    flash.w25q.until_ready().await?;
+                    info!("Finished chip erase.");
+                    send_packet(io_packet.reply(OutPacket::Ok));
+
+                    Timer::after_millis(500).await;
+
+                    panic!("Reboot");
+                }
             }
+
+            send_packet(io_packet.reply(OutPacket::Ok));
         }
 
         Timer::after_millis(100).await;
@@ -131,7 +173,10 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
         if i % 10 == 0 {
             // Do logging
-            broadcast(OutPacket::State(state));
+            broadcast(OutPacket::LogEntry(LogEntry::new(
+                Instant::now().as_millis() as u32,
+                Log::State(state)
+            )));
         }
 
         i = i.wrapping_add(1);

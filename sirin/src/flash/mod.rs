@@ -1,17 +1,16 @@
 #![doc = include_str!("README.md")]
 
-use core::{mem::MaybeUninit, ops::{Add, Neg, Rem, Sub}};
+use core::{future::{poll_fn, Future, PollFn}, mem::MaybeUninit, ops::{Add, Neg, Rem, Sub}};
 
 use cyclic::{AppendResult, CyclicFlashSection};
-use defmt::{println, trace, Display2Format};
-use embassy_time::Instant;
-use heapless::Deque;
-use sirin_shared::{packet::{FlightHeader, FlightHeaderStatus, OutPacket, MAX_OUT_PACKET_SIZE}, song::{FromSong, SongSize, ToSong}, time::AbsoluteTimeReference};
+use defmt::{error, info, println, trace, Debug2Format, Display2Format};
+use embassy_time::{Instant, Timer};
+use sirin_shared::{packet::{FlightHeader, FlightHeaderStatus, LogEntry, OutPacket, MAX_OUT_PACKET_SIZE}, song::{FromSong, SongSize, ToSong}, time::AbsoluteTimeReference};
 use sirin_shared::song::ConstSongSize;
 use static_assertions::const_assert;
 use w25qx::W25Q;
 
-use crate::{error::SirinError, spi::SpiDev, time::absolute_time_reference, SirinConfig};
+use crate::{deque::Deque, error::SirinError, spi::SpiDev, time::absolute_time_reference, SirinConfig};
 
 mod cyclic;
 
@@ -24,7 +23,7 @@ const_assert!(FLIGHT_HEADER_COUNT / 2 < SECTOR_SIZE as usize / FlightHeader::SON
 pub struct Flash {
     pub w25q: W25Q<SpiDev>,
     flight_data: CyclicFlashSection,
-    flight_headers: Deque<FlashFlightHeader, FLIGHT_HEADER_COUNT>,
+    pub flight_headers: Deque<FlashFlightHeader, FLIGHT_HEADER_COUNT>,
     is_second_config: bool,
 }
 
@@ -47,12 +46,18 @@ impl Flash {
     }
 
     pub(crate) async fn debug(&mut self) -> Result<(), SirinError> {
+        let reg1 = self.w25q.read_status_reg1().await.unwrap();
+        let reg2 = self.w25q.read_status_reg2().await.unwrap();
+        let reg3 = self.w25q.read_status_reg3().await.unwrap();
+
+        info!("W25Q32 Status Registers: 1[{:b}], 2[{:b}], 3[{:b}]", reg1, reg2, reg3);
+
         let mut buf = [0u8; 512];
 
-        self.w25q.read_data(0, &mut buf).await?;
+        self.w25q.read(0, &mut buf).await?;
         println!("First sector: {:x}", buf[0..256]);
 
-        self.w25q.read_data(4096, &mut buf).await?;
+        self.w25q.read(4096, &mut buf).await?;
         println!("Second sector: {:x}", buf[0..256]);
 
         Ok(())
@@ -67,11 +72,11 @@ impl Flash {
         let mut buf = [0u8; 512];
         self.is_second_config = true;
 
-        self.w25q.read_data(4096, &mut buf).await?;
+        self.w25q.read(4096, &mut buf).await?;
 
         if buf[0] != 0x77 {
             self.is_second_config = false;
-            self.w25q.read_data(0, &mut buf).await?;
+            self.w25q.read(0, &mut buf).await?;
         }
 
         if buf[0] != 0x77 {
@@ -90,32 +95,25 @@ impl Flash {
         match self.init_flight_headers().await {
             Ok(()) => {},
             Err(_) => {
-                let _ = self.erase_flight_headers().await;
+                error!("Failed to init flight headers. Erasing.");
+                self.erase_flight_headers().await?;
             }
         }
+
+        self.new_flight().await?;
 
         Ok(config)
     }
 
-    pub fn flight_headers_deque(&self) -> &Deque<FlashFlightHeader, FLIGHT_HEADER_COUNT> {
-        &self.flight_headers
-    }
-
-    pub fn flight_headers(&self) -> impl ExactSizeIterator<Item = &FlightHeader> {
-        self.flight_headers_deque().into_iter().map(|h| &h.header)
-    }
-
     async fn read_flight_header(&mut self, index: usize) -> Result<FlightHeader, SirinError> {
         let mut buf = [0u8; FlightHeader::SONG_SIZE];
-        self.w25q.read_data(flight_header_index_to_addr(index), &mut buf).await?;
-        // todo
+        self.w25q.read(flight_header_index_to_addr(index), &mut buf).await?;
         Ok(FlightHeader::from_song(&buf)?)
     }
 
     async fn read_flight_header_status(&mut self, index: usize) -> Result<FlightHeaderStatus, SirinError> {
         let mut buf = [0u8; 1];
-        self.w25q.read_data(flight_header_index_to_addr(index), &mut buf).await?;
-        // todo
+        self.w25q.read(flight_header_index_to_addr(index), &mut buf).await?;
         Ok(FlightHeaderStatus::from_song(&buf).unwrap_or(FlightHeaderStatus::Overwritten))
     }
 
@@ -123,7 +121,15 @@ impl Flash {
         let mut start = None;
 
         // TODO: optimize. We can read out multiple headers in a single read
-        // instead of using so many. Each read has 4 bytes overhead
+        // instead of using so many. Each read has multiple bytes of overhead
+
+        for i in 0..=FLIGHT_HEADER_COUNT {
+            let curr = self.read_flight_header_status(i % FLIGHT_HEADER_COUNT).await?;
+
+            info!("{} -> {}", i, Debug2Format(&curr));
+
+            Timer::after_millis(25).await;
+        }
 
         // We need to add these the the deque in order, so first scan for the start.
         let mut prev = self.read_flight_header_status(0).await?;
@@ -144,29 +150,40 @@ impl Flash {
         let start = start.unwrap_or(0);
 
         for i in 0..FLIGHT_HEADER_COUNT {
-            let header = self.read_flight_header((start + i) % FLIGHT_HEADER_COUNT).await?;
+            let index = (start + i) % FLIGHT_HEADER_COUNT;
+
+            let Ok(header) = self.read_flight_header(index).await else {
+                // We've reached the end of valid headers.
+                break;
+            };
 
             if header.status != FlightHeaderStatus::Valid {
                 // We've reached the end of valid headers.
                 break;
             }
 
-            let _ = self.flight_headers.push_back(FlashFlightHeader {
-                index: (start + i) % FLIGHT_HEADER_COUNT,
+            self.flight_headers.set(i, FlashFlightHeader {
+                index,
                 header
-            });
+            }).unwrap();
+        }
+
+        for header in &self.flight_headers {
+            Timer::after_millis(200).await;
+            info!("Read flight header: {:?}", Debug2Format(&header));
         }
 
         Ok(())
     }
 
     pub async fn erase_flight_headers(&mut self) -> Result<(), SirinError> {
-        self.w25q.sector_erase(SECTOR_SIZE * 2).await?;
-        self.w25q.sector_erase(SECTOR_SIZE * 3).await?;
+        self.w25q.checked_erase_sector(SECTOR_SIZE * 2).await?;
+        self.w25q.checked_erase_sector(SECTOR_SIZE * 3).await?;
         Ok(())
     }
 
     async fn invalidate_flight_header(&mut self, index: usize) -> Result<(), SirinError> {
+        info!("Invalidating flight header {}", index);
         self.w25q.write(flight_header_index_to_addr(index), &[0]).await?;
         Ok(())
     }
@@ -181,15 +198,24 @@ impl Flash {
             )
         };
 
+        info!("New flight header: {:?}", Debug2Format(&header));
+
         let addr = flight_header_index_to_addr(header.index);
 
         if addr % SECTOR_SIZE == 0 {
-            self.w25q.sector_erase(addr).await?;
+            info!("Erasing flight header sector {}", addr);
+            self.w25q.erase_sector(addr).await?;
+            self.w25q.until_ready().await?;
+            let mut buf = [0; 256];
+            self.w25q.read(addr, &mut buf).await?;
+            info!("Erased sector: [{}]", buf);
         }
 
         let mut buf = [0u8; FlightHeader::SONG_SIZE];
+        assert!(header.header.song_size() == FlightHeader::SONG_SIZE);
         header.header.to_song(&mut buf).unwrap();
-        self.w25q.write(addr, &buf).await?;
+        self.w25q.checked_write(addr, &buf).await?;
+        info!("Wrote flight header to {}", addr);
 
         if self.flight_headers.is_full() {
             self.flight_headers.pop_front();
@@ -202,22 +228,26 @@ impl Flash {
 
     pub async fn log(&mut self, packet: &OutPacket) -> Result<(), SirinError> {
         let mut data = [0u8; MAX_OUT_PACKET_SIZE];
-        packet.to_song(&mut data).unwrap();
-        let AppendResult { sector_erased, .. } = self.flight_data.append(&mut self.w25q, &data).await?;
+        packet.to_song(&mut data)?;
+        let result = self.flight_data.append(&mut self.w25q, &data[0..packet.song_size()]).await?;
+
+        info!("Wrote absolute address {}: {:x}", result.addr, &data[0..packet.song_size()]);
 
         // Check if we just overwrote an old log. If we did, invalidate it.
-        if let Some(sector) = sector_erased {
+        if let Some(sector) = result.sector_erased {
             loop {
+                if self.flight_headers.len() <= 1 {
+                    break;
+                }
+
                 // use a code block to drop the borrow on the deque so we can pop later
-                let index = {
-                    let Some(FlashFlightHeader { index, .. }) = self.flight_headers.front() else {
+                let (index, addr) = {
+                    let Some(FlashFlightHeader { index, header }) = self.flight_headers.front() else {
                         break;
                     };
 
-                    *index
+                    (*index, header.data_addr() + self.flight_data.region_start)
                 };
-
-                let addr = flight_header_index_to_addr(index);
 
                 // check if it's inside the erased sector
                 if sector <= addr && addr < sector + SECTOR_SIZE {
@@ -232,6 +262,17 @@ impl Flash {
         Ok(())
     }
 
+    pub fn read_logs(&mut self, header: &FlashFlightHeader) -> FlashFlightPacketsIterator {
+        let addr_of_next_header = self.flight_headers.get((header.index + 1) % self.flight_headers.len()).unwrap().header.data_addr();
+        
+        FlashFlightPacketsIterator {
+            flash: self,
+            rel_addr: header.header.data_addr(),
+            rel_addr_of_next_header: addr_of_next_header,
+            is_done: false
+        }
+    }
+
     pub async fn save_config(&mut self, config: &SirinConfig) -> Result<(), SirinError> {
         let mut buf = [0u8; 512];
         buf[0] = 0x77;
@@ -239,16 +280,78 @@ impl Flash {
         config.to_song(&mut buf[1..]).unwrap();
 
         if self.is_second_config {
-            self.w25q.sector_erase(0).await?;
-            self.w25q.write(0, &buf[0..config.song_size() + 1]).await?;
-            self.w25q.sector_erase(4096).await?;
+            self.w25q.checked_erase_sector(0).await?;
+            self.w25q.checked_write(0, &buf[0..config.song_size() + 1]).await?;
+            self.w25q.checked_erase_sector(4096).await?;
         } else {
-            self.w25q.sector_erase(4096).await?;
-            self.w25q.write(4096, &buf[0..config.song_size() + 1]).await?;
-            self.w25q.sector_erase(0).await?;
+            self.w25q.checked_erase_sector(4096).await?;
+            self.w25q.checked_write(4096, &buf[0..config.song_size() + 1]).await?;
+            self.w25q.checked_erase_sector(0).await?;
         }
 
         Ok(())
+    }
+}
+
+pub struct FlashFlightPacketsIterator<'a> {
+    flash: &'a mut Flash,
+
+    // Not including offset!
+    rel_addr: u32,
+
+    // Not including offset!
+    rel_addr_of_next_header: u32,
+
+    is_done: bool
+}
+
+impl <'a> FlashFlightPacketsIterator<'a> {
+    pub async fn next(&mut self) -> Option<Result<OutPacket, SirinError>> {
+        let size = self.flash.flight_data.data_subregion_size;
+        let offset = self.flash.flight_data.region_start;
+
+        if self.is_done || self.rel_addr >= self.rel_addr_of_next_header + size {
+            self.is_done = true;
+            return None;
+        }
+
+        let mut buf = [0; MAX_OUT_PACKET_SIZE];
+
+        loop {
+            //info!("Ran iter loop");
+            let addr = offset + (self.rel_addr % size);
+            match self.flash.w25q.read(addr, &mut buf).await {
+                Ok(..) => {},
+                Err(e) => return Some(Err(e.into()))
+            }
+
+            if buf[0] == 0xFE {
+                // Go to next sector
+                info!("Going to next sector");
+                self.rel_addr = (self.rel_addr / SECTOR_SIZE + 1) * SECTOR_SIZE;
+                continue;
+            } else if buf[0] == 0xFF {
+                // We're done reading.
+                self.is_done = true;
+                return None
+            } else if buf[0] == 0x00 {
+                Timer::after_millis(150).await;
+                info!("Buf: {:x}", &buf);
+                panic!("Couldn't read flight data, addr: {}", addr)
+            }
+
+            let log = match OutPacket::from_song(&buf) {
+                Ok(p) => p,
+                Err(e) => {
+                    self.is_done = true;
+                    return Some(Err(e.into()))
+                }
+            };
+
+            self.rel_addr += log.song_size() as u32;
+            return Some(Ok(log))
+        }
+        
     }
 }
 
@@ -257,22 +360,4 @@ fn flight_header_index_to_addr(i: usize) -> u32 {
     let headers_per_sector = FLIGHT_HEADER_COUNT as u32 / 2;
 
     2 * SECTOR_SIZE + i / headers_per_sector * SECTOR_SIZE + (i as u32 % headers_per_sector) * FlightHeader::SONG_SIZE as u32
-}
-
-// The fact the numbers are near their u32 max makes this difficult.
-/// a minus b, accounting for the fact that it may be wrapped around
-fn wrapping_difference(a: u32, b: u32, max: u32) -> i32 {
-    if a >= b {
-        // two possibilities
-        let x = a - b;
-        let y = max - a + b;
-
-        if x < y {
-            x as i32
-        } else {
-            -(y as i32)
-        }
-    } else {
-        -wrapping_difference(b, a, max)
-    }
 }
