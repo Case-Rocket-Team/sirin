@@ -96,6 +96,7 @@ impl Flash {
             Ok(()) => {},
             Err(_) => {
                 error!("Failed to init flight headers. Erasing.");
+                self.flight_headers = Deque::new();
                 self.erase_flight_headers().await?;
             }
         }
@@ -106,7 +107,7 @@ impl Flash {
     }
 
     async fn init_flight_headers(&mut self) -> Result<(), SirinError> {
-        for i in 0..(FLIGHT_HEADER_COUNT / 4) {
+        for i in 0..FLIGHT_HEADER_COUNT {
             let mut buf = [0u8; FlightHeader::SONG_SIZE];
             self.w25q.read(flight_header_index_to_addr(i), &mut buf).await?;
             
@@ -183,7 +184,7 @@ impl Flash {
         let header = self.flight_headers.back_mut().unwrap();
         header.header.time_reference = MaybeUnwrittenMaxBytes(Some(reference.clone()));
         let mut buf = [0; FlightHeader::SONG_SIZE];
-        reference.to_song(&mut buf)?;
+        header.header.to_song(&mut buf)?;
 
         self.w25q.write(
             flight_header_index_to_addr(header.index),

@@ -142,6 +142,7 @@ impl<T, const N: usize> Deque<T, N> {
                 self.push_back_unchecked(item);
                 Ok(())
             } else {
+                info!("Couldn't add {}, front {}, back {}, len {}", i, self.front, self.back, self.len());
                 Err(item)
             }
         }
