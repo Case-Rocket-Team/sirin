@@ -179,7 +179,7 @@ impl Flash {
         self.flight_headers.back().unwrap()
     }
 
-    pub async fn set_absolute_time_reference(&mut self, reference: &AbsoluteTimeReference) -> Result<(), SirinError> {
+    pub async fn set_absolute_time_reference(&mut self, reference: AbsoluteTimeReference) -> Result<(), SirinError> {
         let header = self.flight_headers.back_mut().unwrap();
         header.header.time_reference = MaybeUnwrittenMaxBytes(Some(reference.clone()));
         let mut buf = [0; FlightHeader::SONG_SIZE];

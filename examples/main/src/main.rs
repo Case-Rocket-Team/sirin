@@ -16,7 +16,7 @@ use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
 use sirin::{error::SirinError, flash::Flash, io::{broadcast, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::WithUnits, Radio, Sirin};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{Publisher, Subscriber}};
-use sirin_shared::mode::SirinMode;
+use sirin_shared::{mode::SirinMode, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
@@ -84,8 +84,11 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                         continue;
                     }
 
-                    set_duration_since_epoch(Duration::from_millis(reference.ms_since_epoch));
-                    flash.lock().await.set_absolute_time_reference(reference).await?;
+                    // Subtract current uptime from time since boot
+                    let ms_since_epoch = reference.ms_since_epoch - Instant::now().as_millis();
+
+                    set_duration_since_epoch(Duration::from_millis(ms_since_epoch));
+                    flash.lock().await.set_absolute_time_reference(AbsoluteTimeReference { ms_since_epoch }).await?;
 
                     // skip OK packet
                     continue;
