@@ -8,6 +8,8 @@ use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use core::{ptr, slice};
 
+use defmt::info;
+
 /// A fixed capacity double-ended queue.
 ///
 /// # Examples
@@ -86,6 +88,10 @@ impl<T, const N: usize> Deque<T, N> {
     // Serena additions --
 
     pub fn has(&self, i: usize) -> bool {
+        if self.is_empty() {
+            return false;
+        }
+
         if self.front < self.back {
             self.front <= i && i < self.back
         } else {
@@ -118,17 +124,21 @@ impl<T, const N: usize> Deque<T, N> {
     pub fn set(&mut self, i: usize, item: T) -> Result<(), T> {
         unsafe {
             if self.has(i) {
+                info!("Has {}", i);
                 *self.buffer.get_unchecked_mut(i) = MaybeUninit::new(item);
                 Ok(())
             } else if self.is_empty() {
+                info!("Empty {}", i);
                 *self.buffer.get_unchecked_mut(i) = MaybeUninit::new(item);
                 self.front = i;
                 self.back = Self::increment(i);
                 Ok(())
             } else if i == Self::decrement(self.front) {
+                info!("Push front {}", i);
                 self.push_front_unchecked(item);
                 Ok(())
             } else if i == self.back {
+                info!("Push back {}", i);
                 self.push_back_unchecked(item);
                 Ok(())
             } else {

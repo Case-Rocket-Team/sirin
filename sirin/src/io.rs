@@ -25,7 +25,7 @@ pub static IN_CHANNEL: Channel<CriticalSectionRawMutex, IoPacket<InPacket>, 32> 
 static USB_BROADCASTING_ENABLED: AtomicBool = AtomicBool::new(false);
 
 pub fn broadcast(packet: OutPacket) {
-    info!("{:?}", Debug2Format(&packet));
+    info!("Broadcast log: {:?}", Debug2Format(&packet));
     BROADCAST_CHANNEL.publish_immediate(packet);
 }
 

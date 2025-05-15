@@ -105,73 +105,22 @@ impl Flash {
         Ok(config)
     }
 
-    async fn read_flight_header(&mut self, index: usize) -> Result<FlightHeader, SirinError> {
-        let mut buf = [0u8; FlightHeader::SONG_SIZE];
-        self.w25q.read(flight_header_index_to_addr(index), &mut buf).await?;
-        Ok(FlightHeader::from_song(&buf)?)
-    }
-
-    async fn read_flight_header_status(&mut self, index: usize) -> Result<FlightHeaderStatus, SirinError> {
-        let mut buf = [0u8; 1];
-        self.w25q.read(flight_header_index_to_addr(index), &mut buf).await?;
-        Ok(FlightHeaderStatus::from_song(&buf).unwrap_or(FlightHeaderStatus::Overwritten))
-    }
-
     async fn init_flight_headers(&mut self) -> Result<(), SirinError> {
-        let mut start = None;
-
-        // TODO: optimize. We can read out multiple headers in a single read
-        // instead of using so many. Each read has multiple bytes of overhead
-
-        for i in 0..=FLIGHT_HEADER_COUNT {
-            let curr = self.read_flight_header_status(i % FLIGHT_HEADER_COUNT).await?;
-
-            info!("{} -> {}", i, Debug2Format(&curr));
-
-            Timer::after_millis(25).await;
-        }
-
-        // We need to add these the the deque in order, so first scan for the start.
-        let mut prev = self.read_flight_header_status(0).await?;
-        for i in 1..=FLIGHT_HEADER_COUNT {
-            let curr = self.read_flight_header_status(i % FLIGHT_HEADER_COUNT).await?;
-
-            if prev != FlightHeaderStatus::Valid
-                && curr == FlightHeaderStatus::Valid
-            {
-                // This is the start!
-                start = Some(i % FLIGHT_HEADER_COUNT);
-                break;
+        for i in 0..(FLIGHT_HEADER_COUNT / 4) {
+            let mut buf = [0u8; FlightHeader::SONG_SIZE];
+            self.w25q.read(flight_header_index_to_addr(i), &mut buf).await?;
+            
+            if buf[0] == FlightHeaderStatus::Valid as u8 {
+                // the `set` method will take care of setting up the deque
+                // for us
+                self.flight_headers.set(i, FlashFlightHeader {
+                    index: i,
+                    header: FlightHeader::from_song(&buf)?
+                }).map_err(|_| SirinError::CorruptedData)?;
             }
-
-            prev = curr;
         }
 
-        let start = start.unwrap_or(0);
-
-        for i in 0..FLIGHT_HEADER_COUNT {
-            let index = (start + i) % FLIGHT_HEADER_COUNT;
-
-            let Ok(header) = self.read_flight_header(index).await else {
-                // We've reached the end of valid headers.
-                break;
-            };
-
-            if header.status != FlightHeaderStatus::Valid {
-                // We've reached the end of valid headers.
-                break;
-            }
-
-            self.flight_headers.set(i, FlashFlightHeader {
-                index,
-                header
-            }).unwrap();
-        }
-
-        for header in &self.flight_headers {
-            Timer::after_millis(200).await;
-            info!("Read flight header: {:?}", Debug2Format(&header));
-        }
+        info!("Read these flight headers: {:#}", Debug2Format(&self.flight_headers));
 
         Ok(())
     }
@@ -231,7 +180,7 @@ impl Flash {
         packet.to_song(&mut data)?;
         let result = self.flight_data.append(&mut self.w25q, &data[0..packet.song_size()]).await?;
 
-        info!("Wrote absolute address {}: {:x}", result.addr, &data[0..packet.song_size()]);
+        //info!("Wrote absolute address {}: {:x}", result.addr, &data[0..packet.song_size()]);
 
         // Check if we just overwrote an old log. If we did, invalidate it.
         if let Some(sector) = result.sector_erased {
