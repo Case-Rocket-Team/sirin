@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 pub fn main() {
+    println!("cargo::rerun-if-changed=src/*");
+
     cc::Build::new()
         .compiler("arm-none-eabi-gcc")
         .includes(recursive_dirs("cmsis/CMSIS/Core/Include"))

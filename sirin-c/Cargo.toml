@@ -5,6 +5,7 @@ edition = "2021"
 license = "MIT"
 description = "C portion of code for Sirin"
 repository = "https://github.com/Nautki/sirin"
+include = ['src/sirin-c.c']
 
 [dependencies]
 libc = { version = "0.2.169", features = [] }
