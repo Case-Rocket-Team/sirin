@@ -18,12 +18,47 @@ struct State {
     float32_t gravity_nominal[3];
 };
 
+void vec2quaternion(
+    float32_t *out_quaternion,
+    float32_t *vec
+) {
+    float32_t mag;
+    arm_dot_prod_f32(&vec, &vec, 3, &mag);
+    arm_sqrt_f32(mag, &mag);
+
+    float32_t axis[3];
+    arm_scale_f32(vec, 1 / mag, &axis, 3);
+
+    axis_and_rot2quaternion(out_quaternion, &axis, mag);
+}
+
+// eq. 101
+void axis_and_rot2quaternion(
+    float32_t *out_quaternion,
+
+    /// Normalized axis
+    float32_t *axis,
+
+    // rad
+    float32_t angle
+) {
+    out_quaternion[0] = arm_cos_f32(angle / 2);
+    float32_t sin = arm_sin_f32(angle / 2);
+    out_quaternion[1] = axis[0] * sin;
+    out_quaternion[2] = axis[1] * sin;
+    out_quaternion[3] = axis[2] * sin;
+}
+
 void update_nominal(
     struct State *state,
     float32_t dt,
     float32_t accel_measurement[3],
     float32_t angular_vel_measurement[3]
 ) {
+    // Following https://www.iri.upc.edu/people/jsola/JoanSola/objectes/notes/kinematics.pdf
+
+    
+
     // Section 5.4.1
 
     float32_t accel_term[3];
@@ -51,9 +86,12 @@ void update_nominal(
 
     // Updating quaternion -- 259c
     {
-        // TODO -- check their quaternion impl
         float32_t fac[3];
         arm_sub_f32(&angular_vel_measurement, &state->angular_vel_bias_nominal, fac, 3);
         arm_scale_f32(&fac, dt, &fac, 3);
+        // TODO
+
+        // Update rotation matrix from quaternion
+        arm_quaternion2rotation_f32(&state->quaternion_nominal, &state->rotation_matrix_nominal.pData, 1);
     }
 }
