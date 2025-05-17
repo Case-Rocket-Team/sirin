@@ -127,6 +127,7 @@ impl Flash {
     }
 
     pub async fn erase_flight_headers(&mut self) -> Result<(), SirinError> {
+        info!("Erasing flight headers");
         self.w25q.checked_erase_sector(SECTOR_SIZE * 2).await?;
         self.w25q.checked_erase_sector(SECTOR_SIZE * 3).await?;
         Ok(())
