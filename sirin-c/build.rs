@@ -13,6 +13,9 @@ pub fn main() {
         .file("src/sirin-c.c")
         .file("cmsis-dsp/Source/CommonTables/CommonTables.c")
         .file("cmsis-dsp/Source/FastMathFunctions/FastMathFunctions.c")
+        .file("cmsis-dsp/Source/BasicMathFunctions/BasicMathFunctions.c")
+        .file("cmsis-dsp/Source/QuaternionMathFunctions/QuaternionMathFunctions.c")
+        .file("cmsis-dsp/Source/MatrixFunctions/MatrixFunctions.c")
         .target("thumbv7em-none-eabihf")
         .compile("sirin-c");
 }

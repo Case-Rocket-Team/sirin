@@ -2,19 +2,20 @@
 #![no_main]
 #![allow(unused_imports)]
 
-use core::{f32, f64::consts::PI, mem::{self, transmute_copy, MaybeUninit}, pin::Pin, u16};
+use core::{f32::consts::PI, mem::{self, transmute_copy, MaybeUninit}, pin::Pin, u16};
 
 use bmp3::{hal::{Bmp3RawData, ReadBmp3, RegErrReg, RegStatus}, Bmp3Readout};
 use defmt::{debug, info, println, Debug2Format};
 use embassy_executor::{task, Executor, Spawner};
 use embassy_stm32::{bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, peripherals::{self, DMA1_CH0, DMA1_CH1, PD8, PD9, USART3}, usart::{self, Config, Uart}};
-use embassy_time::{Duration, Instant, Timer};
+use embassy_time::{Duration, Instant, Timer, TICK_HZ};
 use embedded_hal_1::spi::ErrorKind;
 use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
+use sirin_c::update_nominal;
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{error::SirinError, flash::Flash, io::{broadcast, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::WithUnits, Radio, Sirin};
+use sirin::{error::SirinError, flash::Flash, io::{broadcast, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, NominalState, Pos, Vel}, subsystems::SirinData, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, MetersPerSecond2, WithUnits}, Radio, Sirin};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{Publisher, Subscriber}};
 use sirin_shared::{mode::SirinMode, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
@@ -58,12 +59,13 @@ bind_interrupts!(struct Irqs {
 
 async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut i: u32 = 0;
+    let mut last_measurement_time: Option<Instant> = None;
 
     //sirin.spawner.spawn(radio_io_task(&mut sirin.radio)).unwrap();
     sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
     sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
 
-    let mut state: State;
+    let mut state = NominalState::default();
     let mut mode = SirinMode::Standby;
 
     let mut flash = Mutex::new(&mut sirin.flash);
@@ -178,18 +180,46 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             &mut sirin.high_g_imu
         ).await;
 
-        // TODO: Replace with call to C code
-        unsafe {
-            let mut _state: MaybeUninit<State> = MaybeUninit::uninit();
-            run_kalman_filter(&mut _state, &sirin.data);
-            state = _state.assume_init();
+        let curr = Instant::now();
+
+        if let Some(prev) = last_measurement_time {
+            let dt = (curr - prev).as_ticks() as f32 / TICK_HZ as f32;
+
+            if let Ok(ref accel) = sirin.data.imu.accel {
+                if let Ok(ref angular_vel) = sirin.data.imu.angular_vel {
+                    // TODO: figure out better unit conversions
+
+                    const GRAVITY: f32 = 10.0;
+                    let accel_x = accel.x.value as f32 * GRAVITY / 1_000_000.0;
+                    let accel_y = accel.y.value as f32 * GRAVITY / 1_000_000.0;
+                    let accel_z = accel.z.value as f32 * GRAVITY / 1_000_000.0;
+                    let accel = [accel_x, accel_y, accel_z];
+
+                    const DEG_TO_RAD: f32 = PI / 180.0;
+                    let x_pitch = angular_vel.x_pitch.value as f32 * DEG_TO_RAD / 1_000_000.0;
+                    let y_roll = angular_vel.y_roll.value as f32 * DEG_TO_RAD / 1_000_000.0;
+                    let z_yaw = angular_vel.z_yaw.value as f32 * DEG_TO_RAD / 1_000_000.0;
+                    let ang_vel = [x_pitch, y_roll, z_yaw];
+                    
+                    unsafe {
+                        update_nominal(
+                            &mut state,
+                            dt.with_units(),
+                            &accel[0] as *const f32,
+                            &ang_vel[0] as *const f32
+                        );
+                    }
+                }
+            }
         }
+        
+        last_measurement_time = Some(curr);
 
         if i % 10 == 0 {
             // Do logging
             broadcast(OutPacket::LogEntry(LogEntry::new(
                 Instant::now().as_millis() as u32,
-                Log::State(state)
+                Log::State(state.clone())
             )));
         }
 
@@ -198,30 +228,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         sirin.led.set_low();
     }
 }
-
-unsafe fn run_kalman_filter(state: *mut MaybeUninit<State>, data: *const SirinData) {
-    let accel = (*data).imu.accel.as_ref().unwrap();
-
-    state.write(MaybeUninit::new(State {
-        pos: EcefPos {
-            x: 0.0.with_units(),
-            y: 0.0.with_units(),
-            z: 0.0.with_units(),
-        },
-        vel: Vel {
-            x: 0.0.with_units(),
-            y: 0.0.with_units(),
-            z: 0.0.with_units(),
-        },
-        accel: Accel {
-            x: (accel.x.value as f64).with_units(),
-            y: (accel.y.value as f64).with_units(),
-            z: (accel.z.value as f64).with_units(),
-        },
-        altitude: 0.0.with_units()
-    }));
-}
-
 
 // TODO: airbreaks
 /*#[task]

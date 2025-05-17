@@ -4,18 +4,16 @@ float32_t test_sin(float32_t x) {
     return arm_sin_f32(x);
 }
 
-float32_t rotation_matrix_nominal_data[9];
+struct NominalState {
+    float32_t pos[3];
+    float32_t vel[3];
+    float32_t accel[3];
 
-struct State {
-    // nominal
-    float32_t position_nominal[3];
-    float32_t velocity_nominal[3];
-    float32_t quaternion_nominal[4];
-    arm_matrix_instance_f32 rotation_matrix_nominal;
+    float32_t rot_quaternion[4];
 
-    float32_t accel_bias_nominal[3];
-    float32_t angular_vel_bias_nominal[3];
-    float32_t gravity_nominal[3];
+    float32_t accel_bias[3];
+    float32_t angular_vel_bias[3];
+    float32_t gravity[3];
 };
 
 // eq. 101
@@ -50,26 +48,37 @@ void vec2quaternion(
 }
 
 void update_nominal(
-    struct State *state,
+    struct NominalState *state,
     float32_t dt,
-    float32_t accel_measurement[3],
-    float32_t angular_vel_measurement[3]
+    float32_t *accel_measurement,
+    float32_t *angular_vel_measurement
 ) {
     // Following https://www.iri.upc.edu/people/jsola/JoanSola/objectes/notes/kinematics.pdf    
 
-    // Section 5.4.1
+    memcpy(state->accel, accel_measurement, 3*4);
 
+    // Section 5.4.1
+    // Create rotation matrix from quaternion
+    float32_t rot_matrix_data[9];
+    arm_matrix_instance_f32 rot_matrix = {
+        .numCols = 3,
+        .numRows = 3,
+        .pData = rot_matrix_data
+    };
+    arm_quaternion2rotation_f32(state->rot_quaternion, rot_matrix.pData, 1);
+
+    // common accel term
     float32_t accel_term[3];
-    arm_sub_f32(accel_measurement, state->accel_bias_nominal, accel_term, 3);
-    arm_mat_vec_mult_f32(&state->rotation_matrix_nominal, accel_term, accel_term);
-    arm_add_f32(accel_term, state->gravity_nominal, accel_term, 3);
+    arm_sub_f32(accel_measurement, state->accel_bias, accel_term, 3);
+    arm_mat_vec_mult_f32(&rot_matrix, accel_term, accel_term);
+    arm_add_f32(accel_term, state->gravity, accel_term, 3);
 
     // Updating position -- 259a
     {
         float32_t vel_term[3];
-        arm_scale_f32(state->velocity_nominal, dt, vel_term, 3);
-        arm_add_f32(state->position_nominal, vel_term, state->position_nominal, 3);
-        arm_add_f32(state->position_nominal, accel_term, state->position_nominal, 3);
+        arm_scale_f32(state->vel, dt, vel_term, 3);
+        arm_add_f32(state->pos, vel_term, state->pos, 3);
+        arm_add_f32(state->pos, accel_term, state->pos, 3);
         
         float32_t accel_term2[3];
         arm_scale_f32(accel_term, 0.5 * dt * dt, accel_term2, 3);
@@ -79,17 +88,20 @@ void update_nominal(
     {
         float32_t accel_term2[3];
         arm_scale_f32(accel_term, dt, accel_term2, 3);
-        arm_add_f32(state->velocity_nominal, accel_term2, state->velocity_nominal, 3);
+        arm_add_f32(state->vel, accel_term2, state->vel, 3);
     }
 
     // Updating quaternion -- 259c
     {
-        float32_t fac[3];
-        arm_sub_f32(angular_vel_measurement, state->angular_vel_bias_nominal, fac, 3);
-        arm_scale_f32(fac, dt, fac, 3);
-        // TODO
+        float32_t vec[3];
+        arm_sub_f32(angular_vel_measurement, state->angular_vel_bias, vec, 3);
+        arm_scale_f32(vec, dt, vec, 3);
+        
+        float32_t rotate[4];
+        vec2quaternion(rotate, vec);
+        arm_quaternion_product_single_f32(state->rot_quaternion, rotate, state->rot_quaternion);
 
-        // Update rotation matrix from quaternion
-        arm_quaternion2rotation_f32(state->quaternion_nominal, state->rotation_matrix_nominal.pData, 1);
+        // renormalize due to floating point errors
+        arm_quaternion_normalize_f32(state->rot_quaternion, state->rot_quaternion, 1);
     }
 }

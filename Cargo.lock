@@ -1361,6 +1361,8 @@ version = "0.1.1"
 dependencies = [
  "cc",
  "libc",
+ "sirin-shared",
+ "uunit",
  "walkdir",
 ]
 
@@ -1379,6 +1381,7 @@ name = "sirin-shared"
 version = "0.1.0"
 dependencies = [
  "derive_more",
+ "num-traits",
  "sirin-macros",
  "uunit",
 ]
@@ -1606,7 +1609,7 @@ dependencies = [
 [[package]]
 name = "uunit"
 version = "0.1.0"
-source = "git+https://github.com/Nautki/uunit#adb74448d53aed886e71e81908459415d5fb51e1"
+source = "git+https://github.com/Nautki/uunit#26ca07c2353fa81c0fea9c95358c6e035da4af4f"
 dependencies = [
  "serde",
  "typenum",
