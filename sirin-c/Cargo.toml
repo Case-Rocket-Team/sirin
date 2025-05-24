@@ -5,9 +5,12 @@ edition = "2021"
 license = "MIT"
 description = "C portion of code for Sirin"
 repository = "https://github.com/Nautki/sirin"
+include = ['src/sirin-c.c']
 
 [dependencies]
 libc = { version = "0.2.169", features = [] }
+sirin-shared = { version = "0.1.0", path = "../sirin-shared" }
+uunit = { git = "https://github.com/Nautki/uunit", version = "0.1.0" }
 
 [build-dependencies]
 cc = "1.2"

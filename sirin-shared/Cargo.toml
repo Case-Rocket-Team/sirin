@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 derive_more = { version = "2.0.1", features = ["display"], default-features = false }
+num-traits = { version = "0.2.19", default-features = false }
 sirin-macros = { version = "0.1.1", path = "../sirin-macros" }
 uunit = { version = "0.1.0", git = "https://github.com/Nautki/uunit" }
 

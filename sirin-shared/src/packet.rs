@@ -1,4 +1,4 @@
-use crate::{config::{CallsignBuf, SirinConfig, SirinId}, mode::SirinMode, song::{magic::MagicU8, maybe_unwritten_max_bytes::MaybeUnwrittenMaxBytes, *}, state::State, time::AbsoluteTimeReference};
+use crate::{config::{CallsignBuf, SirinConfig, SirinId}, mode::SirinMode, song::{magic::MagicU8, maybe_unwritten_max_bytes::MaybeUnwrittenMaxBytes, *}, state::NominalState, time::AbsoluteTimeReference};
 use derive_more::Display;
 use sirin_macros::*;
 
@@ -148,7 +148,7 @@ impl LogEntry {
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 #[song(discriminant(LogDataType = u8))]
 pub enum Log {
-    State(State)
+    State(NominalState)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SongSize, ToSong, FromSong)]
