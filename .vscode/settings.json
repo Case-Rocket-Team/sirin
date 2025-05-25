@@ -5,4 +5,11 @@
     "rust-analyzer.check.allTargets": false,
     "cmake.ignoreCMakeListsMissing": true,
     "clangd.arguments": [],
+    "files.associations": {
+        "*.ejs": "html",
+        "*.sqlite": "sqlite",
+        "*.eta": "html",
+        "arm_math.h": "c",
+        "math.h": "c"
+    },
 }

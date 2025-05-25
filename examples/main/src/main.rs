@@ -12,10 +12,10 @@ use embassy_time::{Duration, Instant, Timer, TICK_HZ};
 use embedded_hal_1::spi::ErrorKind;
 use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
-use sirin_c::update_nominal;
+use sirin_c::{pressure_altitude, update_with_imu};
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{error::SirinError, flash::Flash, io::{broadcast, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, NominalState, Pos, Vel}, subsystems::SirinData, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, MetersPerSecond2, WithUnits}, Radio, Sirin};
+use sirin::{error::SirinError, flash::Flash, io::{broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::SirinData, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, MetersPerSecond2, WithUnits}, Radio, Sirin};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{Publisher, Subscriber}};
 use sirin_shared::{mode::SirinMode, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
@@ -65,8 +65,14 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
     sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
 
-    let mut state = NominalState::default();
+    let mut nominal = NominalState::default();
+    let mut error = ErrorState::default();
+
     let mut mode = SirinMode::Standby;
+
+    let initial_altitude = unsafe {
+        pressure_altitude(sirin.baro.read().await?.pressure.convert())
+    };
 
     let mut flash = Mutex::new(&mut sirin.flash);
     sirin.spawner.spawn(flash_io_task(unsafe {
@@ -180,6 +186,16 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             &mut sirin.high_g_imu
         ).await;
 
+        if let Ok(pressure) = sirin.data.baro.pressure {
+            let measured_altitude = unsafe {
+                pressure_altitude(pressure.convert())
+            };
+
+            info!("{}", measured_altitude.value);
+
+            broadcast_log(sirin.data.time, Log::BarometricAltitude(measured_altitude - initial_altitude));
+        }
+
         let curr = Instant::now();
 
         if let Some(prev) = last_measurement_time {
@@ -202,8 +218,9 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     let ang_vel = [x_pitch, y_roll, z_yaw];
                     
                     unsafe {
-                        update_nominal(
-                            &mut state,
+                        update_with_imu(
+                            &mut nominal,
+                            &mut error,
                             dt.with_units(),
                             &accel[0] as *const f32,
                             &ang_vel[0] as *const f32
@@ -217,10 +234,10 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
         if i % 10 == 0 {
             // Do logging
-            broadcast(OutPacket::LogEntry(LogEntry::new(
-                Instant::now().as_millis() as u32,
-                Log::State(state.clone())
-            )));
+            broadcast_log(
+                sirin.data.time,
+                Log::State(nominal.clone())
+            );
         }
 
         i = i.wrapping_add(1);

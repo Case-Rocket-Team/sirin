@@ -1,5 +1,6 @@
 #include "arm_math.h"
 
+
 // Following https://www.iri.upc.edu/people/jsola/JoanSola/objectes/notes/kinematics.pdf    
 
 // ref. table 3, pg. 52
@@ -12,7 +13,7 @@ struct NominalState {
 
     float32_t accel_bias[3];
     float32_t angular_vel_bias[3];
-    float32_t gravity[3];
+    //float32_t gravity[3];
 };
 
 struct ErrorState {
@@ -22,10 +23,70 @@ struct ErrorState {
 
     float32_t accel_bias[3];
     float32_t angular_vel_bias[3];
-    float32_t gravity[3];
+    //float32_t gravity[3];
 
     float32_t angles_vector[3]; 
 };
+
+#define GRAVITY 9.80665
+
+float32_t pressure_altitude(float64_t pressure_hpa) {
+    // TODO
+    //return 44307.7 - 11872.4 * powl(pressure_hpa, 0.190284);
+    return 1.0;
+}
+
+float32_t gravity_at_altitude(float32_t altitude_m) {
+    float32_t term = (6371008.77 / (6371008.77 + altitude_m));
+    return GRAVITY * term * term;
+}
+
+// make sure pDst is not pointing to the same array as pSrcA or pSrcB
+void cross_product(
+    const float32_t pSrcA[3],
+    const float32_t pSrcB[3],
+    float32_t pDst[3]
+) {
+    pDst[0] = pSrcA[1] * pSrcB[2] - pSrcA[2] * pSrcB[1];
+    pDst[1] = - pSrcA[0] * pSrcB[2] + pSrcA[2] * pSrcB[0];
+    pDst[2] = pSrcA[0] * pSrcB[1] - pSrcA[1] * pSrcB[0];
+}
+
+// Finds the quaternion that rotates unit vec A into B.
+void quaternion_between_vecs(
+    float32_t pSrcUnitVecA[3],
+    float32_t pSrcUnitVecB[3],
+    float32_t pDstQuat[4]
+) {
+    // todo optimize
+    cross_product(pSrcUnitVecA, pSrcUnitVecB, &pDstQuat[1]);
+    pDstQuat[0] = 2.0f;
+    arm_quaternion_normalize_f32(pDstQuat, pDstQuat, 1);
+}
+
+// this is basically the same as a cross product, ref. eq. 20
+// TODO: see if this is included in CMSIS somewhere (I couldn't
+// find it in a cursory search).
+void skew_mat(
+    float32_t pSrc[3],
+    float32_t pDst[9]
+) {
+    // row 1
+    pDst[0] = 0;
+    pDst[1] = -pSrc[2];
+    pDst[2] = pSrc[1];
+
+    // row 2
+    pDst[3] = pSrc[2];
+    pDst[4] = 0;
+    pDst[5] = -pSrc[0];
+
+    // row 3
+    pDst[6] = -pSrc[1];
+    pDst[7] = pSrc[0];
+    pDst[8] = 0;
+}
+
 
 // vector times its transpose
 // vv^T
@@ -121,27 +182,23 @@ void vec2rot_matrix(
     }
 }
 
-// this is basically the same as a cross product, ref. eq. 20
-// TODO: see if this is included in CMSIS somewhere (I couldn't
-// find it in a cursory search).
-void skew_mat(
-    float32_t pSrc[3],
-    float32_t pDst[9]
+void init_with_imu(
+    struct NominalState *nominal,
+    struct ErrorState *error,
+    float32_t *accel_measurement,
+    float32_t *angular_vel_measurement 
 ) {
-    // row 1
-    pDst[0] = 0;
-    pDst[1] = -pSrc[2];
-    pDst[2] = pSrc[1];
+    // Take the current accel vector as gravity and set the rest as the accel bias.
+    // Obviously this won't be accurate but the filter can correct those errors.
 
-    // row 2
-    pDst[3] = pSrc[2];
-    pDst[4] = 0;
-    pDst[5] = -pSrc[0];
+    float32_t accel_mag;
+    float32_t accel_unit[3];
+    decompose_vec(nominal->accel, &accel_mag, accel_unit);
 
-    // row 3
-    pDst[6] = -pSrc[1];
-    pDst[7] = pSrc[0];
-    pDst[8] = 0;
+    float32_t gravity[3];
+    arm_scale_f32(accel_unit, GRAVITY, gravity, 3);
+
+
 }
 
 void update_with_imu(
@@ -177,7 +234,8 @@ void update_with_imu(
     float32_t accel_term[3];
     arm_sub_f32(accel_measurement, nominal->accel_bias, accel_term, 3);
     arm_mat_vec_mult_f32(&rot_mat, accel_term, accel_term);
-    arm_add_f32(accel_term, nominal->gravity, accel_term, 3);
+    //arm_add_f32(accel_term, nominal->gravity, accel_term, 3);
+    accel_term[2] -= gravity_at_altitude(nominal->pos[2]);
 
     // Updating position -- 259a
     {
@@ -262,7 +320,7 @@ void update_with_imu(
             arm_add_f32(deterministic_term, bias_term, deterministic_term, 3);
         }
 
-        arm_sub_f32(deterministic_term, error->gravity, deterministic_term, 3);
+        //arm_sub_f32(deterministic_term, error->gravity, deterministic_term, 3);
         arm_scale_f32(deterministic_term, dt, deterministic_term, 3);
 
         // Now deterministic_term is

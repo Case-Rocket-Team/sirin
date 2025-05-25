@@ -18,6 +18,7 @@ macro_rules! byte_array_str {
 }
 
 pub use byte_array_str;
+use uunit::Meters;
 
 #[derive(Debug)]
 pub enum ByteArrayStrError {
@@ -148,7 +149,8 @@ impl LogEntry {
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 #[song(discriminant(LogDataType = u8))]
 pub enum Log {
-    State(NominalState)
+    State(NominalState),
+    BarometricAltitude(Meters<f64>)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SongSize, ToSong, FromSong)]

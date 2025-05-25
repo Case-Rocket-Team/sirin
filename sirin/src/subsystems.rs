@@ -2,6 +2,7 @@ use core::{error::Error, fmt::Debug, future::Future, ops::{Deref, DerefMut}};
 
 use bmp3::Bmp3;
 use defmt::Str;
+use embassy_time::Instant;
 use embedded_hal::spi::ErrorKind as SpiErrorKind;
 use h3lis::H3lis;
 use lsm6dso_spi::{Accel, AngularVel, Lsm6dso};
@@ -100,8 +101,8 @@ impl Subsystem for Bmp3<SpiDev> {
 #[derive(Debug, Clone, Measurement)]
 #[allow(dead_code)]
 pub struct BaroData {
-    pressure: Result<Pascals<f64>, SubsystemError>,
-    temperature: Result<Celsius<f64>, SubsystemError>
+    pub pressure: Result<Pascals<f64>, SubsystemError>,
+    pub temperature: Result<Celsius<f64>, SubsystemError>
 }
 
 impl Instrument for Bmp3<SpiDev> {
@@ -184,7 +185,7 @@ impl Subsystem for H3lis<SpiDev> {
 #[allow(dead_code)]
 pub struct HighGImuData {
     // TODO: Put units on this!
-    accel: Result<(i32, i32, i32), SubsystemError>
+    pub accel: Result<(i32, i32, i32), SubsystemError>
 }
 
 impl Instrument for H3lis<SpiDev> {
@@ -211,6 +212,7 @@ impl Subsystem for Rfm9<SpiDev> {
 
 #[derive(Debug, Clone)]
 pub struct SirinData {
+    pub time: Instant,
     pub baro: BaroData,
     pub imu: ImuData,
     pub high_g_imu: HighGImuData
@@ -219,6 +221,7 @@ pub struct SirinData {
 impl Measurement for SirinData {
     fn unmeasured() -> Self {
         Self {
+            time: Instant::now(),
             baro: BaroData::unmeasured(),
             imu: ImuData::unmeasured(),
             high_g_imu: HighGImuData::unmeasured()
@@ -234,6 +237,7 @@ impl SirinData {
     ) -> Self {
         // TODO: join futures?
         Self {
+            time: Instant::now(),
             baro: baro.measure().await,
             imu: imu.measure().await,
             high_g_imu: high_g_imu.measure().await

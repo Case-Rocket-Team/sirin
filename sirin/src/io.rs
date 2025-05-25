@@ -4,12 +4,13 @@ use defmt::{error, info, println, Debug2Format};
 use embassy_executor::task;
 use embassy_futures::{join::join, select::{select, Either}};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TryReceiveError, TrySendError}, pubsub::{PubSubBehavior, PubSubChannel as EmbassyPubSubChannel, Subscriber}, signal::Signal, waitqueue::AtomicWaker};
+use embassy_time::Instant;
 use embassy_usb::{driver::{Endpoint, EndpointIn, EndpointOut}, UsbDevice};
 use sirin_macros::{FromSong, SongSize, ToSong};
 use crate::{sync::Mutex, usb::{ReadEp, SirinUsb, WriteEp}};
 
 use crate::{error::SirinError, Flash, Radio};
-use sirin_shared::{config::{CallsignBuf, SirinConfig}, packet::{InPacket, IoChannel, IoPacket, OutPacket, RadioPacket, MAX_OUT_PACKET_SIZE}, song::{FromSong, FromSongError, SongSize, ToSong, ToSongError}};
+use sirin_shared::{config::{CallsignBuf, SirinConfig}, packet::{InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, RadioPacket, MAX_OUT_PACKET_SIZE}, song::{FromSong, FromSongError, SongSize, ToSong, ToSongError}};
 
 //pub static OUT_CHANNEL: Channel<CriticalSectionRawMutex, OutPacket, 10> = Channel::new();
 
@@ -23,6 +24,10 @@ pub static OUT_CHANNEL: PubSubChannel<IoPacket<OutPacket>, 3> = EmbassyPubSubCha
 pub static IN_CHANNEL: Channel<CriticalSectionRawMutex, IoPacket<InPacket>, 32> = Channel::new();
 
 static USB_BROADCASTING_ENABLED: AtomicBool = AtomicBool::new(false);
+
+pub fn broadcast_log(time: Instant, log: Log) {
+    broadcast(OutPacket::LogEntry(LogEntry::new(time.as_millis() as u32, log)));
+}
 
 pub fn broadcast(packet: OutPacket) {
     info!("Broadcast log: {:?}", Debug2Format(&packet));

@@ -115,7 +115,7 @@ pub struct NominalState {
 
     pub accel_bias: Accel,
     pub angular_vel_bias: AngularVel,
-    pub gravity: Accel
+    //pub gravity: Accel
 }
 
 impl Default for NominalState {
@@ -129,7 +129,38 @@ impl Default for NominalState {
             
             accel_bias: Accel::zero(),
             angular_vel_bias: AngularVel::zero(),
-            gravity: Accel::zero()
+            //gravity: Accel::zero()
+        }
+    }
+}
+
+// MUST correspond to ErrorState in sirin-c.c
+#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
+#[repr(C)]
+pub struct ErrorState {
+    pub pos: Pos,
+    pub vel: Vel,
+    pub accel: Accel,
+
+    pub accel_bias: Accel,
+    pub angular_vel_bias: AngularVel,
+    //pub gravity: Accel
+
+    pub angles_vector: [f32; 3]
+}
+
+impl Default for ErrorState {
+    fn default() -> Self {
+        Self {
+            pos: Pos::zero(),
+            vel: Vel::zero(),
+            accel: Accel::zero(),
+            
+            accel_bias: Accel::zero(),
+            angular_vel_bias: AngularVel::zero(),
+            //gravity: Accel::zero()
+
+            angles_vector: [0.0; 3]
         }
     }
 }
