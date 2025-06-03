@@ -14,9 +14,9 @@ extern "C" {
     );
 
     /// Calculate altitude exactly from pressure using libm
-    pub fn pressure_altitude(
-        pressure: Hectopascals<f64>
-    ) -> Meters<f64>;
+    //pub fn pressure_altitude(
+    //    pressure: Hectopascals<f64>
+    //) -> Meters<f64>;
 
     pub fn gravity_at_altitude(
         pressure: Hectopascals<f32>

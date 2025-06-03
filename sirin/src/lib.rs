@@ -7,7 +7,7 @@ use bmp3::Bmp3;
 use defmt::{info, Display2Format};
 use embassy_executor::{Executor, Spawner};
 use embassy_futures::join::{join, join3, join5, join_array};
-use embassy_stm32::{ bind_interrupts, gpio::{Level, Output, Speed}, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, Config, Peripherals };
+use embassy_stm32::{ bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, mode::Async, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, usart::{self, Uart}, Config, Peripherals };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
 use flash::Flash;
 use gpio::GpioPins;
@@ -39,6 +39,7 @@ pub mod io;
 pub mod error;
 pub mod time;
 pub mod deque;
+pub mod gps;
 
 pub use sirin_shared::song;
 pub use sirin_shared::state;
@@ -73,6 +74,7 @@ pub struct Sirin {
     pub imu: Lsm6dso<SpiDev>,
     pub high_g_imu: H3lis<SpiDev>,
     // pub gps: S1315F8,
+    pub gps: Uart<'static, Async>,
     //pub driver: Driver<'static, peripherals::USB_OTG_FS>
 
     pub data: SirinData,
@@ -81,6 +83,10 @@ pub struct Sirin {
 
     _phantom_pinned: PhantomPinned
 }
+
+bind_interrupts!(struct Irqs {
+    USART3 => usart::InterruptHandler<embassy_stm32::peripherals::USART3>;
+});
 
 impl Sirin {
     /// Initializing Sirin is a PITA bc it is a self-referential struct
@@ -196,6 +202,16 @@ impl Sirin {
             let highg_imu_ptr: *mut H3lis<SpiDev> = ptr!(sirin.high_g_imu);
             let highg_imu_cs = Output::new(p.PE13,Level::High, Speed::High);
             highg_imu_ptr.write(H3lis::new((*spi1).handle(highg_imu_cs)));
+
+            ptr!(sirin.gps).write(Uart::new(
+                p.USART3,
+                p.PD9,
+                p.PD8,
+                Irqs,
+                p.DMA1_CH6,
+                p.DMA1_CH7,
+                usart::Config::default()
+            ).unwrap());
 
             ptr!(sirin.data).write(SirinData::unmeasured());
 

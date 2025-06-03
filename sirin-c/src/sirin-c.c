@@ -30,10 +30,10 @@ struct ErrorState {
 
 #define GRAVITY 9.80665
 
-float32_t pressure_altitude(float64_t pressure_hpa) {
+float64_t pressure_altitude(float64_t pressure_hpa) {
     // TODO
     //return 44307.7 - 11872.4 * powl(pressure_hpa, 0.190284);
-    return 1.0;
+    return 0.0;
 }
 
 float32_t gravity_at_altitude(float32_t altitude_m) {

@@ -7,3 +7,4 @@ pub mod usb;
 pub mod mode;
 pub mod config;
 pub mod time;
+pub mod physics;
