@@ -150,7 +150,8 @@ impl LogEntry {
 #[song(discriminant(LogDataType = u8))]
 pub enum Log {
     State(NominalState),
-    BarometricAltitude(Meters<f64>)
+    BarometricAltitude(Meters<f64>),
+    GpsNmea([u8; 256])
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SongSize, ToSong, FromSong)]

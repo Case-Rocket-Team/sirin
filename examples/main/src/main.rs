@@ -57,12 +57,9 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut i: u32 = 0;
     let mut last_measurement_time: Option<Instant> = None;
 
-    //sirin.spawner.spawn(radio_io_task(&mut sirin.radio)).unwrap();
+    sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
     sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
     sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
-
-    //sirin.gps.write(&[0xA0, 0xA1, 0x00, 0x03, 0x09, 0x02, 0x00, 0x09 ^ 0x02, 0x0D, 0x0A]).await.unwrap();
-
     sirin.spawner.spawn(gps_task(&mut sirin.gps)).unwrap();
 
     let mut nominal = NominalState::default();

@@ -30,7 +30,7 @@ pub fn broadcast_log(time: Instant, log: Log) {
 }
 
 pub fn broadcast(packet: OutPacket) {
-    info!("Broadcast log: {:?}", Debug2Format(&packet));
+    //info!("Broadcast log: {:?}", Debug2Format(&packet));
     BROADCAST_CHANNEL.publish_immediate(packet);
 }
 
