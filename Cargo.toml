@@ -16,6 +16,7 @@ members = [
     "examples/bare",
     "examples/h3lis-test",
     "examples/main",
+    "examples/airbrakes-test",
 ]
 resolver = "2"
 
