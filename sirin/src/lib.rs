@@ -4,7 +4,7 @@
 
 use core::{ffi::CStr, marker::PhantomPinned, mem::MaybeUninit, pin::{pin, Pin}, ptr::addr_of_mut};
 use bmp3::Bmp3;
-use defmt::{info, Display2Format};
+use defmt::{info, Display2Format, debug};
 use embassy_executor::{Executor, Spawner};
 use embassy_futures::join::{join, join3, join5, join_array};
 use embassy_stm32::{ bind_interrupts, gpio::{Level, Output, Speed}, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, Config, Peripherals };
@@ -171,6 +171,8 @@ impl Sirin {
                 p19: p.PC11,
                 p20: p.PC10,
             });
+
+            debug!("AAAAH");
 
             let baro_ptr: *mut Bmp3<SpiDev> = ptr!(sirin.baro);
             let baro_cs = Output::new(p.PA2, Level::High, Speed::High);

@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![allow(unused_imports)]
+#![allow(non_upper_case_globals)]
 
 use core::{f32, f64::consts::PI, mem::{self, transmute_copy, MaybeUninit}, pin::Pin, u16};
 
@@ -368,8 +369,8 @@ async fn main_airbrakes(current_state: *const State, pid_vars: *mut PIDvars) {
 }
 
 async fn compute_target_encoder(altitude: f64, vertical_velocity: f64) -> Result<i32, SirinError> {
-    let result: f64 = 100.0 - (altitude / 100.0) - (vertical_velocity * 0.5);
-    if result < 0.0 {let result = 0.0;}
-    if result > 255.0 {let result = 255.0;}
+    let mut result: f64 = 100.0 - (altitude / 100.0) - (vertical_velocity * 0.5);
+    if result < 0.0 {result = 0.0;}
+    if result > 255.0 {result = 255.0;}
     Ok(result as i32)
 }  

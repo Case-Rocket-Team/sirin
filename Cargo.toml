@@ -18,6 +18,7 @@ members = [
     "examples/cmsis-dsp-test",
     "examples/main",
     "examples/airbrakes-test",
+    # "examples/payload-test",
 ]
 resolver = "2"
 
