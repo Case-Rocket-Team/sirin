@@ -1,0 +1,98 @@
+#![no_std]
+#![no_main]
+#![allow(unused_imports)]
+
+use core::{f32::consts::PI, mem::{self, transmute_copy, MaybeUninit}, pin::Pin, u16};
+
+use bmp3::{hal::{Bmp3RawData, ReadBmp3, RegErrReg, RegStatus}, Bmp3Readout};
+use defmt::{debug, info, println, Debug2Format};
+use embassy_executor::{task, Executor, Spawner};
+use embassy_stm32::{bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, peripherals::{self, DMA1_CH0, DMA1_CH1, PD8, PD9, USART3}, usart::{self, Config, Uart}};
+use embassy_time::{Duration, Instant, Timer, TICK_HZ};
+use embedded_hal_1::spi::ErrorKind;
+use postcard::take_from_bytes;
+use rfm9::{ReadRfm9, Rfm9};
+use sirin_c::update_with_imu;
+use w25qx::W25Q;
+use {defmt_rtt as _, panic_probe as _};
+use sirin::{error::SirinError, flash::Flash, gps::gps_task, io::{broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, MAX_OUT_PACKET_SIZE}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::SirinData, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, MetersPerSecond2, WithUnits}, Radio, Sirin};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{Publisher, Subscriber}};
+use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
+use sirin::song::SongDiscriminant;
+use embassy_usb::driver::EndpointIn;
+
+unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
+    core::mem::transmute(item)
+}
+
+#[cortex_m_rt::entry]
+unsafe fn main() -> ! {
+    let mut executor = Executor::new();
+    let executor: &'static mut Executor = transmute_into_static(&mut executor);
+    let mut sirin = MaybeUninit::<Sirin>::uninit();
+    let sirin = transmute_into_static(&mut sirin);
+    executor.run(|spawner| {
+        spawner.must_spawn(setup_task(spawner, sirin))
+    })
+}
+
+#[task()]
+async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
+    debug!("Begin Sirin init");
+
+    let sirin = Sirin::init(sirin, spawner).await;
+
+    debug!("End Sirin init");
+
+    match main_task(sirin).await {
+        Ok(()) => {
+            panic!("The main task ended! (It shouldn't do that)")
+        },
+        Err(e) => {
+            panic!("The main task ran into an error: {:?}", e)
+        }
+    }
+}
+
+async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
+    loop {
+        let mut buf = [0; MAX_OUT_PACKET_SIZE];
+        let Ok(len) = sirin.radio.recieve(&mut buf).await else {
+            continue;
+        };
+
+        let len = len as usize;
+
+        // Need to chop it up into 64-byte sized packets (full speed device)
+        let mut i = 0;
+        while i < len {
+            let j = (i + 64).min(len);
+            sirin.usb.write_ep.write(&buf[i..j]).await?;
+            i = j;
+        }
+    }
+}
+
+// TODO: airbreaks
+/*#[task]
+async fn kalman(
+    mut event_sub: Subscriber<'static, CriticalSectionRawMutex, Event, 100, 4, 4>
+) {
+    loop {
+        let event = event_sub.next_message_pure().await;
+
+        match event {
+            Event::Measurement(measurement) => {
+                match measurement {
+                    Measurement::Baro(bmp3_readout) => todo!(),
+                    Measurement::ImuAccel(accel) => todo!(),
+                    Measurement::ImuAngularVel(angular_vel) => todo!(),
+                }
+            },
+        }
+
+        // Example: call a C function from sirin-c Rust crate
+        // Edit sirin-c crate and c project to add more functions
+        sirin_c::cmsis_dsp_sin(f32::consts::PI / 2.0);
+    }
+}*/

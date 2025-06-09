@@ -1,0 +1,66 @@
+# This file was automatically generated.
+
+[package]
+edition = "2021"
+name = "dongle"
+version = "0.1.0"
+
+[package.metadata.release]
+release = false
+
+[dependencies]
+
+embassy-futures = { git = "https://github.com/embassy-rs/embassy" }
+embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", features = ["defmt", "stm32h743ii", "time-driver-tim2", "exti", "memory-x", "unstable-pac", "chrono"] }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy", features = ["defmt"] }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", features = ["task-arena-size-32768", "arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
+embassy-time = { git = "https://github.com/embassy-rs/embassy", features = ["defmt", "defmt-timestamp-uptime", "tick-hz-32_768"] }
+embassy-net = { git = "https://github.com/embassy-rs/embassy", features = ["defmt", "tcp", "dhcpv4", "medium-ethernet", "proto-ipv6", "dns"] }
+embassy-usb = { git = "https://github.com/embassy-rs/embassy", features = ["defmt"] }
+
+# TODO: make optional
+defmt = "*"
+defmt-rtt = "*"
+
+cortex-m = { version = "0.7.6", features = ["inline-asm", "critical-section-single-core"] }
+cortex-m-rt = "0.7.0"
+embedded-hal = "0.2.6"
+embedded-hal-1 = { package = "embedded-hal", version = "1.0" }
+embedded-hal-async = { version = "1.0" }
+embedded-nal-async = { version = "0.7.1" }
+embedded-io-async = { version = "0.6.1" }
+panic-probe = { version = "0.3", features = ["print-defmt"] }
+futures = { version = "0.3.17", default-features = false, features = ["async-await"] }
+heapless = { version = "0.8", default-features = false }
+rand_core = "0.6.3"
+critical-section = "1.1"
+micromath = "2.0.0"
+stm32-fmc = "0.3.0"
+embedded-storage = "0.3.1"
+static_cell = "2"
+chrono = { version = "^0.4", default-features = false }
+
+sirin = { version = "0.1.1", path = "../../sirin" }
+bmp3 = { version = "0.1.1", path = "../../bmp3" }
+rfm9 = { version = "0.1.1", path = "../../rfm9", features = ['defmt'] }
+sirin-c = { version = "0.1.1", path = "../../sirin-c" }
+postcard = "1.1.1"
+w25qx = { version = "0.1.1", path = "../../w25qx" }
+sirin-shared = { version = "0.1.0", path = "../../sirin-shared" }
+#panic-halt = "0.2.0"
+
+[[bin]]
+name = "dongle"
+test = false
+bench = false
+
+[features]
+default = ["debug"]
+debug = [
+    "embassy-executor/defmt",
+    "embassy-sync/defmt",
+    "embassy-futures/defmt",
+    "embassy-time/defmt",
+    "embassy-time/defmt-timestamp-uptime",
+    "embassy-stm32/defmt",
+]
