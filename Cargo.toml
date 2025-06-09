@@ -17,6 +17,7 @@ members = [
     "examples/h3lis-test",
     "examples/cmsis-dsp-test",
     "examples/main",
+    "examples/airbrakes-test",
 ]
 resolver = "2"
 
