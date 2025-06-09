@@ -151,7 +151,7 @@ impl LogEntry {
 pub enum Log {
     State(NominalState),
     BarometricAltitude(Meters<f64>),
-    GpsNmea([u8; 256])
+    GpsNmea([u8; 200])
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SongSize, ToSong, FromSong)]

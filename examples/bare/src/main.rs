@@ -39,10 +39,6 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
     main_task(sirin).await
 }
 
-bind_interrupts!(struct Irqs {
-    USART3 => usart::InterruptHandler<peripherals::USART3>;
-});
-
 #[allow(unused_variables)]
 async fn main_task(sirin: &'static mut Sirin) {
     println!("Hello world!");

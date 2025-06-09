@@ -2,34 +2,27 @@
 #![no_main]
 #![allow(unused_imports)]
 
-use core::{f32, f64::consts::PI, mem::{self, transmute_copy, MaybeUninit}, pin::Pin, u16};
+use core::{f32::consts::PI, mem::{self, transmute_copy, MaybeUninit}, pin::Pin, u16};
 
 use bmp3::{hal::{Bmp3RawData, ReadBmp3, RegErrReg, RegStatus}, Bmp3Readout};
 use defmt::{debug, info, println, Debug2Format};
 use embassy_executor::{task, Executor, Spawner};
-use embassy_stm32::{bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, pac::timer, peripherals::{self, DMA1_CH0, DMA1_CH1, PD8, PD9, USART3}, time, usart::{self, Config, Uart}};
-use embassy_time::{Duration, Instant, Timer};
+use embassy_stm32::{bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, peripherals::{self, DMA1_CH0, DMA1_CH1, PD8, PD9, USART3}, usart::{self, Config, Uart}};
+use embassy_time::{Duration, Instant, Timer, TICK_HZ};
 use embedded_hal_1::spi::ErrorKind;
 use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
+use sirin_c::update_with_imu;
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{error::SirinError, flash::Flash, io::{broadcast, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, NominalState, Vel}, subsystems::SirinData, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::WithUnits, Radio, Sirin};
+use sirin::{error::SirinError, flash::Flash, gps::gps_task, io::{broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::SirinData, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, MetersPerSecond2, WithUnits}, Radio, Sirin};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{Publisher, Subscriber}};
-use sirin_shared::{mode::SirinMode, time::AbsoluteTimeReference};
+use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
     core::mem::transmute(item)
 }
-
-// constants
-const MACH_CUTOFF: f64 = 1.0;
-const PID_DT_MS: f64 = 1.0;
-const MAX_PWM: f64 = 1.0;
-const K_P: f64 = 1.0;
-const K_D: f64 = 1.0;
-const K_I: f64 = 1.0;
 
 #[cortex_m_rt::entry]
 unsafe fn main() -> ! {
@@ -60,28 +53,21 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
     }
 }
 
-bind_interrupts!(struct Irqs {
-    USART3 => usart::InterruptHandler<peripherals::USART3>;
-});
-
 async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut i: u32 = 0;
+    let mut last_measurement_time: Option<Instant> = None;
 
-    //sirin.spawner.spawn(radio_io_task(&mut sirin.radio)).unwrap();
+    sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
     sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
     sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
+    sirin.spawner.spawn(gps_task(&mut sirin.gps)).unwrap();
 
-    let mut state: State;
+    let mut nominal = NominalState::default();
+    let mut error = ErrorState::default();
+
     let mut mode = SirinMode::Standby;
 
-    let mut pid_vars = PIDvars {
-        launched: false,
-        past_burnout: false,
-        control_enabled: false,
-        last_pid_time: 0,
-        integral: 0.0,
-        last_error: 0.0,
-    };
+    let initial_altitude = approx_pressure_altitude(sirin.baro.read().await?.pressure.convert());
 
     let mut flash = Mutex::new(&mut sirin.flash);
     sirin.spawner.spawn(flash_io_task(unsafe {
@@ -175,6 +161,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     send_packet(io_packet.reply(OutPacket::Ok));
 
                     Timer::after_millis(500).await;
+
                     panic!("Reboot");
                 }
             }
@@ -194,21 +181,56 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             &mut sirin.high_g_imu
         ).await;
 
-        // TODO: Replace with call to C code
-        unsafe {
-            let mut _state: MaybeUninit<NominalState> = MaybeUninit::uninit();
-            run_kalman_filter(&mut _state, &sirin.data);
-            state = _state.assume_init();
+        if let Ok(pressure) = sirin.data.baro.pressure {
+            let measured_altitude = approx_pressure_altitude(pressure.convert());
+
+            if i % 10 == 0 {
+                broadcast_log(sirin.data.time, Log::BarometricAltitude(measured_altitude - initial_altitude));
+            }
         }
 
-        main_airbrakes(&state, &mut pid_vars).await;
+        let curr = Instant::now();
+
+        if let Some(prev) = last_measurement_time {
+            let dt = (curr - prev).as_ticks() as f32 / TICK_HZ as f32;
+
+            if let Ok(ref accel) = sirin.data.imu.accel {
+                if let Ok(ref angular_vel) = sirin.data.imu.angular_vel {
+                    // TODO: figure out better unit conversions
+
+                    const GRAVITY: f32 = 10.0;
+                    let accel_x = accel.x.value as f32 * GRAVITY / 1_000_000.0;
+                    let accel_y = accel.y.value as f32 * GRAVITY / 1_000_000.0;
+                    let accel_z = accel.z.value as f32 * GRAVITY / 1_000_000.0;
+                    let accel = [accel_x, accel_y, accel_z];
+
+                    const DEG_TO_RAD: f32 = PI / 180.0;
+                    let x_pitch = angular_vel.x_pitch.value as f32 * DEG_TO_RAD / 1_000_000.0;
+                    let y_roll = angular_vel.y_roll.value as f32 * DEG_TO_RAD / 1_000_000.0;
+                    let z_yaw = angular_vel.z_yaw.value as f32 * DEG_TO_RAD / 1_000_000.0;
+                    let ang_vel = [x_pitch, y_roll, z_yaw];
+                    
+                    unsafe {
+                        update_with_imu(
+                            &mut nominal,
+                            &mut error,
+                            dt.with_units(),
+                            &accel[0] as *const f32,
+                            &ang_vel[0] as *const f32
+                        );
+                    }
+                }
+            }
+        }
+        
+        last_measurement_time = Some(curr);
 
         if i % 10 == 0 {
             // Do logging
-            broadcast(OutPacket::LogEntry(LogEntry::new(
-                Instant::now().as_millis() as u32,
-                Log::State(state)
-            )));
+            broadcast_log(
+                sirin.data.time,
+                Log::State(nominal.clone())
+            );
         }
 
         i = i.wrapping_add(1);
@@ -216,30 +238,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         sirin.led.set_low();
     }
 }
-
-unsafe fn run_kalman_filter(state: *mut MaybeUninit<NominalState>, data: *const SirinData) {
-    let accel = (*data).imu.accel.as_ref().unwrap();
-
-    state.write(MaybeUninit::new(NominalState {
-        pos: EcefPos {
-            x: 0.0.with_units(),
-            y: 0.0.with_units(),
-            z: 0.0.with_units(),
-        },
-        vel: Vel {
-            x: 0.0.with_units(),
-            y: 0.0.with_units(),
-            z: 0.0.with_units(),
-        },
-        accel: Accel {
-            x: (accel.x.value as f32).with_units(),
-            y: (accel.y.value as f32).with_units(),
-            z: (accel.z.value as f32).with_units(),
-        },
-        altitude: 0.0.with_units()
-    }));
-}
-
 
 // TODO: airbreaks
 /*#[task]
@@ -264,112 +262,3 @@ async fn kalman(
         sirin_c::cmsis_dsp_sin(f32::consts::PI / 2.0);
     }
 }*/
-
-
-// void main_loop() {
-//     // Get current time
-//     unsigned long now = millis();
-//     // Get state estimates
-//     float altitude = get_altitude();
-//     float vertical_velocity = get_vertical_velocity();
-//     float mach = get_mach();
-//     // Detect launch (idk if Sirin has this built in, if so, use Sirin launch detection)
-//     if (!launched && mach > 0.1) {
-//       launched = true;
-//     }
-//     // Detect burnout and Mach lockout
-//     if (launched && !past_burnout && mach < MACH_CUTOFF) {
-//       past_burnout = true;
-//       control_enabled = true;
-//       last_pid_time = now; // reset PID loop timing
-//     }
-//     // Run PID loop
-//     if (control_enabled && (now - last_pid_time >= PID_DT_MS)) {
-//       last_pid_time = now;
-//       // Compute target position from altitude and velocity
-//       int target_position = compute_target_encoder(altitude, vertical_velocity);
-//       // Read encoder position
-//       int current_position = read_encoder_position();
-//       // PID calcs
-//       float error = (float)(target_position - current_position);
-//       integral += error * (PID_DT_MS / 1000.0);
-//       float derivative = (error - last_error) / (PID_DT_MS / 1000.0);
-//       last_error = error;
-//       // Compute motor command
-//       float output = Kp * error + Ki * integral + Kd * derivative;
-//       // Clamp output to limits
-//       if (output > MAX_PWM) output = MAX_PWM;
-//       if (output < -MAX_PWM) output = -MAX_PWM;
-//       // Set motor
-//       set_motor_pwm((int)output); // -255 to +255
-//     }
-//   }
-//   // Maps altitude & velocity to encoder target 
-//   int compute_target_encoder(float altitude, float vertical_velocity) {
-//     float result = 100.0 - (altitude / 100.0) - (vertical_velocity * 0.5); //will be changed later based on RIPTIDE result
-//     if (result < 0) result = 0;
-//     if (result > 255) result = 255;
-//     return (int)result;
-//   }
-#[derive(Debug, Clone)]
-struct PIDvars {
-    launched: bool,
-    past_burnout: bool,
-    control_enabled: bool,
-    last_pid_time: u64,
-    integral: f64,
-    last_error: f64,
-}
-
-async fn main_airbrakes(current_state: *const State, pid_vars: *mut PIDvars) {
-    
-    let now = Instant::now().as_millis();
-    let state: State;
-    let mut vars: PIDvars;
-    unsafe {
-        state = (*current_state).clone();
-        vars = (*pid_vars).clone();
-    }
-    
-    let altitude = state.altitude;
-    // make sure you are using the right x y or z here
-    let vertical_velocity = state.vel.z;
-    // todo
-    let mach = 1.0;
-
-
-    if !vars.launched && mach > 0.1 {
-        vars.launched = true;
-    }
-    if vars.launched && !vars.past_burnout && mach < MACH_CUTOFF {
-        vars.past_burnout = true;
-        vars.control_enabled = true;
-        vars.last_pid_time = now; // reset PID loop timing
-    }
-    if vars.control_enabled && (now - vars.last_pid_time >= PID_DT_MS as u64) {
-        vars.last_pid_time = now;
-        // Compute target position from altitude and velocity
-        let target_position: i32 = compute_target_encoder(altitude.value, vertical_velocity.value).await.unwrap();
-        // Read encoder position (TODO)
-        let current_position: i32 = 1;
-        // PID calcs
-        let error: f64 = (target_position - current_position) as f64;
-        vars.integral += error * (PID_DT_MS / 1000.0);
-        let derivative: f64 = (error - vars.last_error) / (PID_DT_MS / 1000.0);
-        vars.last_error = error;
-        // Compute motor command
-        let mut output: f64 = K_P * error + K_I * vars.integral + K_D * derivative;
-        // Clamp output to limits
-        if output > MAX_PWM {output = MAX_PWM;}
-        if output < -MAX_PWM { output = -MAX_PWM;}
-        // Set motor TODO
-        // set_motor_pwm(output as i32); // -255 to +255
-    }
-}
-
-async fn compute_target_encoder(altitude: f64, vertical_velocity: f64) -> Result<i32, SirinError> {
-    let result: f64 = 100.0 - (altitude / 100.0) - (vertical_velocity * 0.5);
-    if result < 0.0 {let result = 0.0;}
-    if result > 255.0 {let result = 255.0;}
-    Ok(result as i32)
-}  

@@ -1,4 +1,4 @@
-use defmt::info;
+use defmt::{error, info};
 use embassy_executor::task;
 use embassy_stm32::{mode::Async, pac::Interrupt::PVD_AVD, usart::Uart};
 use embassy_time::Instant;
@@ -10,13 +10,21 @@ use crate::io::{broadcast, broadcast_log};
 pub async fn gps_task(
     gps: &'static mut Uart<'static, Async>
 ) {
-    gps.write(&[0xA0, 0xA1, 0x00, 0x03, 0x09, 0x01, 0x00, 0x09 ^ 0x01, 0x0D, 0x0A]).await.unwrap();
+    gps.write(&[0xA0, 0xA1, 0x00, 0x03, 0x09, 0x02, 0x00, 0x09 ^ 0x02, 0x0D, 0x0A]).await.unwrap();
 
     loop {
         let mut response = [0u8; 512];
         let Ok(len) = gps.read_until_idle(&mut response).await else {
+            //error!("Could not read GPS");
             continue;
         };
+        info!("{:x}", response[..len]);
+        
+        /*let Ok(str) = core::str::from_utf8(&response[..len]) else {
+            error!("Could not convert to UTF8");
+            continue;
+        };
+        info!("{}", str);
 
         // split up messages
         let mut start = 0;
@@ -24,7 +32,7 @@ pub async fn gps_task(
         loop {
             if i >= len || (response[i - 1] == b'\r' && response[i] == b'\n') {
                 // end of message
-                let mut message = [0; 256];
+                let mut message = [0; 200];
                 message[0..(i - start)].copy_from_slice(&response[start..i]);
                 broadcast_log(Instant::now(), Log::GpsNmea(message));
                 start = i;
@@ -37,7 +45,7 @@ pub async fn gps_task(
             i += 1;
         }
 
-        continue;
+        continue;*/
 
         let mut k = 0;
         while response[k] == 0xA0 && response[k + 1] == 0x0A1 {

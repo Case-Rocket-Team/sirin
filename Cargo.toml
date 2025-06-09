@@ -17,6 +17,8 @@ members = [
     "examples/h3lis-test",
     "examples/main",
     "examples/airbrakes-test",
+    "examples/nosecone-ebay",
+    "examples/dongle"
 ]
 resolver = "2"
 
