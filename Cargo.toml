@@ -18,7 +18,8 @@ members = [
     "examples/main",
     "examples/airbrakes-test",
     "examples/nosecone-ebay",
-    "examples/dongle"
+    "examples/dongle",
+    "examples/airbrakes"
 ]
 resolver = "2"
 
