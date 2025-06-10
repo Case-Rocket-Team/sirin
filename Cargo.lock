@@ -46,7 +46,6 @@ dependencies = [
  "rand_core",
  "rfm9",
  "sirin",
- "sirin-c",
  "sirin-shared",
  "static_cell",
  "stm32-fmc",
