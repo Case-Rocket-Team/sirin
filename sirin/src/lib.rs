@@ -6,7 +6,7 @@ use core::{ffi::CStr, marker::PhantomPinned, mem::MaybeUninit, pin::{pin, Pin}, 
 use bmp3::Bmp3;
 use defmt::{info, Display2Format};
 use embassy_executor::{Executor, Spawner};
-use embassy_futures::join::{join, join3, join5, join_array};
+use embassy_futures::join::{join, join3, join4, join5, join_array};
 use embassy_stm32::{ bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, mode::Async, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, usart::{self, Uart}, Config, Peripherals };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
 use flash::Flash;
@@ -49,7 +49,6 @@ pub type Radio = Rfm9<SpiDev>;
 
 #[derive(Debug, Clone)]
 pub struct SirinHealth {
-    pub flash: Result<(), SubsystemError>,
     pub radio: Result<(), SubsystemError>,
     pub baro: Result<(), SubsystemError>,
     pub imu: Result<(), SubsystemError>,
@@ -64,7 +63,6 @@ pub struct Sirin {
     pub gpio: GpioPins,
 
     // Subsystems:
-    pub flash: Flash,
     pub radio: Rfm9<SpiDev>,
     pub usb: SirinUsb,
     pub led: Output<'static>,
@@ -186,15 +184,6 @@ impl Sirin {
             let radio_cs = Output::new(p.PC8, Level::High, Speed::High);
             radio_ptr.write(Rfm9::new((*spi2).handle(radio_cs)));
 
-            let flash_ptr: *mut Flash = ptr!(sirin.flash);
-            let flash_cs = Output::new(p.PD2, Level::High, Speed::High);
-            let flash_dev = W25Q::new((*spi2).handle(flash_cs));
-            flash_ptr.write(Flash::new(flash_dev));
-
-            let config = ptr!(sirin.config);
-            config.write((*flash_ptr).init().await.unwrap());
-            info!("{}", Display2Format(&*config));
-
             let imu_ptr: *mut Lsm6dso<SpiDev> = ptr!(sirin.imu);
             let imu_cs = Output::new(p.PE11, Level::High, Speed::High);
             imu_ptr.write(Lsm6dso::new((*spi1).handle(imu_cs)));
@@ -232,8 +221,7 @@ impl Sirin {
             (*highg_imu_ptr).setup().await.unwrap();
 
             {
-                let (flash, radio, baro, imu, high_g_imu) = join5(
-                    (*flash_ptr).w25q.selfcheck(),
+                let (radio, baro, imu, high_g_imu) = join4(
                     (*radio_ptr).selfcheck(),
                     (*baro_ptr).selfcheck(),
                     (*imu_ptr).selfcheck(),
@@ -241,7 +229,6 @@ impl Sirin {
                 ).await;
 
                 ptr!(sirin.health).write(SirinHealth {
-                    flash,
                     radio,
                     baro,
                     imu,
