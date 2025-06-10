@@ -266,51 +266,6 @@ async fn kalman(
 }*/
 
 
-// void main_loop() {
-//     // Get current time
-//     unsigned long now = millis();
-//     // Get state estimates
-//     float altitude = get_altitude();
-//     float vertical_velocity = get_vertical_velocity();
-//     float mach = get_mach();
-//     // Detect launch (idk if Sirin has this built in, if so, use Sirin launch detection)
-//     if (!launched && mach > 0.1) {
-//       launched = true;
-//     }
-//     // Detect burnout and Mach lockout
-//     if (launched && !past_burnout && mach < MACH_CUTOFF) {
-//       past_burnout = true;
-//       control_enabled = true;
-//       last_pid_time = now; // reset PID loop timing
-//     }
-//     // Run PID loop
-//     if (control_enabled && (now - last_pid_time >= PID_DT_MS)) {
-//       last_pid_time = now;
-//       // Compute target position from altitude and velocity
-//       int target_position = compute_target_encoder(altitude, vertical_velocity);
-//       // Read encoder position
-//       int current_position = read_encoder_position();
-//       // PID calcs
-//       float error = (float)(target_position - current_position);
-//       integral += error * (PID_DT_MS / 1000.0);
-//       float derivative = (error - last_error) / (PID_DT_MS / 1000.0);
-//       last_error = error;
-//       // Compute motor command
-//       float output = Kp * error + Ki * integral + Kd * derivative;
-//       // Clamp output to limits
-//       if (output > MAX_PWM) output = MAX_PWM;
-//       if (output < -MAX_PWM) output = -MAX_PWM;
-//       // Set motor
-//       set_motor_pwm((int)output); // -255 to +255
-//     }
-//   }
-//   // Maps altitude & velocity to encoder target 
-//   int compute_target_encoder(float altitude, float vertical_velocity) {
-//     float result = 100.0 - (altitude / 100.0) - (vertical_velocity * 0.5); //will be changed later based on RIPTIDE result
-//     if (result < 0) result = 0;
-//     if (result > 255) result = 255;
-//     return (int)result;
-//   }
 #[derive(Debug, Clone)]
 struct PIDvars {
     launched: bool,
