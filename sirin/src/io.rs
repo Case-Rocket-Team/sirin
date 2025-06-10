@@ -125,7 +125,7 @@ async fn radio_task_impl(
         let packet = next_out_packet(
             &mut broadcast_sub,
             &mut out_sub,
-            IoChannel::Usb
+            IoChannel::LoRa
         ).await;
         let radio_packet = RadioPacket::new(config, packet);
 

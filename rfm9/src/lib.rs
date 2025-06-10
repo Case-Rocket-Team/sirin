@@ -2,8 +2,9 @@
 
 use core::{fmt::Debug, mem};
 
-use defmt::info;
+use defmt::{error, info};
 use dev_csr::dev_csr;
+use embassy_futures::yield_now;
 //use embassy_futures::yield_now;
 use embedded_hal::spi::{ ErrorKind as SpiError, ErrorType};
 use embedded_hal_async::spi::SpiBus;
@@ -44,10 +45,10 @@ dev_csr! {
                 //?rwt?
             },
             /// MSB or FR carrier frequency
-            0x06 FR_MSB rw frf[16..23],
-            0x07 FR_MID rw frf[8..15],
+            0x06 FR_MSB rw frf_msb[16..23],
+            0x07 FR_MID rw frf_mid[8..15],
             /// LSB or RF carrier frequency
-            0x08 FR_LSB rw frf[0..7],
+            0x08 FR_LSB rw frf_lsb[0..7],
             0x09 PA_CONFIG rw {
                 /// Selects PA output pin
                 /// 0: RFO pin. Output power is limited to +14dBm
@@ -392,17 +393,16 @@ impl <S: SpiHandle> Rfm9<S> {
         Ok(version)
     } 
 
-    /*
     pub async fn calibrate(&mut self) -> Result<(), Error> {
         self.set_mode(Mode::Sleep).await?;
         
-        
         // sets frequency to 434 MHz
-        self.set_frf_23_16(0x6c).await?;
-        self.set_frf_15_8(0x80).await?;
-        self.set_frf_7_0(0x00).await?;
+        self.set_frf_msb(0x6c).await?;
+        self.set_frf_mid(0x80).await?;
+        self.set_frf_lsb(0x00).await?;
 
-    } */
+        Ok(())
+    }
 
     pub async fn set_ocp(&mut self, current_limit: Milliamps<u8>) -> Result<(), Error> {
         let current_limit = current_limit.value;
@@ -469,22 +469,37 @@ impl <S: SpiHandle> Rfm9<S> {
     }
 
     pub async fn recieve(&mut self, data: &mut [u8]) -> Result<u8, Error> {
+        self.write_reg(RegIrqFlagsMask, 0).await?;
+        self.write_reg(RegIrqFlags, 0b1100_0000).await?;
         
+        self.set_fifo_addr_ptr(0).await?;
+
         self.set_mode(Mode::RxSingle).await?;
-        
-        /*while !self.rx_done().await? {
+
+        loop {
+            let flags = self.read_reg(RegIrqFlags).await?;
+            let rx_time_out = flags & 0b1000_0000 > 0;
+            let rx_done = flags & 0b0100_0000 > 0;
+
+            if rx_done {
+                break;
+            } else if rx_time_out {
+                return Err(Rfm9Error::Timeout)
+            }
+
             yield_now().await;
-        }*/
+        }
 
         if self.payload_crc_err().await? {
             self.set_mode(Mode::Stdby).await?;
             return Err(Rfm9Error::Crc)
         }
 
-        let rx_cur_addr: u8 = self.fifo_rx_current_addr().await?;
-        self.set_fifo_addr_ptr(rx_cur_addr).await?;
+        //let rx_cur_addr: u8 = self.fifo_rx_current_addr().await?;
+        //self.set_fifo_addr_ptr(rx_cur_addr).await?;
         let len: u8 = self.fifo_rx_nb_bytes().await?;
-        self.read_contiguous_regs(RegFifo, data).await?;
+        info!("{}", len);
+        self.read_contiguous_regs(RegFifo, &mut data[..len as usize]).await?;
         self.set_mode(Mode::Stdby).await?;
         Ok(len)
     }

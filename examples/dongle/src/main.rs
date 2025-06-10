@@ -5,7 +5,7 @@
 use core::{f32::consts::PI, mem::{self, transmute_copy, MaybeUninit}, pin::Pin, u16};
 
 use bmp3::{hal::{Bmp3RawData, ReadBmp3, RegErrReg, RegStatus}, Bmp3Readout};
-use defmt::{debug, info, println, Debug2Format};
+use defmt::{debug, error, info, println, Debug2Format};
 use embassy_executor::{task, Executor, Spawner};
 use embassy_stm32::{bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, peripherals::{self, DMA1_CH0, DMA1_CH1, PD8, PD9, USART3}, usart::{self, Config, Uart}};
 use embassy_time::{Duration, Instant, Timer, TICK_HZ};
@@ -15,11 +15,12 @@ use rfm9::{ReadRfm9, Rfm9};
 use sirin_c::update_with_imu;
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{error::SirinError, flash::Flash, gps::gps_task, io::{broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, MAX_OUT_PACKET_SIZE}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::SirinData, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, MetersPerSecond2, WithUnits}, Radio, Sirin};
+use sirin::{error::SirinError, flash::Flash, gps::gps_task, io::{broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, RadioPacket, MAX_OUT_PACKET_SIZE}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::SirinData, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, MetersPerSecond2, WithUnits}, Radio, Sirin};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{Publisher, Subscriber}};
 use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
 use embassy_usb::driver::EndpointIn;
+use embassy_usb::driver::Endpoint;
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
     core::mem::transmute(item)
@@ -55,6 +56,7 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 }
 
 async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
+    info!("Start main");
     loop {
         let mut buf = [0; MAX_OUT_PACKET_SIZE];
         let Ok(len) = sirin.radio.recieve(&mut buf).await else {
@@ -62,14 +64,28 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         };
 
         let len = len as usize;
+        info!("Received: {}", buf[..len]);
+        info!("Note: this will hang if no one is connected to USB.");
+
+        let radio_packet = RadioPacket::<OutPacket>::from_song(&buf[..len]);
+        match radio_packet {
+            Ok(p) => {
+                info!("Radio packet: {}", Debug2Format(&p));
+            }
+            Err(e) => {
+                error!("Error parsing radio packet: {}", Debug2Format(&e));
+            }
+        }
+
 
         // Need to chop it up into 64-byte sized packets (full speed device)
-        let mut i = 0;
+        /*let mut i = 0;
         while i < len {
             let j = (i + 64).min(len);
+            sirin.usb.write_ep.wait_enabled().await;
             sirin.usb.write_ep.write(&buf[i..j]).await?;
             i = j;
-        }
+        }*/
     }
 }
 
