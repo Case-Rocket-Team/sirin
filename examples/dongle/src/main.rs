@@ -68,7 +68,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         };
 
         let len = len as usize;
-        info!("Received: {}", buf[..len]);
+        info!("Received: {:x}", buf[..len]);
         info!("Note: this will hang if no one is connected to USB.");
 
         let radio_packet = RadioPacket::<OutPacket>::from_song(&buf[..len]);
@@ -97,26 +97,3 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     }
 }
 
-// TODO: airbreaks
-/*#[task]
-async fn kalman(
-    mut event_sub: Subscriber<'static, CriticalSectionRawMutex, Event, 100, 4, 4>
-) {
-    loop {
-        let event = event_sub.next_message_pure().await;
-
-        match event {
-            Event::Measurement(measurement) => {
-                match measurement {
-                    Measurement::Baro(bmp3_readout) => todo!(),
-                    Measurement::ImuAccel(accel) => todo!(),
-                    Measurement::ImuAngularVel(angular_vel) => todo!(),
-                }
-            },
-        }
-
-        // Example: call a C function from sirin-c Rust crate
-        // Edit sirin-c crate and c project to add more functions
-        sirin_c::cmsis_dsp_sin(f32::consts::PI / 2.0);
-    }
-}*/
