@@ -1,6 +1,9 @@
+use core::ops::Div;
+
 use crate::{config::{CallsignBuf, SirinConfig, SirinId}, mode::SirinMode, song::{magic::MagicU8, maybe_unwritten_max_bytes::MaybeUnwrittenMaxBytes, *}, state::NominalState, time::AbsoluteTimeReference};
 use derive_more::Display;
 use sirin_macros::*;
+use embedded_hal::spi::ErrorKind as SpiErrorKind;
 
 pub const MAX_OUT_PACKET_SIZE: usize = 256;
 
@@ -18,7 +21,8 @@ macro_rules! byte_array_str {
 }
 
 pub use byte_array_str;
-use uunit::Meters;
+use snafu::Snafu;
+use uunit::{Celsius, Meters, MetersPerSecond, MicroGs, Milliseconds, Pascals, Quantity, UnitMicrodegrees, UnitSeconds, WithUnits};
 
 #[derive(Debug)]
 pub enum ByteArrayStrError {
@@ -79,7 +83,82 @@ pub enum OutPacket {
     Mode(SirinMode),
     FlightStart(u8),
     LogEntry(LogEntry),
-    FlightHeader(Page<FlightHeader>)
+    FlightHeader(Page<FlightHeader>),
+    State(SirinState)
+}
+
+#[derive(Debug, Clone, SongSize, FromSong, ToSong)]
+pub struct SirinState {
+    pub mode: SirinMode,
+    pub gps: GpsFix,
+    pub altitude: Meters<f64>,
+    pub apogee: Option<Meters<f64>>
+}
+
+impl Default for SirinState {
+    fn default() -> Self {
+        Self {
+            mode: SirinMode::Standby,
+            gps: GpsFix::default(),
+            altitude: 0.0.with_units(),
+            apogee: None
+        }
+    }
+}
+
+#[derive(Debug, Clone, SongSize, FromSong, ToSong)]
+pub struct Vec3<T: SongSize + FromSong + ToSong> {
+    pub x: T,
+    pub y: T,
+    pub z: T
+}
+
+pub type EcefPos<T> = Vec3<Meters<T>>;
+pub type EcefVel<T> = Vec3<MetersPerSecond<T>>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, SongSize, FromSong, ToSong)]
+#[repr(u8)]
+pub enum GpsFixType {
+    NoFix = 0,
+    FixPrediction,
+    Fix2d,
+    Fix3d,
+    FixDifferential
+}
+
+#[derive(Debug, Clone, SongSize, FromSong, ToSong)]
+pub struct GpsFix {
+    pub time: Milliseconds<u32>,
+    pub satellites: u8,
+    pub almanac: u8,
+    pub ephemerides: u8,
+    pub healthy_satellites: u8,
+    pub fix_type: GpsFixType,
+    pub pos: Vec3<Meters<f64>>,
+    pub vel: Vec3<MetersPerSecond<f32>>,
+}
+
+impl Default for GpsFix {
+    fn default() -> Self {
+        GpsFix {
+            time: 0u32.with_units(),
+            satellites: 0,
+            almanac: 0,
+            ephemerides: 0,
+            healthy_satellites: 0,
+            fix_type: GpsFixType::NoFix,
+            pos: Vec3 {
+                x: 0.0.with_units(),
+                y: 0.0.with_units(),
+                z: 0.0.with_units()
+            },
+            vel: Vec3 {
+                x: 0.0f32.with_units(),
+                y: 0.0f32.with_units(),
+                z: 0.0f32.with_units()
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, SongSize, FromSong, ToSong)]
@@ -133,12 +212,12 @@ pub enum InPacket {
 
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 pub struct LogEntry {
-    pub time: u32,
+    pub time: Milliseconds<u32>,
     pub log: Log
 }
 
 impl LogEntry {
-    pub fn new(time: u32, log: Log) -> Self {
+    pub fn new(time: Milliseconds<u32>, log: Log) -> Self {
         Self {
             time,
             log
@@ -149,9 +228,79 @@ impl LogEntry {
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 #[song(discriminant(LogDataType = u8))]
 pub enum Log {
-    State(NominalState),
+    //State(NominalState),
+    State(SirinState),
+    Data(SirinData),
     BarometricAltitude(Meters<f64>),
     GpsNmea([u8; 200])
+}
+
+#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
+pub struct SirinData {
+    pub time: Milliseconds<u32>,
+    pub baro: BaroData,
+    pub imu: ImuData,
+    pub high_g_imu: HighGImuData
+}
+
+pub trait Measurement {
+    fn unmeasured() -> Self;
+}
+
+impl Measurement for SirinData {
+    fn unmeasured() -> Self {
+        Self {
+            time: 0u32.with_units(),
+            baro: BaroData::unmeasured(),
+            imu: ImuData::unmeasured(),
+            high_g_imu: HighGImuData::unmeasured()
+        }
+    }
+}
+
+#[derive(Debug, Clone, SongSize, ToSong, FromSong, Measurement)]
+#[allow(dead_code)]
+pub struct BaroData {
+    pub pressure: Result<Pascals<f64>, SubsystemError>,
+    pub temperature: Result<Celsius<f64>, SubsystemError>
+}
+
+type MicrodegreesPerSecond<T> = Quantity<T, <UnitMicrodegrees as Div<UnitSeconds>>::Output>;
+#[derive(Debug, Clone, SongSize, ToSong, FromSong, Measurement)]
+pub struct ImuData {
+    pub accel: Result<Vec3<MicroGs<i32>>, SubsystemError>,
+    pub angular_vel: Result<Vec3<MicrodegreesPerSecond<i64>>, SubsystemError>
+}
+
+#[derive(Debug, Clone, SongSize, ToSong, FromSong, Measurement)]
+#[allow(dead_code)]
+pub struct HighGImuData {
+    // TODO: Put units on this!
+    pub accel: Result<Vec3<i32>, SubsystemError>
+}
+
+// TODO: maybe change to `derive_more` crate and remove snafu
+#[derive(Debug, Clone, Copy, Snafu, SongSize, ToSong, FromSong)]
+#[repr(u8)]
+pub enum SubsystemError {
+    #[snafu(display("Sanity check failed"))]
+    SanityCheckFailed/*{
+        error_msg: &'static str,
+        // lazy but w/e -- just convert all numeric types into f64
+        // making a different type for each numeric/making the entire error enum
+        // generic is too much of a pita.
+        value: Option<f64>
+    }*/,
+    #[snafu(display("Error in SPI bus"))]
+    SpiError,
+    #[snafu(display("Not measured -- call .measure()"))]
+    NotYetMeasured
+}
+
+impl From<SpiErrorKind> for SubsystemError {
+    fn from(value: SpiErrorKind) -> Self {
+        SubsystemError::SpiError
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SongSize, ToSong, FromSong)]
@@ -182,12 +331,13 @@ impl <P: SongSize + ToSong + FromSong> IoPacket<P> {
         IoPacket::new(self.channel, packet)
     }
 }
+impl core::error::Error for SubsystemError {}
 
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 pub struct RadioPacket<P: SongSize + ToSong + FromSong> {
-    id: SirinId,
-    callsign: CallsignBuf,
-    packet: P
+    pub id: SirinId,
+    pub callsign: CallsignBuf,
+    pub packet: P
 }
 
 impl <P: SongSize + ToSong + FromSong> RadioPacket<P> {

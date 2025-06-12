@@ -15,7 +15,7 @@ use rfm9::{ReadRfm9, Rfm9};
 use sirin_c::update_with_imu;
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{error::SirinError, flash::Flash, gps::gps_task, io::{broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, RadioPacket, MAX_OUT_PACKET_SIZE}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::SirinData, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, MetersPerSecond2, WithUnits}, Radio, Sirin};
+use sirin::{error::SirinError, flash::Flash, gps::gps_task, io::{broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, IN_CHANNEL}, packet::{InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, RadioPacket, MAX_OUT_PACKET_SIZE}, song::{FromSong, SongSize, ToSong}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, MetersPerSecond2, WithUnits}, Radio, Sirin};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{Publisher, Subscriber}};
 use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
@@ -59,8 +59,12 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     info!("Start main");
     loop {
         let mut buf = [0; MAX_OUT_PACKET_SIZE];
-        let Ok(len) = sirin.radio.recieve(&mut buf).await else {
-            continue;
+        let len = match sirin.radio.recieve(&mut buf).await {
+            Ok(len) => len,
+            Err(e) => {
+                //error!("Error in Sirin: {}", Debug2Format(&e));
+                continue;
+            }
         };
 
         let len = len as usize;
@@ -68,24 +72,28 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         info!("Note: this will hang if no one is connected to USB.");
 
         let radio_packet = RadioPacket::<OutPacket>::from_song(&buf[..len]);
-        match radio_packet {
+        let radio_packet = match radio_packet {
             Ok(p) => {
                 info!("Radio packet: {}", Debug2Format(&p));
+                p
             }
             Err(e) => {
                 error!("Error parsing radio packet: {}", Debug2Format(&e));
+                continue;
             }
-        }
+        };
 
+        radio_packet.packet.to_song(&mut buf)?;
+        let len = radio_packet.packet.song_size();
 
         // Need to chop it up into 64-byte sized packets (full speed device)
-        /*let mut i = 0;
+        let mut i = 0;
         while i < len {
             let j = (i + 64).min(len);
             sirin.usb.write_ep.wait_enabled().await;
             sirin.usb.write_ep.write(&buf[i..j]).await?;
             i = j;
-        }*/
+        }
     }
 }
 

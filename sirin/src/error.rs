@@ -1,4 +1,5 @@
 use derive_more::From;
+use embassy_stm32::usart;
 use embedded_hal::spi::ErrorKind;
 use sirin_shared::song::{ToSongError, FromSongError};
 use embassy_sync::pubsub::Error as PubSubError;
@@ -13,5 +14,6 @@ pub enum SirinError {
     UsbError(USBError),
     PubSubError(PubSubError),
     SpiError(ErrorKind),
+    UsartError(usart::Error),
     CorruptedData
 }

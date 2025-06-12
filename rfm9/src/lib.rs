@@ -441,7 +441,9 @@ impl <S: SpiHandle> Rfm9<S> {
         self.set_mode(Mode::Stdby).await?;
         self.use_explicit_headers().await?;
 
-        self.write_reg(RegIrqFlags, 0).await?;
+        self.write_reg(RegIrqFlagsMask, 0).await?;
+        self.write_reg(RegIrqFlags, 0b0000_1000).await?;
+
         // Write FIFO
         self.set_fifo_addr_ptr(0x00).await?;
         //self.set_fifo_tx_base_addr(0x00).await?;
@@ -460,6 +462,10 @@ impl <S: SpiHandle> Rfm9<S> {
         info!("Len: {}", len);
 
         self.set_mode(Mode::Tx).await?;
+
+        while self.read_reg(RegIrqFlags).await? & 0b0000_1000 == 0 {
+            yield_now().await;
+        }
 
         /*while !self.tx_done().await? {
             yield_now().await;

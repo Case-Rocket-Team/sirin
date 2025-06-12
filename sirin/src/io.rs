@@ -7,6 +7,7 @@ use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Chann
 use embassy_time::Instant;
 use embassy_usb::{driver::{Endpoint, EndpointIn, EndpointOut}, UsbDevice};
 use sirin_macros::{FromSong, SongSize, ToSong};
+use uunit::Milliseconds;
 use crate::{sync::Mutex, usb::{ReadEp, SirinUsb, WriteEp}};
 
 use crate::{error::SirinError, Flash, Radio};
@@ -24,13 +25,14 @@ pub static OUT_CHANNEL: PubSubChannel<IoPacket<OutPacket>, 3> = EmbassyPubSubCha
 pub static IN_CHANNEL: Channel<CriticalSectionRawMutex, IoPacket<InPacket>, 32> = Channel::new();
 
 static USB_BROADCASTING_ENABLED: AtomicBool = AtomicBool::new(false);
+pub static FLASH_LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
 
-pub fn broadcast_log(time: Instant, log: Log) {
-    broadcast(OutPacket::LogEntry(LogEntry::new(time.as_millis() as u32, log)));
+pub fn broadcast_log(time: Milliseconds<u32>, log: Log) {
+    broadcast(OutPacket::LogEntry(LogEntry::new(time, log)));
 }
 
 pub fn broadcast(packet: OutPacket) {
-    info!("Broadcast log: {:?}", Debug2Format(&packet));
+    //info!("Broadcast: {:?}", Debug2Format(&packet));
     BROADCAST_CHANNEL.publish_immediate(packet);
 }
 
@@ -116,12 +118,13 @@ async fn radio_task_impl(
     config: &'static SirinConfig,
     radio: &mut Radio,
 ) -> Result<(), SirinError> {
-    let mut broadcast_sub = BROADCAST_CHANNEL.subscriber()?;
+    radio.set_mode(rfm9::Mode::Sleep).await?;
+    //let mut broadcast_sub = BROADCAST_CHANNEL.subscriber()?;
     let mut out_sub = OUT_CHANNEL.subscriber()?;
 
     let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
 
-    loop {
+    /*loop {
         let packet = next_out_packet(
             &mut broadcast_sub,
             &mut out_sub,
@@ -131,7 +134,20 @@ async fn radio_task_impl(
 
         radio_packet.to_song(&mut buf)?;
 
-        radio.transmit(&buf[0..radio_packet.song_size()]).await?;
+        //radio.transmit(&buf[0..radio_packet.song_size()]).await?;
+    }*/
+    loop {
+        let packet = out_sub.next_message_pure().await;
+        if packet.channel == IoChannel::LoRa {
+            let packet = packet.packet;
+
+            let radio_packet = RadioPacket::new(config, packet);
+
+            radio_packet.to_song(&mut buf)?;
+
+            radio.transmit(&buf[0..radio_packet.song_size()]).await?;
+            radio.set_mode(rfm9::Mode::Sleep).await?;
+        }
     }
 }
 
@@ -231,9 +247,11 @@ pub async fn flash_task_impl(flash_mutex: &Mutex<&mut Flash>) -> Result<(), Siri
             IoChannel::Flash
         ).await;
 
-        let mut flash = flash_mutex.lock().await;
-        flash.log(&packet).await.unwrap();
-        drop(flash);
+        if FLASH_LOGGING_ENABLED.load(Ordering::Relaxed) {
+            let mut flash = flash_mutex.lock().await;
+            flash.log(&packet).await.unwrap();
+            drop(flash);
+        }        
     }
 }
 

@@ -7,15 +7,14 @@ use bmp3::Bmp3;
 use defmt::{info, Display2Format};
 use embassy_executor::{Executor, Spawner};
 use embassy_futures::join::{join, join3, join5, join_array};
-use embassy_stm32::{ bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, mode::Async, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, usart::{self, Uart}, Config, Peripherals };
+use embassy_stm32::{ bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, mode::Async, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, usart::{self, RingBufferedUartRx, Uart}, Config, Peripherals };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
 use flash::Flash;
 use gpio::GpioPins;
 use rfm9::{ReadRfm9, Rfm9};
 use sirin_macros::{FromSong, SongSize, ToSong};
 use snafu::{ensure, Snafu};
-use sirin_shared::{config::SirinConfig, song::{FromSong, FromSongError, SongSize, ToSong, ToSongError}};
-use subsystems::{BaroData, HighGImuData, ImuData, Measurement, SirinData, Subsystem, SubsystemError};
+use sirin_shared::{config::SirinConfig, packet::{Measurement, SirinData, SubsystemError}, song::{FromSong, FromSongError, SongSize, ToSong, ToSongError}};
 use sync::Mutex;
 use usb::{setup_usb, WriteEp, ReadEp, SirinUsb, UsbSerialClass};
 use uunit::{Celsius, Pascals};
@@ -45,7 +44,11 @@ pub use sirin_shared::song;
 pub use sirin_shared::state;
 pub use sirin_shared::packet;
 
+use crate::subsystems::Subsystem;
+
 pub type Radio = Rfm9<SpiDev>;
+
+static mut GPS_BUF: [u8; 512] = [0u8; 512];
 
 #[derive(Debug, Clone)]
 pub struct SirinHealth {
@@ -74,7 +77,8 @@ pub struct Sirin {
     pub imu: Lsm6dso<SpiDev>,
     pub high_g_imu: H3lis<SpiDev>,
     // pub gps: S1315F8,
-    pub gps: Uart<'static, Async>,
+    //pub gps: Uart<'static, Async>,
+    pub gps_rx: RingBufferedUartRx<'static>,
     //pub driver: Driver<'static, peripherals::USB_OTG_FS>
 
     pub data: SirinData,
@@ -203,7 +207,7 @@ impl Sirin {
             let highg_imu_cs = Output::new(p.PE13,Level::High, Speed::High);
             highg_imu_ptr.write(H3lis::new((*spi1).handle(highg_imu_cs)));
 
-            ptr!(sirin.gps).write(Uart::new(
+            let gps = Uart::new(
                 p.USART3,
                 p.PD9,
                 p.PD8,
@@ -211,7 +215,9 @@ impl Sirin {
                 p.DMA1_CH6,
                 p.DMA1_CH7,
                 usart::Config::default()
-            ).unwrap());
+            ).unwrap();
+
+            ptr!(sirin.gps_rx).write(gps.split().1.into_ring_buffered(&mut GPS_BUF));
 
             ptr!(sirin.data).write(SirinData::unmeasured());
 

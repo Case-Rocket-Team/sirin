@@ -9,8 +9,9 @@ use lsm6dso_spi::{Accel, AngularVel, Lsm6dso};
 use paste::paste;
 use rfm9::Rfm9;
 use sirin_macros::Measurement;
+use sirin_shared::packet::{BaroData, HighGImuData, ImuData, Measurement, SirinData, SubsystemError, Vec3};
 use snafu::prelude::*;
-use uunit::{Celsius, Pascals, WithUnits};
+use uunit::{Celsius, Milliseconds, Pascals, WithUnits};
 use w25qx::W25Q;
 
 use crate::spi::SpiDev;
@@ -28,27 +29,7 @@ pub trait Instrument: Subsystem {
     fn measure(&mut self) -> impl Future<Output = Self::Data>;
 }
 
-pub trait Measurement {
-    fn unmeasured() -> Self;
-}
-
-// TODO: maybe change to `derive_more` crate and remove snafu
-#[derive(Debug, Clone, Snafu)]
-pub enum SubsystemError {
-    #[snafu(display("{error_msg}"))]
-    SanityCheckFailed{
-        error_msg: &'static str,
-        // lazy but w/e -- just convert all numeric types into f64
-        // making a different type for each numeric/making the entire error enum
-        // generic is too much of a pita.
-        value: Option<f64>
-    },
-    #[snafu(display("Error in SPI bus: {error}"))]
-    SpiError{ error: SpiErrorKind },
-    #[snafu(display("Not measured -- call .measure()"))]
-    NotYetMeasured
-}
-
+/*
 macro_rules! sanity_check {
     ($test:expr => $($pattern:tt)*) => {{
         const ERR_MSG: &str = concat!("Sanity check failed: ", stringify!($test), " not in ", stringify!($($pattern)*));
@@ -79,14 +60,26 @@ macro_rules! sanity_check_uunit {
             }.fail()
         }
     }};
+}*/
+
+macro_rules! sanity_check {
+    ($test:expr => $($pattern:tt)*) => {{
+        const ERR_MSG: &str = concat!("Sanity check failed: ", stringify!($test), " not in ", stringify!($($pattern)*));
+
+        let value = $test;
+
+        Result::<_, SpiErrorKind>::Ok(value)
+    }};
 }
 
-impl Error for SubsystemError {}
+macro_rules! sanity_check_uunit {
+    ($test:expr => $($pattern:tt)*) => {{
+        const ERR_MSG: &str = concat!("Sanity check failed: ", stringify!($test), " not in ", stringify!($($pattern)*));
 
-impl From<SpiErrorKind> for SubsystemError {
-    fn from(value: SpiErrorKind) -> Self {
-        Self::SpiError { error: value }
-    }
+        let value = $test;
+
+        Ok(value)
+    }};
 }
 
 impl Subsystem for Bmp3<SpiDev> {
@@ -96,13 +89,6 @@ impl Subsystem for Bmp3<SpiDev> {
     async fn selfcheck(&mut self) -> Result<(), SubsystemError> {
         Ok(())
     }
-}
-
-#[derive(Debug, Clone, Measurement)]
-#[allow(dead_code)]
-pub struct BaroData {
-    pub pressure: Result<Pascals<f64>, SubsystemError>,
-    pub temperature: Result<Celsius<f64>, SubsystemError>
 }
 
 impl Instrument for Bmp3<SpiDev> {
@@ -152,19 +138,13 @@ impl Subsystem for Lsm6dso<SpiDev> {
     }
 }
 
-#[derive(Debug, Clone, Measurement)]
-pub struct ImuData {
-    pub accel: Result<Accel, SubsystemError>,
-    pub angular_vel: Result<AngularVel, SubsystemError>
-}
-
 impl Instrument for Lsm6dso<SpiDev> {
     type Data = ImuData;
 
     async fn measure(&mut self) -> Self::Data {
         Self::Data {
-            accel: self.accel().await.map_err(|e| e.into()),
-            angular_vel: self.angular_vel().await.map_err(|e| e.into())
+            accel: self.accel().await.map(|accel| Vec3 { x: accel.x, y: accel.y, z: accel.z }).map_err(|e| e.into()),
+            angular_vel: self.angular_vel().await.map(|vel| Vec3 { x: vel.x_pitch, y: vel.y_roll, z: vel.z_yaw }).map_err(|e| e.into())
         }
     }
 }
@@ -181,20 +161,27 @@ impl Subsystem for H3lis<SpiDev> {
     }
 }
 
-#[derive(Debug, Clone, Measurement)]
-#[allow(dead_code)]
-pub struct HighGImuData {
-    // TODO: Put units on this!
-    pub accel: Result<(i32, i32, i32), SubsystemError>
-}
-
 impl Instrument for H3lis<SpiDev> {
     type Data = HighGImuData;
 
     async fn measure(&mut self) -> Self::Data {
-        Self::Data {
-            accel: self.acceleration().await.map_err(|e| e.into())
+        match self.acceleration().await.map_err(|e| e.into()) {
+            Ok(accel) => {
+                Self::Data {
+                    accel: Ok(Vec3 {
+                        x: accel.0,
+                        y: accel.1,
+                        z: accel.2
+                    })
+                }
+            },
+            Err(e) => {
+                Self::Data {
+                    accel: Err(e)
+                }
+            }
         }
+        
     }
 }
 
@@ -210,37 +197,16 @@ impl Subsystem for Rfm9<SpiDev> {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct SirinData {
-    pub time: Instant,
-    pub baro: BaroData,
-    pub imu: ImuData,
-    pub high_g_imu: HighGImuData
-}
-
-impl Measurement for SirinData {
-    fn unmeasured() -> Self {
-        Self {
-            time: Instant::now(),
-            baro: BaroData::unmeasured(),
-            imu: ImuData::unmeasured(),
-            high_g_imu: HighGImuData::unmeasured()
-        }
-    }
-}
-
-impl SirinData {
-    pub async fn measure(
-        baro: &mut Bmp3<SpiDev>,
-        imu: &mut Lsm6dso<SpiDev>,
-        high_g_imu: &mut H3lis<SpiDev>
-    ) -> Self {
-        // TODO: join futures?
-        Self {
-            time: Instant::now(),
-            baro: baro.measure().await,
-            imu: imu.measure().await,
-            high_g_imu: high_g_imu.measure().await
-        }
+pub async fn measure_sirin(
+    baro: &mut Bmp3<SpiDev>,
+    imu: &mut Lsm6dso<SpiDev>,
+    high_g_imu: &mut H3lis<SpiDev>
+) -> SirinData {
+    // TODO: join futures?
+    SirinData {
+        time: (Instant::now().as_millis() as u32).with_units(),
+        baro: baro.measure().await,
+        imu: imu.measure().await,
+        high_g_imu: high_g_imu.measure().await
     }
 }

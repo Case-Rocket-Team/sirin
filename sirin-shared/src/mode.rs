@@ -7,4 +7,5 @@ use crate::song::*;
 pub enum SirinMode {
     Standby,
     Flight,
+    Landed,
 }

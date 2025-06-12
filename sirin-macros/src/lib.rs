@@ -38,10 +38,10 @@ pub fn derive_measurement(item: TokenStream) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
 
     quote! {
-        impl #impl_generics crate::subsystems::Measurement for #name #ty_generics #where_clause {
+        impl #impl_generics crate::packet::Measurement for #name #ty_generics #where_clause {
             fn unmeasured() -> Self {
                 Self {
-                    #(#fields: Err(crate::subsystems::SubsystemError::NotYetMeasured)),*
+                    #(#fields: Err(crate::packet::SubsystemError::NotYetMeasured)),*
                 }
             }
         }
