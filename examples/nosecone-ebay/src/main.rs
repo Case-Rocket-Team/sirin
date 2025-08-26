@@ -63,6 +63,29 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
     sirin.spawner.spawn(gps_task(&mut sirin.gps_rx)).unwrap();
 
+    let mut i = 0;
+    loop {
+        let mut sector = [0; 4096];
+        sirin.flash.w25q.read(i * 4096, &mut sector).await?;
+        let mut k = 0;
+        loop {
+            let result = OutPacket::from_song(&sector[k..]);
+            if let Ok(packet) = result {
+                info!("{}", Debug2Format(&packet));
+                k += packet.song_size()
+            } else {
+                k += 1;
+            }
+
+            if k >= 4096 {
+                break;
+            }
+        }
+        i += 1;
+    }
+
+    loop {}
+
     let mut flash = Mutex::new(&mut sirin.flash);
     sirin.spawner.spawn(flash_io_task(unsafe {
         transmute_into_static(&mut flash)
