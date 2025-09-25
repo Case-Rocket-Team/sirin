@@ -1402,6 +1402,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "sam-m10q"
+version = "0.1.0"
+
+[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1506,6 +1510,7 @@ dependencies = [
  "spi-handle",
  "static_assertions",
  "static_cell",
+ "ublox",
  "unhygienic2",
  "uunit",
  "w25qx",
@@ -1698,6 +1703,30 @@ name = "typenum"
 version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42ff0bf0c66b8238c6f3b578df37d0b7848e55df8577b3f74f92a69acceeb825"
+
+[[package]]
+name = "ublox"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0456d0c38f15a56f5a12af23efe86719b757744ededebd69eee3320ed24ad50f"
+dependencies = [
+ "bitflags 2.8.0",
+ "chrono",
+ "num-traits",
+ "serde",
+ "ublox_derive",
+]
+
+[[package]]
+name = "ublox_derive"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "290ba2a4bfe92acb91bb9c0cdae32e9a1cda9cfe5b3329eaf9a444c522512de9"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
 
 [[package]]
 name = "unhygienic2"
