@@ -76,7 +76,7 @@ pub struct Sirin {
     pub baro: Bmp3<SpiDev>,
     pub imu: Lsm6dso<SpiDev>,
     pub high_g_imu: H3lis<SpiDev>,
-    // pub gps: S1315F8,
+    //pub gps: S1315F8,
     //pub gps: Uart<'static, Async>,
     pub gps_rx: RingBufferedUartRx<'static>,
     //pub driver: Driver<'static, peripherals::USB_OTG_FS>
