@@ -46,10 +46,6 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
     main_task(sirin).await
 }
 
-bind_interrupts!(struct Irqs {
-    USART3 => usart::InterruptHandler<peripherals::USART3>;
-});
-
 async fn main_task(sirin: &'static mut Sirin) {
     loop {
         let mut packet = [0u8; 64];

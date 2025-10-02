@@ -48,4 +48,4 @@ sirin-shared = { version = "0.1.0", path = "../sirin-shared" }
 derive_more = { version = "2.0.1", features = ["from"], default-features = false }
 static_assertions = "1.1.0"
 cortex-m = "0.7.7"
-ublox = "0.6.0"
+ublox = { version = "0.6.0", features = ["ubx_proto23"], default-features = false }

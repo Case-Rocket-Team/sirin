@@ -15,83 +15,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "airbrakes"
-version = "0.1.0"
-dependencies = [
- "bmp3",
- "chrono",
- "cortex-m",
- "cortex-m-rt",
- "critical-section",
- "defmt",
- "defmt-rtt",
- "embassy-executor",
- "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
- "embassy-net",
- "embassy-stm32",
- "embassy-sync",
- "embassy-time",
- "embassy-usb",
- "embedded-hal 0.2.7",
- "embedded-hal 1.0.0",
- "embedded-hal-async",
- "embedded-io-async",
- "embedded-nal-async 0.7.1",
- "embedded-storage",
- "futures",
- "heapless 0.8.0",
- "micromath",
- "panic-probe",
- "postcard",
- "rand_core",
- "rfm9",
- "sirin",
- "sirin-shared",
- "static_cell",
- "stm32-fmc",
- "w25qx",
-]
-
-[[package]]
-name = "airbrakes-test"
-version = "0.1.0"
-dependencies = [
- "bmp3",
- "chrono",
- "cortex-m",
- "cortex-m-rt",
- "critical-section",
- "defmt",
- "defmt-rtt",
- "embassy-executor",
- "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
- "embassy-net",
- "embassy-stm32",
- "embassy-sync",
- "embassy-time",
- "embassy-usb",
- "embedded-hal 0.2.7",
- "embedded-hal 1.0.0",
- "embedded-hal-async",
- "embedded-io-async",
- "embedded-nal-async 0.7.1",
- "embedded-storage",
- "futures",
- "heapless 0.8.0",
- "micromath",
- "panic-probe",
- "postcard",
- "rand_core",
- "rfm9",
- "sirin",
- "sirin-c",
- "sirin-shared",
- "static_cell",
- "stm32-fmc",
- "w25qx",
-]
-
-[[package]]
 name = "aligned"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1146,7 +1069,6 @@ dependencies = [
  "rand_core",
  "rfm9",
  "sirin",
- "sirin-c",
  "sirin-shared",
  "static_cell",
  "stm32-fmc",
@@ -1254,45 +1176,6 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
-
-[[package]]
-name = "payload-test"
-version = "0.1.0"
-dependencies = [
- "bmp3",
- "chrono",
- "cortex-m",
- "cortex-m-rt",
- "critical-section",
- "defmt",
- "defmt-rtt",
- "embassy-executor",
- "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
- "embassy-net",
- "embassy-stm32",
- "embassy-sync",
- "embassy-time",
- "embassy-usb",
- "embedded-hal 0.2.7",
- "embedded-hal 1.0.0",
- "embedded-hal-async",
- "embedded-io-async",
- "embedded-nal-async 0.7.1",
- "embedded-storage",
- "futures",
- "heapless 0.8.0",
- "micromath",
- "panic-probe",
- "postcard",
- "rand_core",
- "rfm9",
- "sirin",
- "sirin-c",
- "sirin-shared",
- "static_cell",
- "stm32-fmc",
- "w25qx",
-]
 
 [[package]]
 name = "pin-project-lite"
@@ -1713,7 +1596,6 @@ dependencies = [
  "bitflags 2.8.0",
  "chrono",
  "num-traits",
- "serde",
  "ublox_derive",
 ]
 
