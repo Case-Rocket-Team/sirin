@@ -170,9 +170,9 @@ impl Instrument for H3lis<SpiDev> {
             Ok(accel) => {
                 Self::Data {
                     accel: Ok(Vec3 {
-                        x: mag.0,
-                        y: mag.1,
-                        z: mag.2
+                        x: accel.0,
+                        y: accel.1,
+                        z: accel.2
                     })
                 }
             },
