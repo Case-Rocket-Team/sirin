@@ -31,6 +31,7 @@ spi-handle = { version = "0.1.1", path = "../spi-handle" }
 bmp3 = { version = "0.1.1", path = "../bmp3" }
 defmt = "0.3.8"
 rfm9 = { version = "0.1.1", path = "../rfm9" }
+lis3mdl = { version = "0.1.1", path = "../lis3mdl" }
 w25qx = { version = "0.1.1", path = "../w25qx" }
 lsm6dso-spi = { version = "0.1.1", path = "../lsm6dso-spi" }
 h3lis = { version = "0.1.1", path = "../h3lis" }

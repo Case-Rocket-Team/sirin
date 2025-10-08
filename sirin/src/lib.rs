@@ -20,6 +20,7 @@ use usb::{setup_usb, WriteEp, ReadEp, SirinUsb, UsbSerialClass};
 use uunit::{Celsius, Pascals};
 use w25qx::W25Q;
 use lsm6dso_spi::Lsm6dso;
+use lis3mdl::Lis3mdl;
 use h3lis::H3lis;
 use spi::{Spi, SpiConfig, SpiConfigStruct, SpiDev, SpiInstance, WithSpiHandle};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State as UsbState};
@@ -76,6 +77,7 @@ pub struct Sirin {
     pub baro: Bmp3<SpiDev>,
     pub imu: Lsm6dso<SpiDev>,
     pub high_g_imu: H3lis<SpiDev>,
+    pub magnetometer: Lis3mdl<SpiDev>,
     //pub gps: S1315F8,
     //pub gps: Uart<'static, Async>,
     pub gps_rx: RingBufferedUartRx<'static>,
@@ -207,6 +209,7 @@ impl Sirin {
             let highg_imu_cs = Output::new(p.PE13,Level::High, Speed::High);
             highg_imu_ptr.write(H3lis::new((*spi1).handle(highg_imu_cs)));
 
+            //TODO implement magnetometer writes
             let gps = Uart::new(
                 p.USART3,
                 p.PD9,

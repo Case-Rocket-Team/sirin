@@ -13,6 +13,7 @@ use sirin_shared::packet::{BaroData, HighGImuData, ImuData, Measurement, SirinDa
 use snafu::prelude::*;
 use uunit::{Celsius, Milliseconds, Pascals, WithUnits};
 use w25qx::W25Q;
+use lis3mdl::Lis3mdl;
 
 use crate::spi::SpiDev;
 
@@ -165,13 +166,13 @@ impl Instrument for H3lis<SpiDev> {
     type Data = HighGImuData;
 
     async fn measure(&mut self) -> Self::Data {
-        match self.acceleration().await.map_err(|e| e.into()) {
+        match self.magnetic().await.map_err(|e| e.into()) {
             Ok(accel) => {
                 Self::Data {
                     accel: Ok(Vec3 {
-                        x: accel.0,
-                        y: accel.1,
-                        z: accel.2
+                        x: mag.0,
+                        y: mag.1,
+                        z: mag.2
                     })
                 }
             },
@@ -180,6 +181,30 @@ impl Instrument for H3lis<SpiDev> {
                     accel: Err(e)
                 }
             }
+        }
+
+    }
+}
+
+impl Subsystem for Lis3mdl<SpiDev> {
+    const NAME: &str = "Magnetometer";
+    const PART: &str = "LIS3MDL";
+
+    async fn selfcheck(&mut self) -> Result<(), SubsystemError> {
+        let manufacturer_id = self.manufacturer_id().await?;
+
+        sanity_check!(manufacturer_id => 50)?;
+        Ok(())
+    }
+}
+
+impl Instrument for Lis3mdl<SpiDev> {
+    type Data = MagnetometerData;
+
+    async fn measure(&mut self) -> Self::Data {
+        Self::Data{
+            mag: self.magnetic().await.map(|mag| Vec3 { x: mag.x, y: mag.y, z: mag.z }).map_err(|e| e.into()),
+            temp: self.temp().await.map(|t: i16| t as i16).map_err(|e| e.into())
         }
         
     }
@@ -200,13 +225,16 @@ impl Subsystem for Rfm9<SpiDev> {
 pub async fn measure_sirin(
     baro: &mut Bmp3<SpiDev>,
     imu: &mut Lsm6dso<SpiDev>,
-    high_g_imu: &mut H3lis<SpiDev>
+    high_g_imu: &mut H3lis<SpiDev>,
+    magnetometer: &mut Lis3mdl<SpiDev>
 ) -> SirinData {
-    // TODO: join futures?
+    //TODO: join futures?
+    //TODO: Measure magnetometer data here as well
     SirinData {
         time: (Instant::now().as_millis() as u32).with_units(),
         baro: baro.measure().await,
         imu: imu.measure().await,
-        high_g_imu: high_g_imu.measure().await
+        high_g_imu: high_g_imu.measure().await,
+        magnetometer: magnetometer.measure().await
     }
 }

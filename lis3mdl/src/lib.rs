@@ -6,7 +6,7 @@ use spi_handle::SpiHandle;
 use core::mem;
 
 dev_csr!{
-    dev H3lis {
+    dev Lis3mdl {
         regs {
             /// Should be 32h
             0x0F WHO_AM_I r who_am_i,
@@ -210,22 +210,25 @@ impl <S: SpiHandle> lis3mdl<S> {
         &mut self
     ) -> Result<(),<S::Bus as ErrorType>::Error> {
         // self.write_reg(reg, value as u8).await?;
-        // enable x,y,z axis
-        self.write_reg(RegCtrlReg1, 0b001_10_111 as u8).await?;
+        self.write_reg(CTRL_REG1, 0b1001_0000 as u8).await?;
+
+        //self.write_reg(RegCtrlReg1, 0b001_10_111 as u8).await?;
         //self.write_reg().await?;
         Ok(())    
     }
 
-    pub async fn acceleration(&mut self) -> Result<(i32, i32, i32), <S::Bus as ErrorType>::Error> {
-         Ok(unsafe {
-            let accel_x: i8 = mem::transmute(self.x().await?);
-            let accel_y: i8 = mem::transmute(self.y().await?);
-            let accel_z: i8 = mem::transmute(self.z().await?);
-            //xyz are corrected so that
-            //x -> cable direction
-            //yz follow from right hand rule, x as index finger
-            ((accel_x as i32) * 780000, (accel_y as i32) * -780000, (accel_z as i32) * -780000)
-       })
+    pub async fn magnetic(&mut self) -> Result<(i16,i16,i16), <S::Bus as ErrorType>::Error> {
+        //MSB stored in the low register
+        let mag_x = i16::from_ne_bytes([self.x_l().await? as u8,self.x_h().await? as u8]);
+        let mag_y = i16::from_ne_bytes([self.y_l().await? as u8,self.y_h().await? as u8]);
+        let mag_z = i16::from_ne_bytes([self.z_l().await? as u8,self.z_h().await? as u8]);
+        Ok((mag_x, mag_y, mag_z))
+    }
+    
+    pub async fn temp(&mut self) -> Result<(i16), <S::Bus as ErrorType>::Error> {
+         Ok(
+            i16::from_ne_bytes([self.temp_out_l().await? as u8, self.temp_out_h().await? as u8])
+       )
     }
 
     pub async fn manufacturer_id(&mut self) -> Result<u8, <S::Bus as ErrorType>::Error> {

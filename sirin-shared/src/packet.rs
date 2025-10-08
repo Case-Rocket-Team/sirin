@@ -240,7 +240,8 @@ pub struct SirinData {
     pub time: Milliseconds<u32>,
     pub baro: BaroData,
     pub imu: ImuData,
-    pub high_g_imu: HighGImuData
+    pub high_g_imu: HighGImuData,
+    pub magnetometer: MagnetometerData
 }
 
 pub trait Measurement {
@@ -253,7 +254,8 @@ impl Measurement for SirinData {
             time: 0u32.with_units(),
             baro: BaroData::unmeasured(),
             imu: ImuData::unmeasured(),
-            high_g_imu: HighGImuData::unmeasured()
+            high_g_imu: HighGImuData::unmeasured(),
+            magnetometer: MagnetometerData::unmeasured()
         }
     }
 }
@@ -277,6 +279,13 @@ pub struct ImuData {
 pub struct HighGImuData {
     // TODO: Put units on this!
     pub accel: Result<Vec3<i32>, SubsystemError>
+}
+
+#[derive(Debug, Clone, SongSize, ToSong, FromSong, Measurement)]
+#[allow(dead_code)]
+pub struct MagnetometerData {
+    pub mag: Result<Vec3<i16>, SubsystemError>,
+    pub temp: Result<i16, SubsystemError>
 }
 
 // TODO: maybe change to `derive_more` crate and remove snafu
