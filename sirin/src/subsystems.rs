@@ -229,7 +229,6 @@ pub async fn measure_sirin(
     magnetometer: &mut Lis3mdl<SpiDev>
 ) -> SirinData {
     //TODO: join futures?
-    //TODO: Measure magnetometer data here as well
     SirinData {
         time: (Instant::now().as_millis() as u32).with_units(),
         baro: baro.measure().await,

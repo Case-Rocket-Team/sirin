@@ -206,10 +206,12 @@ impl Sirin {
             imu_ptr.write(Lsm6dso::new((*spi1).handle(imu_cs)));
 
             let highg_imu_ptr: *mut H3lis<SpiDev> = ptr!(sirin.high_g_imu);
-            let highg_imu_cs = Output::new(p.PE13,Level::High, Speed::High);
+            let highg_imu_cs = Output::new(p.PE13, Level::High, Speed::High);
             highg_imu_ptr.write(H3lis::new((*spi1).handle(highg_imu_cs)));
 
-            //TODO implement magnetometer writes
+            let magnetometer_ptr: *mut Lis3mdl<SpiDev> = ptr!(sirin.magnetometer);
+            // let magnetometer_cs = Output::new(p.PE15, Level::High, Speed::High); which pin to use?
+            //TODO finish magnetometer writes
             let gps = Uart::new(
                 p.USART3,
                 p.PD9,
