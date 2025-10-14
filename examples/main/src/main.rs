@@ -202,8 +202,8 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         sirin.data = measure_sirin(
             &mut sirin.baro,
             &mut sirin.imu,
-            &mut sirin.high_g_imu
-            //TODO add magnetometer
+            &mut sirin.high_g_imu,
+            &mut sirin.magnetometer
         ).await;
 
         //info!("Calculate altitude");
