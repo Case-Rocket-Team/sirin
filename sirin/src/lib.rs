@@ -58,6 +58,7 @@ pub struct SirinHealth {
     pub baro: Result<(), SubsystemError>,
     pub imu: Result<(), SubsystemError>,
     pub high_g_imu: Result<(), SubsystemError>,
+    pub magnetometer: Result<(), SubsystemError>
 }
 
 pub struct Sirin {
@@ -177,11 +178,7 @@ impl Sirin {
                 p13: p.PD5,
                 p14: p.PD4,
                 p15: p.PD3,
-                p16: p.PD1,
-                p17: p.PD0,
-                p18: p.PC12,
-                p19: p.PC11,
-                p20: p.PC10,
+                p16: p.PD1
             });
 
             let baro_ptr: *mut Bmp3<SpiDev> = ptr!(sirin.baro);
@@ -210,7 +207,8 @@ impl Sirin {
             highg_imu_ptr.write(H3lis::new((*spi1).handle(highg_imu_cs)));
 
             let magnetometer_ptr: *mut Lis3mdl<SpiDev> = ptr!(sirin.magnetometer);
-            // let magnetometer_cs = Output::new(p.PE15, Level::High, Speed::High); which pin to use?
+            let magnetometer_cs = Output::new(p.PA3, Level::High, Speed::High); 
+            magnetometer_ptr.write(Lis3mdl::new((*spi1).handle(magnetometer_cs)));
             //TODO finish magnetometer writes
             let gps = Uart::new(
                 p.USART3,
@@ -241,14 +239,34 @@ impl Sirin {
             (*radio_ptr).use_high_power().await.unwrap();
             (*imu_ptr).setup().await.unwrap();
             (*highg_imu_ptr).setup().await.unwrap();
+            (*magnetometer_ptr).setup().await.unwrap();
 
             {
-                let (flash, radio, baro, imu, high_g_imu) = join5(
+                /*
+                let [flash, radio, baro, imu, high_g_imu, magnetometer] = embassy_futures::join::join_array([
                     (*flash_ptr).w25q.selfcheck(),
                     (*radio_ptr).selfcheck(),
                     (*baro_ptr).selfcheck(),
                     (*imu_ptr).selfcheck(),
-                    (*highg_imu_ptr).selfcheck()
+                    (*highg_imu_ptr).selfcheck(), 
+                    (*magnetometer_ptr).selfcheck()
+                ]).await;
+             */
+                let join1 = join3(
+                    (*flash_ptr).w25q.selfcheck(),
+                    (*radio_ptr).selfcheck(),
+                    (*baro_ptr).selfcheck(),
+                );
+
+                let join2 = join3(
+                    (*imu_ptr).selfcheck(),
+                    (*highg_imu_ptr).selfcheck(),
+                    (*magnetometer_ptr).selfcheck(),
+                );
+
+                let ((flash, radio, baro), (imu, high_g_imu, magnetometer)) = join(
+                    join1,
+                    join2,
                 ).await;
 
                 ptr!(sirin.health).write(SirinHealth {
@@ -257,11 +275,12 @@ impl Sirin {
                     baro,
                     imu,
                     high_g_imu,
+                    magnetometer
                 });
-            }
 
-            let sirin: &'static mut _ = sirin.assume_init_mut();
-            sirin
+                let sirin: &'static mut _ = sirin.assume_init_mut();
+                sirin
+            }
         }
     }
 
