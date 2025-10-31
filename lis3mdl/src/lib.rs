@@ -3,7 +3,6 @@ use dev_csr::dev_csr;
 use embedded_hal::spi::ErrorType;
 use embedded_hal_async::spi::SpiBus;
 use spi_handle::SpiHandle;
-use core::mem;
 
 dev_csr!{
     dev Lis3mdl {

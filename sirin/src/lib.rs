@@ -25,6 +25,7 @@ use h3lis::H3lis;
 use spi::{Spi, SpiConfig, SpiConfigStruct, SpiDev, SpiInstance, WithSpiHandle};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State as UsbState};
 use embassy_usb::Builder as UsbBuilder;
+use gps::Gps;
 
 pub use uunit;
 pub mod spi;
@@ -73,21 +74,25 @@ pub struct Sirin {
     pub radio: Rfm9<SpiDev>,
     pub usb: SirinUsb,
     pub led: Output<'static>,
+    pub parachute_main: Output<'static>,
+    pub parachute_apo: Output<'static>,
 
     // Instrument subsytems
     pub baro: Bmp3<SpiDev>,
     pub imu: Lsm6dso<SpiDev>,
     pub high_g_imu: H3lis<SpiDev>,
     pub magnetometer: Lis3mdl<SpiDev>,
+
     //pub gps: S1315F8,
     //pub gps: Uart<'static, Async>,
     pub gps_rx: RingBufferedUartRx<'static>,
+    pub gps: Gps,
     //pub driver: Driver<'static, peripherals::USB_OTG_FS>
 
     pub data: SirinData,
     pub health: SirinHealth,
     pub config: SirinConfig,
-
+    
     _phantom_pinned: PhantomPinned
 }
 
@@ -209,7 +214,7 @@ impl Sirin {
             let magnetometer_ptr: *mut Lis3mdl<SpiDev> = ptr!(sirin.magnetometer);
             let magnetometer_cs = Output::new(p.PA3, Level::High, Speed::High); 
             magnetometer_ptr.write(Lis3mdl::new((*spi1).handle(magnetometer_cs)));
-            //TODO finish magnetometer writes
+            
             let gps = Uart::new(
                 p.USART3,
                 p.PD9,
@@ -232,6 +237,10 @@ impl Sirin {
             ));
 
             ptr!(sirin.led).write(Output::new(p.PA1, Level::Low, Speed::High));
+
+            ptr!(sirin.parachute_main).write(Output::new(p.PA8, Level::Low, Speed::High));
+
+            ptr!(sirin.parachute_apo).write(Output::new(p.PA10, Level::Low, Speed::High));
 
             // TODO: JOIN FUTURES, AWAIT
             baro_ptr.write(baro_future.await.unwrap());
@@ -287,4 +296,13 @@ impl Sirin {
     pub fn reboot() {
         cortex_m::peripheral::SCB::sys_reset();
     }
+
+    pub fn deploy_chute_main(sirin: &'static mut Sirin){
+        sirin.parachute_main.set_high();
+    }
+    
+    pub fn deploy_chute_apo(sirin: &'static mut Sirin){
+        sirin.parachute_apo.set_high();
+    }
+    
 }

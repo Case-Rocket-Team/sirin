@@ -5,18 +5,32 @@ use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal}
 use embassy_time::Instant;
 use sirin_shared::{packet::{GpsFix, GpsFixType, Log, OutPacket, Vec3}, song::FromSong};
 use uunit::{Meters, MetersPerSecond, WithUnits};
-
 use crate::{error::SirinError, io::{broadcast, broadcast_log}};
 
 pub static GPS_FIX: Signal<CriticalSectionRawMutex, GpsFix> = Signal::new();
+pub struct Gps{
+    
+}
+
+impl Gps {
+    pub fn new() -> Self {
+        Self {
+            
+        }
+    }
+}
+
+
 
 #[task]
 pub async fn gps_task(
     gps: &'static mut RingBufferedUartRx<'static>
 ) {
     let mut fix = GpsFix::default();
-
     //gps.write(&[0xA0, 0xA1, 0x00, 0x03, 0x09, 0x02, 0x00, 0x09 ^ 0x02, 0x0D, 0x0A]).await.unwrap();
+    
+    //Send GPS setup packet(s)
+
 
     loop {
         match gps_impl(gps, &mut fix).await {

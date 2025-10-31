@@ -1,5 +1,4 @@
 use core::ops::Div;
-
 use crate::{config::{CallsignBuf, SirinConfig, SirinId}, mode::SirinMode, song::{magic::MagicU8, maybe_unwritten_max_bytes::MaybeUnwrittenMaxBytes, *}, state::NominalState, time::AbsoluteTimeReference};
 use derive_more::Display;
 use sirin_macros::*;
@@ -123,7 +122,8 @@ pub enum GpsFixType {
     FixPrediction,
     Fix2d,
     Fix3d,
-    FixDifferential
+    FixDifferential,
+    TimeOnlyFix
 }
 
 #[derive(Debug, Clone, SongSize, FromSong, ToSong)]
