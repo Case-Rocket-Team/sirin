@@ -208,6 +208,8 @@ pub enum InPacket {
     ReadFlight(u16),
     Tail(bool),
     EraseFlash(MagicU8<0xA8>),
+    DeployMain,
+    DeployApo,
 }
 
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]

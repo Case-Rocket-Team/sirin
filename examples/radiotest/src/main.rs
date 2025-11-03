@@ -63,30 +63,8 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
     sirin.spawner.spawn(gps_task(&mut sirin.gps_rx)).unwrap();
 
-    let mut i = 0;
-    loop {
-        let mut sector = [0; 4096];
-        sirin.flash.w25q.read(i * 4096, &mut sector).await?;
-        let mut k = 0;
-        loop {
-            let result = OutPacket::from_song(&sector[k..]);
-            if let Ok(packet) = result {
-                info!("{}", Debug2Format(&packet));
-                k += packet.song_size()
-            } else {
-                k += 1;
-            }
-
-            if k >= 4096 {
-                break;
-            }
-        }
-        i += 1;
-    }
-
-    loop {}
-
     let mut flash = Mutex::new(&mut sirin.flash);
+    
     sirin.spawner.spawn(flash_io_task(unsafe {
         transmute_into_static(&mut flash)
     })).unwrap();
@@ -94,9 +72,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     info!("Start main");
 
     let mut ticker = Ticker::every(Duration::from_millis(500));
-
-    let mut launched_at = None;
-    let mut max_altitude: Meters<f64> = 0.0.with_units();
 
     let mut desired_mode = None;
 
@@ -211,141 +186,5 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             &mut sirin.high_g_imu,
             &mut sirin.magnetometer
         ).await;
-
-        //info!("Calculate altitude");
-        if let Ok(pressure) = sirin.data.baro.pressure {
-            let measured_altitude = approx_pressure_altitude(pressure.convert());
-            state.altitude = measured_altitude - initial_altitude;
-            info!("Estimated altitude: {}m", state.altitude.value);
-
-            if state.altitude.value > max_altitude.value {
-                max_altitude = state.altitude;
-            }
-        }
-        //info!("Altitude calculated");
-
-        let accel_mag_squared = if let Ok(accel) = &sirin.data.imu.accel {
-            let x_f64: MicroGs<f64> = (accel.x.value as f64).with_units();
-            let x: Gs<f64> = x_f64.convert();
-            let y_f64: MicroGs<f64> = (accel.y.value as f64).with_units();
-            let y: Gs<f64> = y_f64.convert();
-            let z_f64: MicroGs<f64> = (accel.z.value as f64).with_units();
-            let z: Gs<f64> = z_f64.convert();
-            Some(x * x + y * y + z * z)
-        } else {
-            None
-        };
-
-        match state.mode {
-            SirinMode::Standby => {
-                let accel_threshold: Gs<f64> = (15.0 * 15.0).with_units();
-
-                if state.altitude.value > 150.0
-                    || accel_mag_squared.is_some_and(|accel| accel.value > accel_threshold.value)
-                    || desired_mode == Some(SirinMode::Flight)
-                {
-                    sirin.led.set_high();
-                    state.mode = SirinMode::Flight;
-                    FLASH_LOGGING_ENABLED.store(true, Ordering::Relaxed);
-                    launched_at = Some(Instant::now());
-                }
-            },
-            SirinMode::Flight => {
-                OUT_CHANNEL.publish_immediate(IoPacket::new(
-                    IoChannel::Flash, OutPacket::LogEntry(
-                        LogEntry::new(
-                            sirin.data.time,
-                            Log::Data(sirin.data.clone())
-                        )
-                    )
-                ));
-
-                if let None = state.apogee {
-                    if max_altitude.value > state.altitude.value + 100.0 {
-                        state.apogee = Some(max_altitude);
-                        Sirin::deploy_chute_apo(&mut sirin.parachute_apo);
-                    }
-                }
-
-                if state.apogee.is_some() {
-                    if state.altitude.value < 1500.0 {
-                        Sirin::deploy_chute_main(&mut sirin.parachute_main);
-                    }
-                }
-
-                if let Some(launched_at) = launched_at {
-                    let dur = Instant::now() - launched_at;
-                    if dur > Duration::from_secs(10 * 60) {
-                        // Timeout after 10 minutes
-                        desired_mode = Some(SirinMode::Landed)
-                    }
-                }
-
-                if desired_mode == Some(SirinMode::Landed) {
-                    sirin.led.set_low();
-                    state.mode = SirinMode::Landed;
-                    FLASH_LOGGING_ENABLED.store(false, Ordering::Relaxed);
-                }
-            },
-            SirinMode::Landed => {
-                
-            }
-        }
-
-        if let Some(mode) = desired_mode {
-            state.mode = mode;
-            desired_mode = None;
-        }
-
-        //info!("Broadcast");
-        broadcast_log(sirin.data.time, Log::Data(sirin.data.clone()));
-
-        //info!("Try get GPS fix");
-        if let Some(fix) = GPS_FIX.try_take() {
-            if fix.fix_type != GpsFixType::NoFix {
-                state.gps = fix;
-            }
-        }
-
-        if i % 10 == 0 {
-            OUT_CHANNEL.publish_immediate(IoPacket::new(
-                IoChannel::LoRa, OutPacket::LogEntry(
-                    LogEntry::new(
-                        sirin.data.time,
-                        Log::State(state.clone())
-                    )
-                )
-            ));
-        }
-        //info!("Done with GPS");
-
-        //info!("Transmit data");
-        
-        i = i.wrapping_add(1);
-
     }
 }
-
-// TODO: airbreaks
-/*#[task]
-async fn kalman(
-    mut event_sub: Subscriber<'static, CriticalSectionRawMutex, Event, 100, 4, 4>
-) {
-    loop {
-        let event = event_sub.next_message_pure().await;
-
-        match event {
-            Event::Measurement(measurement) => {
-                match measurement {
-                    Measurement::Baro(bmp3_readout) => todo!(),
-                    Measurement::ImuAccel(accel) => todo!(),
-                    Measurement::ImuAngularVel(angular_vel) => todo!(),
-                }
-            },
-        }
-
-        // Example: call a C function from sirin-c Rust crate
-        // Edit sirin-c crate and c project to add more functions
-        sirin_c::cmsis_dsp_sin(f32::consts::PI / 2.0);
-    }
-}*/

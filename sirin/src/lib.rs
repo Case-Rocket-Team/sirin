@@ -297,12 +297,11 @@ impl Sirin {
         cortex_m::peripheral::SCB::sys_reset();
     }
 
-    pub fn deploy_chute_main(sirin: &'static mut Sirin){
-        sirin.parachute_main.set_high();
+    pub fn deploy_chute_main(parachute_main: &mut Output<'static>){
+        parachute_main.set_high();
     }
     
-    pub fn deploy_chute_apo(sirin: &'static mut Sirin){
-        sirin.parachute_apo.set_high();
-    }
-    
+    pub fn deploy_chute_apo(parachute_apo: &mut Output<'static>){
+        parachute_apo.set_high();
+    }   
 }

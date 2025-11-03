@@ -191,6 +191,12 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
                     panic!("Reboot");
                 }
+                InPacket::DeployMain => {
+                    Sirin::deploy_chute_main(&mut sirin.parachute_main);
+                }
+                InPacket::DeployApo => {
+                    Sirin::deploy_chute_apo(&mut sirin.parachute_apo);
+                }
             }
 
             send_packet(io_packet.reply(OutPacket::Ok));

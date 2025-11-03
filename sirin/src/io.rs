@@ -255,6 +255,8 @@ pub async fn flash_task_impl(flash_mutex: &Mutex<&mut Flash>) -> Result<(), Siri
     }
 }
 
+
+
 /*
 #[task]
 fn background_task() {
