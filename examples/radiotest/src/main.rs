@@ -61,7 +61,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
     sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
     sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
-    sirin.spawner.spawn(gps_task(&mut sirin.gps_rx)).unwrap();
+    sirin.spawner.spawn(gps_task(&mut sirin.gps_rx, &mut sirin.gps_tx)).unwrap();
 
     let mut flash = Mutex::new(&mut sirin.flash);
     

@@ -7,9 +7,8 @@ use sirin_shared::{packet::{self, GpsFix, GpsFixType, Log, OutPacket, Vec3}, son
 use uunit::{Meters, MetersPerSecond, WithUnits};
 use crate::{error::SirinError, io::{broadcast, broadcast_log}, usb};
 use ublox::{FixedBuffer, cfg_nav5::CfgNav5Builder, cfg_prt::{CfgPrtUartBuilder, DataBits, InProtoMask, OutProtoMask, Parity, StopBits, UartMode, UartPortId}, proto31::Proto31};
-use ublox::{Parser,UbxPacket,proto31::PacketRef,GnssFixType,Position,Velocity};
+use ublox::{Parser,UbxPacket,proto31::*,GnssFixType,Position,Velocity};
 
-pub(crate) type Proto = ublox_device::ublox::proto31::Proto31;
 pub static GPS_FIX: Signal<CriticalSectionRawMutex, GpsFix> = Signal::new();
 
 #[task]
@@ -62,7 +61,6 @@ pub async fn read(
     }
 }
 
-
 pub async fn gps_impl(
     gps_rx: &mut RingBufferedUartRx<'static>,
     fix: &mut GpsFix,
@@ -93,49 +91,11 @@ pub async fn gps_impl(
                                 || nav_pvt_packet.fix_type() == GnssFixType::GPSPlusDeadReckoning;
 
                             if has_posvel {
-                                let pos: Position = nav_pvt_packet.into();
-                                let vel: Velocity = nav_pvt_packet.into();
-                                fix.pos = Vec3 { 
-                                    x: pos.lon,
-                                    y: pos.lat, 
-                                    z: pos.alt
-                                }
-                            }
-
-                            if has_time {
-                                
-                            }
-                            //new gps fix available
-                            GPS_FIX.signal(fix.clone());
-                        },
-                        PacketRef::EsfRaw(raw_packet) => {
-                            //println!("Got raw message: {raw:?}");
-                            
-                        },
-                        _ => {
-                            //println!("{packet_ref:?}");
-                            
-                        },
-                    }
-                },
-                Some(Ok(UbxPacket::Proto23(packet))) => {
-                    match packet{
-                        PacketRef::MonVer(mon_ver_packet) => {
-                            
-                        },
-                        PacketRef::NavPvt(nav_pvt_packet) => {
-                            let has_time = nav_pvt_packet.fix_type() == GnssFixType::Fix3D
-                                || nav_pvt_packet.fix_type() == GnssFixType::GPSPlusDeadReckoning
-                                || nav_pvt_packet.fix_type() == GnssFixType::TimeOnlyFix;
-                            let has_posvel = nav_pvt_packet.fix_type() == GnssFixType::Fix3D
-                                || nav_pvt_packet.fix_type() == GnssFixType::GPSPlusDeadReckoning;
-
-                            if has_posvel {
-                                let pos: Position = nav_pvt_packet.into();
                                 fix.pos = Vec3 { 
                                     x: nav_pvt_packet.longitude().with_units(),
                                     y: nav_pvt_packet.latitude().with_units(), 
-                                    z: nav_pvt_packet }
+                                    z: nav_pvt_packet.height_msl().with_units()
+                                }
                             }
 
                             if has_time {

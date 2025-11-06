@@ -225,7 +225,7 @@ impl <S: SpiHandle> Lis3mdl<S> {
         Ok((mag_x, mag_y, mag_z))
     }
     
-    pub async fn temp(&mut self) -> Result<(i16), <S::Bus as ErrorType>::Error> {
+    pub async fn temp(&mut self) -> Result<i16, <S::Bus as ErrorType>::Error> {
          Ok(
             i16::from_ne_bytes([self.temp_out_l().await? as u8, self.temp_out_h().await? as u8])
        )
