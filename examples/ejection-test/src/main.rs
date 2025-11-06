@@ -5,7 +5,7 @@
 use core::{f32, f64::consts::PI, mem::{self, MaybeUninit}};
 
 use bmp3::{hal::{Bmp3RawData, ReadBmp3, RegErrReg, RegStatus}, Bmp3Readout};
-use defmt::{debug, println, Debug2Format};
+use defmt::{debug, info, println, Debug2Format};
 use embassy_executor::{task, Executor, Spawner};
 use embassy_stm32::{bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, peripherals::{self, DMA1_CH0, DMA1_CH1, PD8, PD9, USART3}, usart::{self, Config, Uart}};
 use embassy_time::Timer;
@@ -13,8 +13,8 @@ use embedded_hal_1::spi::ErrorKind;
 use postcard::take_from_bytes;
 use rfm9::ReadRfm9;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{flash_logger::FlashLogger, song::{FromSong, OutPacket, SongSize}, state::{Accel, EcefPos, State, Vel}, subsystems::SirinData, uunit::WithUnits, Sirin};
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::{Publisher, Subscriber}};
+use sirin::{error::SirinError, flash::Flash, gps::{gps_task, GPS_FIX}, io::{broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL}, packet::{GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}, Radio, Sirin};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, Publisher, Subscriber}};
 use embassy_stm32::usb::{Driver, Instance};
 use embassy_usb::class::cdc_acm;
 use embassy_usb::driver::EndpointError;
@@ -47,10 +47,15 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 }
 
 async fn main_task(sirin: &'static mut Sirin) {
-    loop {
-        let mut packet = [0u8; 64];
-        sirin.usb.read_packet(&mut packet).await;
-        sirin.usb.write_packet(b"Hello world!").await.unwrap();
-        Timer::after_millis(500).await;
-    }   
+    let mut i = 5;
+    loop{
+        info!("{}", i);
+        i -= 1;
+        match i {
+            0 => break,
+            _ => {}
+        }
+        Timer::after_millis(1000).await;
+    }
+    IN_CHANNEL.send(IoPacket::new(IoChannel::LoRa,InPacket::DeployMain)).await;
 }
