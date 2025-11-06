@@ -173,7 +173,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     Sirin::deploy_chute_apo(&mut sirin.parachute_apo);
                 }
             }
-
             send_packet(io_packet.reply(OutPacket::Ok));
         }
 

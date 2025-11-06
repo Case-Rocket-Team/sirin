@@ -7,7 +7,7 @@ use bmp3::Bmp3;
 use defmt::{info, Display2Format};
 use embassy_executor::{Executor, Spawner};
 use embassy_futures::join::{join, join3, join5, join_array};
-use embassy_stm32::{ bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, mode::Async, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, usart::{self, RingBufferedUartRx, Uart}, Config, Peripherals };
+use embassy_stm32::{ Config, Peripherals, bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, mode::Async, pac, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, usart::{self, UartTx, BufferedUartTx, RingBufferedUartRx, Uart} };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
 use flash::Flash;
 use gpio::GpioPins;
@@ -25,7 +25,7 @@ use h3lis::H3lis;
 use spi::{Spi, SpiConfig, SpiConfigStruct, SpiDev, SpiInstance, WithSpiHandle};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State as UsbState};
 use embassy_usb::Builder as UsbBuilder;
-use gps::Gps;
+use ublox::cfg_prt::{CfgPrtUartBuilder, UartPortId, UartMode, DataBits, Parity, StopBits, InProtoMask, OutProtoMask};
 
 pub use uunit;
 pub mod spi;
@@ -86,7 +86,7 @@ pub struct Sirin {
     //pub gps: S1315F8,
     //pub gps: Uart<'static, Async>,
     pub gps_rx: RingBufferedUartRx<'static>,
-    pub gps: Gps,
+    pub gps_tx: UartTx<'static, Async>,
     //pub driver: Driver<'static, peripherals::USB_OTG_FS>
 
     pub data: SirinData,
@@ -215,7 +215,7 @@ impl Sirin {
             let magnetometer_cs = Output::new(p.PA3, Level::High, Speed::High); 
             magnetometer_ptr.write(Lis3mdl::new((*spi1).handle(magnetometer_cs)));
             
-            let gps = Uart::new(
+            let gps_uart = Uart::new(
                 p.USART3,
                 p.PD9,
                 p.PD8,
@@ -225,7 +225,11 @@ impl Sirin {
                 usart::Config::default()
             ).unwrap();
 
-            ptr!(sirin.gps_rx).write(gps.split().1.into_ring_buffered(&mut GPS_BUF));
+            let (tx, rx) = gps_uart.split();
+
+            ptr!(sirin.gps_rx).write(rx.into_ring_buffered(&mut GPS_BUF));
+
+            ptr!(sirin.gps_tx).write(tx);
 
             ptr!(sirin.data).write(SirinData::unmeasured());
 
@@ -303,5 +307,5 @@ impl Sirin {
     
     pub fn deploy_chute_apo(parachute_apo: &mut Output<'static>){
         parachute_apo.set_high();
-    }   
+    }
 }
