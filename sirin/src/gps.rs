@@ -30,9 +30,11 @@ pub async fn gps_task(
         flags: 0,
         reserved5: 0,
     }.into_packet_bytes();
-    //let nav_mode_config_packet: &[u8] = &CfgNav5Builder{}.into_packet_bytes();
+    let mut nav_mode_config = CfgNav5Builder::default();
+    nav_mode_config.dyn_model = ublox::cfg_nav5::NavDynamicModel::AirborneWithLess4gAcceleration;
+    nav_mode_config.fix_mode = ublox::cfg_nav5::NavFixMode::Auto2D3D;
     gps_tx.write(port_config_packet).await.unwrap();
-    //gps_tx.write(nav_mode_config_packet).await.unwrap();
+    gps_tx.write(&nav_mode_config.into_packet_bytes()).await.unwrap();
 
     //Create packet parser
     let mut packet_parser:Parser<FixedBuffer<512>,Proto31> = ublox::Parser::new_fixed();
@@ -84,11 +86,46 @@ pub async fn gps_impl(
                             
                         },
                         PacketRef::NavPvt(nav_pvt_packet) => {
-                            let has_time = nav_pvt_packet.fix_type() == GnssFixType::Fix3D
-                                || nav_pvt_packet.fix_type() == GnssFixType::GPSPlusDeadReckoning
-                                || nav_pvt_packet.fix_type() == GnssFixType::TimeOnlyFix;
-                            let has_posvel = nav_pvt_packet.fix_type() == GnssFixType::Fix3D
-                                || nav_pvt_packet.fix_type() == GnssFixType::GPSPlusDeadReckoning;
+                            let mut has_time = false;
+                            let mut has_posvel = false;
+
+                            match nav_pvt_packet.fix_type(){
+                                GnssFixType::TimeOnlyFix => {
+                                    fix.fix_type = GpsFixType::TimeOnlyFix;
+                                    has_time = true;
+                                    has_posvel = false;
+                                },
+                                GnssFixType::GPSPlusDeadReckoning => {
+                                    fix.fix_type = GpsFixType::FixDifferential;
+                                    has_time = true;
+                                    has_posvel = true;
+                                },
+                                GnssFixType::NoFix => {
+                                    fix.fix_type = GpsFixType::NoFix;
+                                    has_time = false;
+                                    has_posvel = false;
+                                },
+                                GnssFixType::DeadReckoningOnly => {
+                                    fix.fix_type = GpsFixType::FixPrediction;
+                                    has_time = true;
+                                    has_posvel = false;
+                                },
+                                GnssFixType::Fix2D => {
+                                    fix.fix_type = GpsFixType::Fix2d;
+                                    has_time = true;
+                                    has_posvel = true;
+                                },
+                                GnssFixType::Fix3D => {
+                                    fix.fix_type = GpsFixType::Fix3d;
+                                    has_time = true;
+                                    has_posvel = true;
+                                },
+                                _=> {
+                                    fix.fix_type = GpsFixType::NoFix;
+                                    has_time = false;
+                                    has_posvel = false;
+                                }
+                            }
 
                             if has_posvel {
                                 fix.pos = Vec3 { 
@@ -118,7 +155,7 @@ pub async fn gps_impl(
                     
                 },
                 None => {
-                    
+                    break
                 }
             }
         }
