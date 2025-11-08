@@ -83,9 +83,7 @@ pub enum OutPacket {
     FlightStart(u8),
     LogEntry(LogEntry),
     FlightHeader(Page<FlightHeader>),
-    State(SirinState),
-    DeployApo,
-    DeployMain
+    State(SirinState)
 }
 
 #[derive(Debug, Clone, SongSize, FromSong, ToSong)]

@@ -42,38 +42,40 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 
     debug!("End Sirin init");
 
-    match main_task(sirin).await {
-        Ok(()) => {
-            panic!("The main task ended! (It shouldn't do that)")
-        },
-        Err(e) => {
-            panic!("The main task ran into an error: {:?}", e)
-        }
-    }
+    main_task(sirin).await
 }
 
-async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
-    let state = SirinState::default();
-    let _initial_altitude = approx_pressure_altitude(sirin.baro.read().await?.pressure.convert());
-
+#[allow(unused_variables)]
+async fn main_task(sirin: &'static mut Sirin) {
+    println!("Hello world!");
+    let mut state = SirinState::default();
+    //let initial_altitude = approx_pressure_altitude(sirin.baro.read().await?.pressure.convert());
     sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
     sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
     sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
     sirin.spawner.spawn(gps_task(&mut sirin.gps_rx, &mut sirin.gps_tx)).unwrap();
 
-    let mut flash = Mutex::new(&mut sirin.flash);
-    
-    sirin.spawner.spawn(flash_io_task(unsafe {
-        transmute_into_static(&mut flash)
-    })).unwrap();
-
     info!("Start main");
-
     let mut ticker = Ticker::every(Duration::from_millis(500));
 
-
+    
     loop {
-        //info!("Measure Sirin data");
+        ticker.next().await;
+    info!("Try get GPS fix");
+        //Try to get latest GPS fix
+        if let Some(fix) = GPS_FIX.try_take() {
+            //if fix.fix_type != GpsFixType::NoFix {
+            info!("Got GPS fix: {:?}", Debug2Format(&fix));
+            state.gps = fix;
+            //}
+        }else{
+            info!("No GPS fix available");
+        }
+        println!("GPS fix: {:?}", Debug2Format(&state.gps));
+
+        ticker.next().await;
+        /*
+        info!("Measure Sirin data");
         sirin.data = measure_sirin(
             &mut sirin.baro,
             &mut sirin.imu,
@@ -81,6 +83,9 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             &mut sirin.magnetometer
         ).await;
 
-        OUT_CHANNEL.publish_immediate(IoPacket::new(IoChannel::LoRa, OutPacket::LogEntry(LogEntry::new(sirin.data.time, Log::State(state.clone())))));
+        println!("Sirin data: {:?}", Debug2Format(&sirin.data));
+        println!("Sirin state: {:?}", Debug2Format(&state));
+         */
     }
+
 }

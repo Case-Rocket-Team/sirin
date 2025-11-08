@@ -9,6 +9,7 @@ use embassy_executor::{Executor, Spawner};
 use embassy_futures::join::{join, join3, join5, join_array};
 use embassy_stm32::{ Config, Peripherals, bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, mode::Async, pac, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, usart::{self, UartTx, BufferedUartTx, RingBufferedUartRx, Uart} };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
+use embassy_time::Timer;
 use flash::Flash;
 use gpio::GpioPins;
 use rfm9::{ReadRfm9, Rfm9};
@@ -75,7 +76,10 @@ pub struct Sirin {
     pub usb: SirinUsb,
     pub led: Output<'static>,
     pub parachute_main: Output<'static>,
+    pub main_power: Output<'static>,
     pub parachute_apo: Output<'static>,
+    pub apo_power: Output<'static>,
+
 
     // Instrument subsytems
     pub baro: Bmp3<SpiDev>,
@@ -181,10 +185,10 @@ impl Sirin {
                 p11: p.PD7,
                 p12: p.PD6,
                 p13: p.PD5,
-                p14: p.PD4,
-                p15: p.PD3,
-                p16: p.PD1
+                p14: p.PD4
             });
+
+
 
             let baro_ptr: *mut Bmp3<SpiDev> = ptr!(sirin.baro);
             let baro_cs = Output::new(p.PA2, Level::High, Speed::High);
@@ -243,8 +247,11 @@ impl Sirin {
             ptr!(sirin.led).write(Output::new(p.PA1, Level::Low, Speed::High));
 
             ptr!(sirin.parachute_main).write(Output::new(p.PA8, Level::Low, Speed::High));
+            ptr!(sirin.main_power).write(Output::new(p.PD3, Level::High, Speed::High));
 
             ptr!(sirin.parachute_apo).write(Output::new(p.PA10, Level::Low, Speed::High));
+
+            ptr!(sirin.apo_power).write(Output::new(p.PD1, Level::High, Speed::High));
 
             // TODO: JOIN FUTURES, AWAIT
             baro_ptr.write(baro_future.await.unwrap());
@@ -292,6 +299,7 @@ impl Sirin {
                 });
 
                 let sirin: &'static mut _ = sirin.assume_init_mut();
+                
                 sirin
             }
         }

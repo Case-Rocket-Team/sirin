@@ -53,8 +53,6 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 }
 
 async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
-    let mut i: u32 = 0;
-
     let mut state = SirinState::default();
     let initial_altitude = approx_pressure_altitude(sirin.baro.read().await?.pressure.convert());
 
@@ -64,7 +62,8 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     sirin.spawner.spawn(gps_task(&mut sirin.gps_rx, &mut sirin.gps_tx)).unwrap();
 
     let mut i = 0;
-    loop {
+    
+    /*loop {
         let mut sector = [0; 4096];
         sirin.flash.w25q.read(i * 4096, &mut sector).await?;
         let mut k = 0;
@@ -82,9 +81,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             }
         }
         i += 1;
-    }
-
-    loop {}
+    }*/
 
     let mut flash = Mutex::new(&mut sirin.flash);
     sirin.spawner.spawn(flash_io_task(unsafe {
@@ -101,10 +98,16 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut desired_mode = None;
 
     loop {
-        //info!("Handle input packets");
+        info!("Handle input packets");
         while let Ok(io_packet) = try_receive_packet() {
-            //info!("Received packet: {:?}", Debug2Format(&io_packet));
+            info!("Received packet: {:?}", Debug2Format(&io_packet));
             match io_packet.packet {
+                InPacket::DeployMain => {
+                    sirin.parachute_main.set_high();
+                }
+                InPacket::DeployApo => {
+                    sirin.parachute_apo.set_high();
+                }
                 InPacket::Null => {
                     continue;
                 },
@@ -191,12 +194,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
                     panic!("Reboot");
                 }
-                InPacket::DeployMain => {
-                    Sirin::deploy_chute_main(&mut sirin.parachute_main);
-                }
-                InPacket::DeployApo => {
-                    Sirin::deploy_chute_apo(&mut sirin.parachute_apo);
-                }
             }
 
             send_packet(io_packet.reply(OutPacket::Ok));
@@ -204,7 +201,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
         ticker.next().await;
 
-        //info!("Measure Sirin data");
+        info!("Measure Sirin data");
         sirin.data = measure_sirin(
             &mut sirin.baro,
             &mut sirin.imu,
@@ -212,7 +209,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             &mut sirin.magnetometer
         ).await;
 
-        //info!("Calculate altitude");
+        info!("Calculate altitude");
         if let Ok(pressure) = sirin.data.baro.pressure {
             let measured_altitude = approx_pressure_altitude(pressure.convert());
             state.altitude = measured_altitude - initial_altitude;
@@ -222,7 +219,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 max_altitude = state.altitude;
             }
         }
-        //info!("Altitude calculated");
+        info!("Altitude calculated");
 
         let accel_mag_squared = if let Ok(accel) = &sirin.data.imu.accel {
             let x_f64: MicroGs<f64> = (accel.x.value as f64).with_units();
@@ -297,14 +294,14 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             desired_mode = None;
         }
 
-        //info!("Broadcast");
+        info!("Broadcast");
         broadcast_log(sirin.data.time, Log::Data(sirin.data.clone()));
 
-        //info!("Try get GPS fix");
+        info!("Try get GPS fix");
         if let Some(fix) = GPS_FIX.try_take() {
-            if fix.fix_type != GpsFixType::NoFix {
+            //if fix.fix_type != GpsFixType::NoFix {
                 state.gps = fix;
-            }
+            //}
         }
 
         if i % 10 == 0 {
@@ -317,11 +314,11 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 )
             ));
         }
-        //info!("Done with GPS");
+        info!("Done with GPS");
 
         //info!("Transmit data");
         
-        i = i.wrapping_add(1);
+        //i = i.wrapping_add(1);
 
     }
 }

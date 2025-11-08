@@ -31,7 +31,7 @@ pub async fn gps_task(
         reserved5: 0,
     }.into_packet_bytes();
     let mut nav_mode_config = CfgNav5Builder::default();
-    nav_mode_config.dyn_model = ublox::cfg_nav5::NavDynamicModel::AirborneWithLess4gAcceleration;
+    nav_mode_config.dyn_model = ublox::cfg_nav5::NavDynamicModel::Pedestrian;
     nav_mode_config.fix_mode = ublox::cfg_nav5::NavFixMode::Auto2D3D;
     gps_tx.write(port_config_packet).await.unwrap();
     gps_tx.write(&nav_mode_config.into_packet_bytes()).await.unwrap();
@@ -69,23 +69,40 @@ pub async fn gps_impl(
     packet_parser: &mut Parser<FixedBuffer<512>, Proto31>
 ) -> Result<(), SirinError> {
     loop {
+        info!("Reading GPS data...");
+        if fix.satellites >= 100{
+            fix.satellites = 0;
+        }
+        fix.satellites += 1;
+        GPS_FIX.signal(fix.clone());
+        embassy_time::Timer::after(embassy_time::Duration::from_millis(500)).await;
         //GPS_FIX.signal(fix.clone());
         //Read 32 bytes from RingBuffer at a time
-        let mut bytes = [0u8; 32];
+        let mut bytes = [0u8,1];
         read(gps_rx, &mut bytes).await?;
+        for b in &bytes {
+            info!("Byte: {:x}", b);
+        }
+    }
+    
+    //loop {
+        
+        //fix.satellites += 1;
 
         //Copy those 32 bytes to Parser internal buffer
-        let mut iterator = packet_parser.consume_ubx(&bytes);
+        //let mut iterator = packet_parser.consume_ubx(&bytes);
+        /*
 
-        loop {
-            //Try to read next packet from Parser internal buffer
-            match iterator.next() {
-                Some(Ok(UbxPacket::Proto31(packet))) => {
+        while let Some(packet) = iterator.next() {
+            match packet {
+                Ok(UbxPacket::Proto31(packet)) => {
+                    fix.satellites = 30;
                     match packet{
                         PacketRef::MonVer(mon_ver_packet) => {
-                            
+                            info!("Got version message: mon_ver_packet");
                         },
                         PacketRef::NavPvt(nav_pvt_packet) => {
+                            info!("Got version message: nav_pvt_packet");
                             let mut has_time = false;
                             let mut has_posvel = false;
 
@@ -124,6 +141,7 @@ pub async fn gps_impl(
                                     fix.fix_type = GpsFixType::NoFix;
                                     has_time = false;
                                     has_posvel = false;
+                                    fix.pos = Vec3 {x: 10.0.with_units(), y: 10.0.with_units(), z: 10.0.with_units() }
                                 }
                             }
 
@@ -139,27 +157,30 @@ pub async fn gps_impl(
                                 
                             }
                             //new gps fix available
-                            GPS_FIX.signal(fix.clone());
                         },
                         PacketRef::EsfRaw(raw_packet) => {
-                            //println!("Got raw message: {raw:?}");
-                            
+                            //info!("Got raw message: {raw:?}");
+                            info!("Got raw message: esf_raw_packet");
+                            fix.ephemerides = 10;
                         },
                         _ => {
-                            //println!("{packet_ref:?}");
-                            
+                            info!("packet_ref");
+                            //info!("{packet_ref:?}");
+                            fix.ephemerides = 20;
                         },
                     }
+                    GPS_FIX.signal(fix.clone());
                 },
-                Some(Err(e)) => {
-                    
-                },
-                None => {
-                    break
+                Err(e) => {
+                    error!("GPS Packet parse error: {}", Debug2Format(&e));
+                    fix.satellites = 10;
+                    GPS_FIX.signal(fix.clone());
                 }
             }
         }
-    }
+        */
+
+    //}
     /*let mut start_byte_0 = [0u8; 1];
         read(gps, &mut start_byte_0).await?;
 
@@ -202,7 +223,7 @@ pub async fn gps_impl(
             0xDF => {
                 info!("Received 0xDF fix packet");
 
-                println!("Payload: {:x}", payload);
+                info!("Payload: {:x}", payload);
 
                 if payload.len() < 48  {
                     warn!("GPS Fix response is too short!");

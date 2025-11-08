@@ -32,6 +32,6 @@ pub struct GpioPins {
     pub p12: PD6,
     pub p13: PD5,
     pub p14: PD4,
-    pub p15: PD3,
-    pub p16: PD1
+    //pub p15: PD3,
+    //pub p16: PD1,
 }

@@ -13,7 +13,7 @@ use embedded_hal_1::spi::ErrorKind;
 use postcard::take_from_bytes;
 use rfm9::ReadRfm9;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{error::SirinError, flash::Flash, gps::{gps_task, GPS_FIX}, io::{broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL}, packet::{GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}, Radio, Sirin};
+use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task}, io::{FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, MAX_OUT_PACKET_SIZE, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize, ToSong}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, Publisher, Subscriber}};
 use embassy_stm32::usb::{Driver, Instance};
 use embassy_usb::class::cdc_acm;
@@ -50,12 +50,20 @@ async fn main_task(sirin: &'static mut Sirin) {
     let mut i = 5;
     loop{
         info!("{}", i);
-        i -= 1;
         match i {
             0 => break,
             _ => {}
         }
+        i -= 1;
         Timer::after_millis(1000).await;
     }
-    IN_CHANNEL.send(IoPacket::new(IoChannel::LoRa,InPacket::DeployMain)).await;
+    let len = InPacket::DeployApo.song_size();
+    let mut buf = [0u8; 128];
+    InPacket::DeployApo.to_song(&mut buf[..len]).unwrap();
+    loop{
+        sirin.radio.transmit(&buf).await.unwrap();
+        //IN_CHANNEL.send(IoPacket::new(IoChannel::LoRa, InPacket::DeployApo)).await;
+        info!("Successfully transmitted!");
+        Timer::after_millis(1000).await;
+    }
 }
