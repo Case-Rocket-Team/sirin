@@ -39,6 +39,7 @@ stm32-fmc = "0.3.0"
 embedded-storage = "0.3.1"
 static_cell = "2"
 chrono = { version = "^0.4", default-features = false }
+sirin-shared = { version = "0.1.0", path = "../../sirin-shared" }
 
 sirin = { version = "0.1.1", path = "../../sirin" }
 bmp3 = { version = "0.1.1", path = "../../bmp3" }

@@ -53,6 +53,11 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 }
 
 async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
+    let accel_threshold: Gs<f64> = (10.0).with_units(); //In Gs
+    let main_deployment_altitude= 1500.0; //In meters
+    let flight_duration = 100; //In seconds
+    
+
     let mut state = SirinState::default();
     let initial_altitude = approx_pressure_altitude(sirin.baro.read().await?.pressure.convert());
 
@@ -102,12 +107,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         while let Ok(io_packet) = try_receive_packet() {
             info!("Received packet: {:?}", Debug2Format(&io_packet));
             match io_packet.packet {
-                InPacket::DeployMain => {
-                    sirin.parachute_main.set_high();
-                }
-                InPacket::DeployApo => {
-                    sirin.parachute_apo.set_high();
-                }
                 InPacket::Null => {
                     continue;
                 },
@@ -194,6 +193,12 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
                     panic!("Reboot");
                 }
+                InPacket::DeployMain => {
+                    sirin.parachute_main.set_high();
+                }
+                InPacket::DeployApo => {
+                    sirin.parachute_apo.set_high();
+                }
             }
 
             send_packet(io_packet.reply(OutPacket::Ok));
@@ -235,9 +240,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
         match state.mode {
             SirinMode::Standby => {
-                let accel_threshold: Gs<f64> = (15.0 * 15.0).with_units();
-
-                if state.altitude.value > 150.0
+                if state.altitude.value > 2.0
                     || accel_mag_squared.is_some_and(|accel| accel.value > accel_threshold.value)
                     || desired_mode == Some(SirinMode::Flight)
                 {
@@ -258,22 +261,26 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 ));
 
                 if let None = state.apogee {
-                    if max_altitude.value > state.altitude.value + 100.0 {
+                    if max_altitude.value > state.altitude.value + 25.0 {
                         state.apogee = Some(max_altitude);
                         Sirin::deploy_chute_apo(&mut sirin.parachute_apo);
+                        OUT_CHANNEL.publish_immediate(IoPacket::new(
+                IoChannel::Flash, OutPacket::DeployedApoAt(sirin.data.time.value)));
                     }
                 }
 
                 if state.apogee.is_some() {
-                    if state.altitude.value < 1500.0 {
+                    if state.altitude.value < main_deployment_altitude {
                         Sirin::deploy_chute_main(&mut sirin.parachute_main);
+                        OUT_CHANNEL.publish_immediate(IoPacket::new(
+                IoChannel::Flash, OutPacket::DeployedMainAt(sirin.data.time.value)));
                     }
                 }
 
                 if let Some(launched_at) = launched_at {
                     let dur = Instant::now() - launched_at;
-                    if dur > Duration::from_secs(10 * 60) {
-                        // Timeout after 10 minutes
+                    if dur > Duration::from_secs(flight_duration) {
+                        // Timeout after designated time
                         desired_mode = Some(SirinMode::Landed)
                     }
                 }

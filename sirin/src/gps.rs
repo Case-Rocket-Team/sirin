@@ -18,23 +18,6 @@ pub async fn gps_task(
 ) {
     let mut fix = GpsFix::default();
     
-    //Send GPS setup packet(s)
-    let port_config_packet: &[u8] = &CfgPrtUartBuilder {
-        portid: UartPortId::Uart1,
-        reserved0: 0,
-        tx_ready: 0,
-        mode: UartMode::new(DataBits::Eight, Parity::None, StopBits::One),
-        baud_rate: 9600,
-        in_proto_mask: InProtoMask::all(),
-        out_proto_mask: OutProtoMask::UBLOX,
-        flags: 0,
-        reserved5: 0,
-    }.into_packet_bytes();
-    let mut nav_mode_config = CfgNav5Builder::default();
-    nav_mode_config.dyn_model = ublox::cfg_nav5::NavDynamicModel::Pedestrian;
-    nav_mode_config.fix_mode = ublox::cfg_nav5::NavFixMode::Auto2D3D;
-    gps_tx.write(port_config_packet).await.unwrap();
-    gps_tx.write(&nav_mode_config.into_packet_bytes()).await.unwrap();
 
     //Create packet parser
     let mut packet_parser:Parser<FixedBuffer<512>,Proto31> = ublox::Parser::new_fixed();

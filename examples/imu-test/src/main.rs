@@ -12,7 +12,8 @@ use embassy_time::Timer;
 use rfm9::ReadRfm9;
 use lsm6dso_spi::ReadLsm6dso;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::Sirin;
+use sirin::{Sirin, subsystems::measure_sirin};
+use sirin_shared::physics::approx_pressure_altitude;
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
     core::mem::transmute(item)
@@ -41,7 +42,15 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 }
 
 async fn main_task(sirin: &'static mut Sirin) {
-    sirin.imu.setup().await.unwrap();
+    loop{sirin.data = measure_sirin(
+            &mut sirin.baro,
+            &mut sirin.imu,
+            &mut sirin.high_g_imu,
+            &mut sirin.magnetometer
+        ).await;
+    let measured_altitude = approx_pressure_altitude(sirin.data.baro.pressure.unwrap().convert());
+    info!("Altitude: {} m", measured_altitude.value);
+    Timer::after_millis(1000).await;}
     // println!("set sensitivity: {}", sirin.imu.set_accel_sensitivity(4).await.unwrap());
     // println!("read ctrl: {}", sirin.imu.read_reg(0x10).await.unwrap());
     

@@ -1067,6 +1067,7 @@ dependencies = [
  "rand_core",
  "rfm9",
  "sirin",
+ "sirin-shared",
  "static_cell",
  "stm32-fmc",
 ]

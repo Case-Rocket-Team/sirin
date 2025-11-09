@@ -26,7 +26,8 @@ use h3lis::H3lis;
 use spi::{Spi, SpiConfig, SpiConfigStruct, SpiDev, SpiInstance, WithSpiHandle};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State as UsbState};
 use embassy_usb::Builder as UsbBuilder;
-use ublox::cfg_prt::{CfgPrtUartBuilder, UartPortId, UartMode, DataBits, Parity, StopBits, InProtoMask, OutProtoMask};
+use ublox::{FixedBuffer, cfg_nav5::CfgNav5Builder, cfg_prt::{CfgPrtUartBuilder, DataBits, InProtoMask, OutProtoMask, Parity, StopBits, UartMode, UartPortId}, proto31::Proto31};
+use ublox::{Parser,UbxPacket,proto31::*,GnssFixType,Position,Velocity};
 
 pub use uunit;
 pub mod spi;
@@ -219,7 +220,7 @@ impl Sirin {
             let magnetometer_cs = Output::new(p.PA3, Level::High, Speed::High); 
             magnetometer_ptr.write(Lis3mdl::new((*spi1).handle(magnetometer_cs)));
             
-            let gps_uart = Uart::new(
+            let mut gps_uart = Uart::new(
                 p.USART3,
                 p.PD9,
                 p.PD8,
@@ -229,11 +230,32 @@ impl Sirin {
                 usart::Config::default()
             ).unwrap();
 
-            let (tx, rx) = gps_uart.split();
+            //Send GPS setup packet(s)
+            let port_config_packet = CfgPrtUartBuilder {
+                portid: UartPortId::Uart2,
+                reserved0: 0,
+                tx_ready: 0,
+                mode: UartMode::new(DataBits::Eight, Parity::None, StopBits::One),
+                baud_rate: 9600,
+                in_proto_mask: InProtoMask::all(),
+                out_proto_mask: OutProtoMask::UBLOX,
+                flags: 0,
+                reserved5: 0,
+            }.into_packet_bytes();
+
+            let mut nav_mode_config = CfgNav5Builder::default();
+            nav_mode_config.dyn_model = ublox::cfg_nav5::NavDynamicModel::Pedestrian;
+            nav_mode_config.fix_mode = ublox::cfg_nav5::NavFixMode::Auto2D3D;
+            gps_uart.write(&port_config_packet).await.unwrap();
+            gps_uart.write(&nav_mode_config.into_packet_bytes()).await.unwrap();
+
+            let (mut tx,rx) = gps_uart.split();
 
             ptr!(sirin.gps_rx).write(rx.into_ring_buffered(&mut GPS_BUF));
 
-            ptr!(sirin.gps_tx).write(tx);
+            //ptr!(sirin.gps_tx).write(tx.into());
+
+            //ptr!(sirin.gps_tx).write(gps_uart.split().0);            
 
             ptr!(sirin.data).write(SirinData::unmeasured());
 
