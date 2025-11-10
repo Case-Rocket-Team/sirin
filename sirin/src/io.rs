@@ -1,4 +1,4 @@
-use core::{future::{poll_fn, Future}, marker::PhantomData, mem::transmute, sync::atomic::{AtomicBool, Ordering}, task::Poll};
+use core::{char::MAX, future::{Future, poll_fn}, marker::PhantomData, mem::transmute, sync::atomic::{AtomicBool, Ordering}, task::Poll};
 
 use defmt::{error, info, println, Debug2Format};
 use embassy_executor::task;
@@ -118,11 +118,16 @@ async fn radio_task_impl(
     config: &'static SirinConfig,
     radio: &mut Radio,
 ) -> Result<(), SirinError> {
+    info!("Radio task is running!");
     radio.set_mode(rfm9::Mode::Sleep).await?;
     //let mut broadcast_sub = BROADCAST_CHANNEL.subscriber()?;
     let mut out_sub = OUT_CHANNEL.subscriber()?;
+    let mut in_sub = IN_CHANNEL.sender();
+    let in_receiver = IN_CHANNEL.receiver();
 
     let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
+    let mut buf2 = [0u8; 255];
+    let mut buf3 = [0u8; 255];
 
     /*loop {
         let packet = next_out_packet(
@@ -136,18 +141,59 @@ async fn radio_task_impl(
 
         //radio.transmit(&buf[0..radio_packet.song_size()]).await?;
     }*/
+    info!("Buffers and setup complete");
     loop {
-        let packet = out_sub.next_message_pure().await;
-        if packet.channel == IoChannel::LoRa {
-            let packet = packet.packet;
+        //Send OutPackets
+        let packet = out_sub.try_next_message_pure();
+        match packet {
+            Some(io_packet) => {
+                info!("OutPacket found!");
+                if io_packet.channel == IoChannel::LoRa {
+                    info!("OutPacket wants to be sent via radio!");
+                    let packet = io_packet.packet;
 
-            let radio_packet = RadioPacket::new(config, packet);
+                    let radio_packet = RadioPacket::new(config, packet);
 
-            radio_packet.to_song(&mut buf)?;
+                    radio_packet.to_song(&mut buf)?;
 
-            radio.transmit(&buf[0..radio_packet.song_size()]).await?;
-            radio.set_mode(rfm9::Mode::Sleep).await?;
+                    radio.transmit(&buf[0..radio_packet.song_size()]).await?;
+                    radio.set_mode(rfm9::Mode::Sleep).await?;
+                }
+            }
+            None => {}
         }
+
+        //Send InPackets
+        let packet = IN_CHANNEL.try_receive();
+        info!("IoPacket found!");
+        match packet{
+            Ok(packet) => {
+                if packet.channel == IoChannel::LoRa{
+                    info!("InPacket wants to be sent via radio!");
+                    let radio_packet = RadioPacket::new(config, packet.packet);
+                    radio.transmit(&buf3[0..radio_packet.song_size()]).await;
+                    info!("InPacket is sent!");
+                }
+            },
+            Err(..) => {}
+        }
+        //Receive InPackets
+        match radio.recieve(&mut buf2).await{
+            Ok(len) => {
+                info!("Radio data received!");
+                let len = len as usize;
+                let radio_packet = RadioPacket::from_song(&buf2[..len]);
+                if let Ok(packet) = radio_packet{
+                    info!("InPacket is received!");
+                    let inpacket: InPacket = packet.packet;
+                    in_sub.send(IoPacket::new(IoChannel::LoRa, inpacket)).await;
+                    info!("InPacket is sent to proper channel!");
+                }
+            },
+            Err(..) => {
+                info!("No radio packet received");
+            }
+        };
     }
 }
 

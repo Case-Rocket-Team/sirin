@@ -54,6 +54,7 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 
 async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let accel_threshold: Gs<f64> = (10.0).with_units(); //In Gs
+    let altitude_threshold = 33.0;
     let main_deployment_altitude= 1500.0; //In meters
     let flight_duration = 100; //In seconds
     
@@ -240,7 +241,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
         match state.mode {
             SirinMode::Standby => {
-                if state.altitude.value > 2.0
+                if state.altitude.value > altitude_threshold
                     || accel_mag_squared.is_some_and(|accel| accel.value > accel_threshold.value)
                     || desired_mode == Some(SirinMode::Flight)
                 {

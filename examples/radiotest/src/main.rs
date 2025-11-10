@@ -70,17 +70,14 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     info!("Start main");
 
     let mut ticker = Ticker::every(Duration::from_millis(500));
-
-
+    let sender = IN_CHANNEL.sender();
     loop {
-        //info!("Measure Sirin data");
-        sirin.data = measure_sirin(
-            &mut sirin.baro,
-            &mut sirin.imu,
-            &mut sirin.high_g_imu,
-            &mut sirin.magnetometer
-        ).await;
-
-        OUT_CHANNEL.publish_immediate(IoPacket::new(IoChannel::LoRa, OutPacket::LogEntry(LogEntry::new(sirin.data.time, Log::State(state.clone())))));
+        sender.send(IoPacket::new(IoChannel::LoRa, InPacket::DeployApo)).await;
+        info!("Transmitting!");
+        info!("Free capacity of InChannel: {}", IN_CHANNEL.free_capacity());
+        sirin.led.set_high();
+        Timer::after_millis(500).await;
+        sirin.led.set_low();
+        Timer::after_millis(500).await;   
     }
 }

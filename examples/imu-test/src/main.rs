@@ -12,7 +12,8 @@ use embassy_time::Timer;
 use rfm9::ReadRfm9;
 use lsm6dso_spi::ReadLsm6dso;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{Sirin, subsystems::measure_sirin};
+use sirin::{error::SirinError, flash::Flash, gps::{gps_task, GPS_FIX}, io::{broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL}, packet::{GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}, Radio, Sirin};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, Publisher, Subscriber}};
 use sirin_shared::physics::approx_pressure_altitude;
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
@@ -41,16 +42,37 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
     main_task(sirin).await
 }
 
-async fn main_task(sirin: &'static mut Sirin) {
-    loop{sirin.data = measure_sirin(
-            &mut sirin.baro,
-            &mut sirin.imu,
-            &mut sirin.high_g_imu,
-            &mut sirin.magnetometer
-        ).await;
-    let measured_altitude = approx_pressure_altitude(sirin.data.baro.pressure.unwrap().convert());
-    info!("Altitude: {} m", measured_altitude.value);
-    Timer::after_millis(1000).await;}
+async fn main_task(sirin: &'static mut Sirin)  {
+    let state = SirinState::default();
+
+    sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
+    sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
+    sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
+    sirin.spawner.spawn(gps_task(&mut sirin.gps_rx, &mut sirin.gps_tx)).unwrap();
+
+    let mut flash = Mutex::new(&mut sirin.flash);
+    
+    sirin.spawner.spawn(flash_io_task(unsafe {
+        transmute_into_static(&mut flash)
+    })).unwrap();
+
+    info!("Start main");
+    loop{
+        while let Ok(io_packet) = try_receive_packet(){
+            info!("Packet received!");
+            match io_packet.packet {
+                InPacket::DeployApo => {
+                    Sirin::deploy_chute_apo(&mut sirin.parachute_apo); 
+                    info!("Packet matched!");
+                },
+                InPacket::DeployMain => {
+                    Sirin::deploy_chute_main(&mut sirin.parachute_main); 
+                    info!("Packet matched!");
+                },
+                _ => {}
+            }
+        }
+    }
     // println!("set sensitivity: {}", sirin.imu.set_accel_sensitivity(4).await.unwrap());
     // println!("read ctrl: {}", sirin.imu.read_reg(0x10).await.unwrap());
     
