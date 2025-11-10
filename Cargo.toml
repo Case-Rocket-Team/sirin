@@ -21,7 +21,8 @@ members = [
     "examples/dongle",
     "examples/radiotest",
     "examples/ejection-test",
-    "examples/gps-test"
+    "examples/gps-test",
+    "examples/radiotest2"
 ]
 resolver = "2"
 

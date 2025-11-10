@@ -104,10 +104,16 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut desired_mode = None;
 
     loop {
-        info!("Handle input packets");
+        //info!("Handle input packets");
         while let Ok(io_packet) = try_receive_packet() {
             info!("Received packet: {:?}", Debug2Format(&io_packet));
             match io_packet.packet {
+                InPacket::DeployMain => {
+                    sirin.parachute_main.set_high();
+                }
+                InPacket::DeployApo => {
+                    sirin.parachute_apo.set_high();
+                }
                 InPacket::Null => {
                     continue;
                 },
@@ -194,12 +200,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
                     panic!("Reboot");
                 }
-                InPacket::DeployMain => {
-                    sirin.parachute_main.set_high();
-                }
-                InPacket::DeployApo => {
-                    sirin.parachute_apo.set_high();
-                }
             }
 
             send_packet(io_packet.reply(OutPacket::Ok));
@@ -207,7 +207,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
         ticker.next().await;
 
-        info!("Measure Sirin data");
+        //info!("Measure Sirin data");
         sirin.data = measure_sirin(
             &mut sirin.baro,
             &mut sirin.imu,
@@ -215,17 +215,17 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             &mut sirin.magnetometer
         ).await;
 
-        info!("Calculate altitude");
+        //info!("Calculate altitude");
         if let Ok(pressure) = sirin.data.baro.pressure {
             let measured_altitude = approx_pressure_altitude(pressure.convert());
             state.altitude = measured_altitude - initial_altitude;
-            info!("Estimated altitude: {}m", state.altitude.value);
+            //info!("Estimated altitude: {}m", state.altitude.value);
 
             if state.altitude.value > max_altitude.value {
                 max_altitude = state.altitude;
             }
         }
-        info!("Altitude calculated");
+        //info!("Altitude calculated");
 
         let accel_mag_squared = if let Ok(accel) = &sirin.data.imu.accel {
             let x_f64: MicroGs<f64> = (accel.x.value as f64).with_units();
@@ -302,10 +302,10 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             desired_mode = None;
         }
 
-        info!("Broadcast");
+        //info!("Broadcast");
         broadcast_log(sirin.data.time, Log::Data(sirin.data.clone()));
 
-        info!("Try get GPS fix");
+        //info!("Try get GPS fix");
         if let Some(fix) = GPS_FIX.try_take() {
             //if fix.fix_type != GpsFixType::NoFix {
                 state.gps = fix;
@@ -314,7 +314,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
         if i % 10 == 0 {
             OUT_CHANNEL.publish_immediate(IoPacket::new(
-                IoChannel::LoRa, OutPacket::LogEntry(
+                IoChannel::ToLoRa, OutPacket::LogEntry(
                     LogEntry::new(
                         sirin.data.time,
                         Log::State(state.clone())
@@ -322,7 +322,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 )
             ));
         }
-        info!("Done with GPS");
+        //info!("Done with GPS");
 
         //info!("Transmit data");
         

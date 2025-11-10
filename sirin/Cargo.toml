@@ -18,7 +18,7 @@ embassy-executor = { git = "https://github.com/embassy-rs/embassy", features = [
 embassy-time = { git = "https://github.com/embassy-rs/embassy" }
 embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", features = [ "stm32h743ii" ]}
 embassy-sync = { git = "https://github.com/embassy-rs/embassy" }
-embassy-futures = { git = "https://github.com/embassy-rs/embassy" }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy"}
 embassy-usb = { git = "https://github.com/embassy-rs/embassy" }
 embassy-usb-driver = { git = "https://github.com/embassy-rs/embassy" }
 static_cell = "^2.1.0"

@@ -23,6 +23,7 @@ pub static BROADCAST_CHANNEL: PubSubChannel<OutPacket, 3> = EmbassyPubSubChannel
 // High priority I/O channels
 pub static OUT_CHANNEL: PubSubChannel<IoPacket<OutPacket>, 3> = EmbassyPubSubChannel::new();
 pub static IN_CHANNEL: Channel<CriticalSectionRawMutex, IoPacket<InPacket>, 32> = Channel::new();
+pub static INTERNAL_CHANNEL: Channel<CriticalSectionRawMutex, IoPacket<InPacket>, 32> = Channel::new();
 
 static USB_BROADCASTING_ENABLED: AtomicBool = AtomicBool::new(false);
 pub static FLASH_LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
@@ -42,11 +43,12 @@ pub fn send_packet(packet: IoPacket<OutPacket>) {
 }
 
 pub async fn receive_packet() -> IoPacket<InPacket> {
-    IN_CHANNEL.receive().await
+    INTERNAL_CHANNEL.receive().await
 }
 
+//Receives only InPackets coming from LoRa
 pub fn try_receive_packet() -> Result<IoPacket<InPacket>, TryReceiveError> {
-    IN_CHANNEL.try_receive()
+    INTERNAL_CHANNEL.try_receive()
 }
 
 fn received_packet(mut packet: IoPacket<InPacket>) {
@@ -124,32 +126,20 @@ async fn radio_task_impl(
     let mut out_sub = OUT_CHANNEL.subscriber()?;
     let mut in_sub = IN_CHANNEL.sender();
     let in_receiver = IN_CHANNEL.receiver();
+    let internal_sender = INTERNAL_CHANNEL.sender();
 
     let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
     let mut buf2 = [0u8; 255];
     let mut buf3 = [0u8; 255];
 
-    /*loop {
-        let packet = next_out_packet(
-            &mut broadcast_sub,
-            &mut out_sub,
-            IoChannel::LoRa
-        ).await;
-        let radio_packet = RadioPacket::new(config, packet);
-
-        radio_packet.to_song(&mut buf)?;
-
-        //radio.transmit(&buf[0..radio_packet.song_size()]).await?;
-    }*/
-    info!("Buffers and setup complete");
     loop {
         //Send OutPackets
         let packet = out_sub.try_next_message_pure();
         match packet {
             Some(io_packet) => {
-                info!("OutPacket found!");
-                if io_packet.channel == IoChannel::LoRa {
-                    info!("OutPacket wants to be sent via radio!");
+                //info!("OutPacket found!");
+                if io_packet.channel == IoChannel::ToLoRa {
+                    //info!("OutPacket wants to be sent via radio!");
                     let packet = io_packet.packet;
 
                     let radio_packet = RadioPacket::new(config, packet);
@@ -158,6 +148,7 @@ async fn radio_task_impl(
 
                     radio.transmit(&buf[0..radio_packet.song_size()]).await?;
                     radio.set_mode(rfm9::Mode::Sleep).await?;
+                    //info!("Outpacket sent over radio!");
                 }
             }
             None => {}
@@ -165,14 +156,16 @@ async fn radio_task_impl(
 
         //Send InPackets
         let packet = IN_CHANNEL.try_receive();
-        info!("IoPacket found!");
         match packet{
             Ok(packet) => {
-                if packet.channel == IoChannel::LoRa{
+                info!("IoPacket found!");
+                let packet: IoPacket<InPacket> = packet;
+                if packet.channel == IoChannel::ToLoRa{
                     info!("InPacket wants to be sent via radio!");
                     let radio_packet = RadioPacket::new(config, packet.packet);
+                    radio_packet.to_song(&mut buf3);
                     radio.transmit(&buf3[0..radio_packet.song_size()]).await;
-                    info!("InPacket is sent!");
+                    info!("InPacket is sent over radio!");
                 }
             },
             Err(..) => {}
@@ -184,14 +177,15 @@ async fn radio_task_impl(
                 let len = len as usize;
                 let radio_packet = RadioPacket::from_song(&buf2[..len]);
                 if let Ok(packet) = radio_packet{
-                    info!("InPacket is received!");
+                    info!("InPacket is received from radio!");
                     let inpacket: InPacket = packet.packet;
-                    in_sub.send(IoPacket::new(IoChannel::LoRa, inpacket)).await;
+                    internal_sender.send(IoPacket::new(IoChannel::FromLoRa, inpacket)).await;
                     info!("InPacket is sent to proper channel!");
+                    //info!("Free capacity of InChannel: {}", INTERNAL_CHANNEL.free_capacity());
                 }
             },
             Err(..) => {
-                info!("No radio packet received");
+                //info!("No radio packet received");
             }
         };
     }

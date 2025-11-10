@@ -321,8 +321,9 @@ impl From<SpiErrorKind> for SubsystemError {
 pub enum IoChannel {
     Broadcast = 0,
     Usb,
-    LoRa,
-    Flash
+    ToLoRa,
+    FromLoRa,
+    Flash,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

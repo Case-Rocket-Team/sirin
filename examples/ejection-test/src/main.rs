@@ -57,15 +57,9 @@ async fn main_task(sirin: &'static mut Sirin) {
         i -= 1;
         Timer::after_millis(1000).await;
     }
-    let mut buf = [0u8; 255];
-    let packet = InPacket::DeployApo;
-    packet.to_song(&mut buf);
+    let sender = IN_CHANNEL.sender();
     loop{
-        sirin.radio.transmit(&buf);
-        sirin.led.set_high();
-        info!("Successfully transmitted!");
-        Timer::after_millis(500).await;
-        sirin.led.set_low();
-        Timer::after_millis(500).await;
+        sender.send(IoPacket::new(IoChannel::ToLoRa, InPacket::DeployApo)).await;
+        Timer::after_millis(1000).await;
     }
 }

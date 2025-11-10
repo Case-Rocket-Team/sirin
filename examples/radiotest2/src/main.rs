@@ -54,7 +54,6 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 
 async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let state = SirinState::default();
-    let _initial_altitude = approx_pressure_altitude(sirin.baro.read().await?.pressure.convert());
 
     sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
     sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
@@ -68,16 +67,21 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     })).unwrap();
 
     info!("Start main");
-
-    let mut ticker = Ticker::every(Duration::from_millis(500));
-    let sender = IN_CHANNEL.sender();
-    loop {
-        sender.send(IoPacket::new(IoChannel::ToLoRa, InPacket::DeployApo)).await;
-        info!("Transmitting!");
-        info!("Free capacity of InChannel: {}", IN_CHANNEL.free_capacity());
-        sirin.led.set_high();
+    loop{
+        while let Ok(io_packet) = try_receive_packet(){
+            info!("Packet received in main!");
+            match io_packet.packet {
+                InPacket::DeployApo => {
+                    Sirin::deploy_chute_apo(&mut sirin.parachute_apo); 
+                    info!("Apo deployed!");
+                },
+                InPacket::DeployMain => {
+                    Sirin::deploy_chute_main(&mut sirin.parachute_main); 
+                    info!("Main deployed!");
+                },
+                _ => {}
+            }
+        }
         Timer::after_millis(500).await;
-        sirin.led.set_low();
-        Timer::after_millis(500).await;   
     }
 }

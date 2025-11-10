@@ -302,7 +302,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
         if i % 10 == 0 {
             OUT_CHANNEL.publish_immediate(IoPacket::new(
-                IoChannel::LoRa, OutPacket::LogEntry(
+                IoChannel::ToLoRa, OutPacket::LogEntry(
                     LogEntry::new(
                         sirin.data.time,
                         Log::State(state.clone())
