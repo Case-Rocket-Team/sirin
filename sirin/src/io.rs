@@ -158,14 +158,14 @@ async fn radio_task_impl(
         let packet = IN_CHANNEL.try_receive();
         match packet{
             Ok(packet) => {
-                info!("IoPacket found!");
+                //info!("IoPacket found!");
                 let packet: IoPacket<InPacket> = packet;
                 if packet.channel == IoChannel::ToLoRa{
-                    info!("InPacket wants to be sent via radio!");
+                    //info!("InPacket wants to be sent via radio!");
                     let radio_packet = RadioPacket::new(config, packet.packet);
                     radio_packet.to_song(&mut buf3);
                     radio.transmit(&buf3[0..radio_packet.song_size()]).await;
-                    info!("InPacket is sent over radio!");
+                    //info!("InPacket is sent over radio!");
                 }
             },
             Err(..) => {}
@@ -173,14 +173,14 @@ async fn radio_task_impl(
         //Receive InPackets
         match radio.recieve(&mut buf2).await{
             Ok(len) => {
-                info!("Radio data received!");
+                //info!("Radio data received!");
                 let len = len as usize;
                 let radio_packet = RadioPacket::from_song(&buf2[..len]);
                 if let Ok(packet) = radio_packet{
-                    info!("InPacket is received from radio!");
+                    //info!("InPacket is received from radio!");
                     let inpacket: InPacket = packet.packet;
                     internal_sender.send(IoPacket::new(IoChannel::FromLoRa, inpacket)).await;
-                    info!("InPacket is sent to proper channel!");
+                    //info!("InPacket is sent to proper channel!");
                     //info!("Free capacity of InChannel: {}", INTERNAL_CHANNEL.free_capacity());
                 }
             },

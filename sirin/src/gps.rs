@@ -61,7 +61,7 @@ pub async fn gps_impl(
         embassy_time::Timer::after(embassy_time::Duration::from_millis(500)).await;
         //GPS_FIX.signal(fix.clone());
         //Read 32 bytes from RingBuffer at a time
-        let mut bytes = [0u8,1];
+        let mut bytes = [0u8;16];
         read(gps_rx, &mut bytes).await?;
         for b in &bytes {
             info!("Byte: {:x}", b);

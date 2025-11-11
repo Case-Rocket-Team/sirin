@@ -43,10 +43,18 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 
     debug!("End Sirin init");
 
-    main_task(sirin).await
+    match main_task(sirin).await {
+        Ok(()) => {
+            panic!("The main task ended! (It shouldn't do that)")
+        },
+        Err(e) => {
+            panic!("The main task ran into an error: {:?}", e)
+        }
+    }
 }
 
-async fn main_task(sirin: &'static mut Sirin) {
+async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
+    sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
     let mut i = 5;
     loop{
         info!("{}", i);
@@ -58,8 +66,13 @@ async fn main_task(sirin: &'static mut Sirin) {
         Timer::after_millis(1000).await;
     }
     let sender = IN_CHANNEL.sender();
-    loop{
+    loop {
         sender.send(IoPacket::new(IoChannel::ToLoRa, InPacket::DeployApo)).await;
-        Timer::after_millis(1000).await;
+        //info!("Transmitting!");
+        //info!("Free capacity of InChannel: {}", IN_CHANNEL.free_capacity());
+        sirin.led.set_high();
+        Timer::after_millis(500).await;
+        sirin.led.set_low();
+        Timer::after_millis(500).await;   
     }
 }
