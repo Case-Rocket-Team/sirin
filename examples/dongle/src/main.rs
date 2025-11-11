@@ -67,8 +67,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             }
         };
 
-
-
         let len = len as usize;
         info!("Received: {:x}", buf[..len]);
         info!("Note: this will hang if no one is connected to USB.");
