@@ -10,7 +10,6 @@ use embassy_executor::{task, Executor, Spawner};
 use embassy_stm32::{bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, peripherals::{self, DMA1_CH0, DMA1_CH1, PD8, PD9, USART3}, usart::{self, Config, Uart}};
 use embassy_time::Timer;
 use rfm9::ReadRfm9;
-use lsm6dso_spi::ReadLsm6dso;
 use {defmt_rtt as _, panic_probe as _};
 use sirin::{error::SirinError, flash::Flash, gps::{gps_task, GPS_FIX}, io::{broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL}, packet::{GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}, Radio, Sirin};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, Publisher, Subscriber}};
@@ -57,21 +56,23 @@ async fn main_task(sirin: &'static mut Sirin)  {
     })).unwrap();
 
     info!("Start main");
+    let starting_pressure = sirin.baro.read().await.unwrap().pressure;
+    let initial_altitude = approx_pressure_altitude(starting_pressure.convert());
     loop{
-        while let Ok(io_packet) = try_receive_packet(){
-            info!("Packet received!");
-            match io_packet.packet {
-                InPacket::DeployApo => {
-                    Sirin::deploy_chute_apo(&mut sirin.parachute_apo); 
-                    info!("Packet matched!");
-                },
-                InPacket::DeployMain => {
-                    Sirin::deploy_chute_main(&mut sirin.parachute_main); 
-                    info!("Packet matched!");
-                },
-                _ => {}
-            }
-        }
+        sirin.data = measure_sirin(
+            &mut sirin.baro,
+            &mut sirin.imu,
+            &mut sirin.high_g_imu,
+            &mut sirin.magnetometer
+        ).await;
+        let baro_pressure = sirin.data.baro.pressure.unwrap().convert();
+        let baro_altitude = approx_pressure_altitude(baro_pressure);
+        info!("Starting altitude: {}", initial_altitude.value);
+        info!("Current altitude: {}", baro_altitude.value);
+        info!("Relative altitude: {}", (baro_altitude - initial_altitude).value);
+        info!("Starting pressure: {}", starting_pressure.value);
+        info!("Current pressure: {}", baro_pressure.value);
+        Timer::after_millis(1000).await;
     }
     // println!("set sensitivity: {}", sirin.imu.set_accel_sensitivity(4).await.unwrap());
     // println!("read ctrl: {}", sirin.imu.read_reg(0x10).await.unwrap());

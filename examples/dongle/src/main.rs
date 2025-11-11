@@ -88,12 +88,13 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
         // Need to chop it up into 64-byte sized packets (full speed device)
         let mut i = 0;
-        while i < len {
+        /* ADD THIS BACK IN LATER WHEN YOU CAN MAKE IT STOP HANGING */
+        /*while i < len {
             let j = (i + 64).min(len);
             sirin.usb.write_ep.wait_enabled().await;
             sirin.usb.write_ep.write(&buf[i..j]).await?;
             i = j;
-        }
+        }*/
     }
 }
 
