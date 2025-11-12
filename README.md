@@ -1,0 +1,19 @@
+# Sirin Rocket Flight Computer
+Sirin is an in-progress flight computer for high-powered rocketry written in bare metal Rust (and some C), developed by students on Case Rocket Team (at Case Western Reserve University). This code runs on a custom PCB featuring an STM32H753, the KiCAD for the PCB is [here](https://github.com/Nautki/sirin-s-kicad) and the companion CLI is [here](https://github.com/nautki/sirin-cli).
+
+This is the main Cargo workspace for the project. Each peripheral that we need to interact with has its own crate. `sirin` is the main library that ties everything together; `examples` contains the binaries, with `examples/main` being the most fully featured. We want to be able to specialize Sirins for different tasks (e.g. position finding, data collection, firing charge wells, etc.), hence the modular design with multiple binaries.
+
+## Features
+
+Currently implemented:
+- [X] IMU, barometer
+- [X] Radio live telemetry
+- [X] USB communication for CLI
+- [X] Firing of events and charge wells
+
+Currently being worked on:
+- [ ] GPS
+- [ ] ESKF Kalman filter for sensor fusion (check out `eskf` branch)
+
+Planned:
+- [ ] React Dashboard
