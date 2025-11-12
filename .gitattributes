@@ -1,4 +1,4 @@
 # Auto detect text files and perform LF normalization
 * text=auto
-sirin-c/cmsis/* -linguist-detectable
-sirin-c/cmsis-dsp/* -linguist-detectable
+sirin-c/cmsis/** linguist-vendored
+sirin-c/cmsis-dsp/** linguist-vendored
