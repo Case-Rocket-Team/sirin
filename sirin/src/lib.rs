@@ -1,6 +1,6 @@
 #![no_std]
 #![allow(unused_imports)]
-//#![doc = include_str!("../README.md")]
+#![doc = include_str!("../../README.md")]
 
 use core::{ffi::CStr, marker::PhantomPinned, mem::MaybeUninit, pin::{pin, Pin}, ptr::addr_of_mut};
 use bmp3::Bmp3;
