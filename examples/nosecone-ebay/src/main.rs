@@ -54,7 +54,7 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 
 async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let accel_threshold: Gs<f64> = (10.0).with_units(); //In Gs
-    let altitude_threshold = 33.0;
+    let altitude_threshold = 33.0; //In meters
     let main_deployment_altitude= 1500.0; //In meters
     let flight_duration = 100; //In seconds
     let apogee_error = 7.0; //In meters
@@ -64,7 +64,20 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     
 
     let mut state = SirinState::default();
-    let initial_altitude = approx_pressure_altitude(sirin.baro.read().await?.pressure.convert());
+
+    let mut initial_altitude = approx_pressure_altitude(sirin.baro.read().await?.pressure.convert());
+    let mut altitude_array: [f64; 100] = [0.0; 100];
+    for i in 0..100 {
+        let altitude = approx_pressure_altitude(sirin.baro.read().await?.pressure.convert());
+        altitude_array[i] = altitude.value;
+        Timer::after_millis(25).await;
+    }
+    
+    altitude_array.sort_unstable_by(|a, b | a.partial_cmp(b).unwrap());
+    initial_altitude = altitude_array[50].with_units();
+   
+
+    info!("Initial altitude: {}", initial_altitude.value);
 
     sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
     sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();

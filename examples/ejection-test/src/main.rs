@@ -67,7 +67,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     }
     let sender = IN_CHANNEL.sender();
     loop {
-        sender.send(IoPacket::new(IoChannel::ToLoRa, InPacket::DeployApo)).await;
+        sender.send(IoPacket::new(IoChannel::ToLoRa, InPacket::DeployMain)).await;
         //info!("Transmitting!");
         //info!("Free capacity of InChannel: {}", IN_CHANNEL.free_capacity());
         sirin.led.set_high();
