@@ -232,7 +232,7 @@ impl Sirin {
 
             //Send GPS setup packet(s)
             let port_config_packet = CfgPrtUartBuilder {
-                portid: UartPortId::Uart2,
+                portid: UartPortId::Uart1,
                 reserved0: 0,
                 tx_ready: 0,
                 mode: UartMode::new(DataBits::Eight, Parity::None, StopBits::One),
