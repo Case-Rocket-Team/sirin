@@ -50,14 +50,14 @@ async fn main_task(sirin: &'static mut Sirin) {
     println!("Hello world!");
     let mut state = SirinState::default();
     //let initial_altitude = approx_pressure_altitude(sirin.baro.read().await?.pressure.convert());
-    sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
-    sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
-    sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
+    //sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
+    //sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
+    //sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
     sirin.spawner.spawn(gps_task(&mut sirin.gps_rx, &mut sirin.gps_tx)).unwrap();
 
     info!("Start main");
     let mut ticker = Ticker::every(Duration::from_millis(500));
-
+    return;
     
     loop {
         ticker.next().await;
