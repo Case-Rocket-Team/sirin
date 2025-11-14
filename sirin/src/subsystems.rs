@@ -9,7 +9,7 @@ use lsm6dso_spi::{Accel, AngularVel, Lsm6dso};
 use paste::paste;
 use rfm9::Rfm9;
 use sirin_macros::Measurement;
-use sirin_shared::packet::{BaroData, HighGImuData, ImuData, Measurement, SirinData, SubsystemError, Vec3, MagnetometerData};
+use sirin_shared::{packet::{BaroData, HighGImuData, ImuData, MagnetometerData, Measurement, SirinData, SubsystemError, Vec3}, physics::approx_pressure_altitude};
 use snafu::prelude::*;
 use uunit::{Celsius, Milliseconds, Pascals, WithUnits};
 use w25qx::W25Q;
@@ -228,12 +228,14 @@ pub async fn measure_sirin(
     high_g_imu: &mut H3lis<SpiDev>,
     magnetometer: &mut Lis3mdl<SpiDev>
 ) -> SirinData {
+    let barodata = baro.measure().await;
     //TODO: join futures?
     SirinData {
         time: (Instant::now().as_millis() as u32).with_units(),
-        baro: baro.measure().await,
+        baro: barodata.clone(),
         imu: imu.measure().await,
         high_g_imu: high_g_imu.measure().await,
-        magnetometer: magnetometer.measure().await
+        magnetometer: magnetometer.measure().await,
+        altitude: approx_pressure_altitude(barodata.pressure.unwrap().convert())
     }
 }

@@ -84,7 +84,6 @@ pub enum OutPacket {
     LogEntry(LogEntry),
     FlightHeader(Page<FlightHeader>),
     State(SirinState),
-    Data(FlightData),
     DeployedApoAt(u32),
     DeployedMainAt(u32)
 }
@@ -105,17 +104,6 @@ impl Default for SirinState {
             altitude: 0.0.with_units(),
             apogee: None
         }
-    }
-}
-#[derive(Debug, Clone, SongSize, FromSong, ToSong)]
-pub struct FlightData{
-    pub data: SirinData,
-    pub state: SirinState,
-}
-
-impl FlightData{
-    pub fn new(data: SirinData, state: SirinState) -> FlightData {
-        FlightData { data, state}
     }
 }
 
@@ -257,7 +245,8 @@ pub struct SirinData {
     pub baro: BaroData,
     pub imu: ImuData,
     pub high_g_imu: HighGImuData,
-    pub magnetometer: MagnetometerData
+    pub magnetometer: MagnetometerData,
+    pub altitude: Meters<f64>
 }
 
 pub trait Measurement {
@@ -271,7 +260,8 @@ impl Measurement for SirinData {
             baro: BaroData::unmeasured(),
             imu: ImuData::unmeasured(),
             high_g_imu: HighGImuData::unmeasured(),
-            magnetometer: MagnetometerData::unmeasured()
+            magnetometer: MagnetometerData::unmeasured(),
+            altitude: 0.0.with_units()
         }
     }
 }
