@@ -63,7 +63,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
     sirin.spawner.spawn(gps_task(&mut sirin.gps_rx, &mut sirin.gps_tx)).unwrap();
 
-    let mut i = 0;
+    /*let mut i = 0;
     loop {
         let mut sector = [0; 4096];
         sirin.flash.w25q.read(i * 4096, &mut sector).await?;
@@ -84,7 +84,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         i += 1;
     }
 
-    loop {}
+    loop {}*/
 
     let mut flash = Mutex::new(&mut sirin.flash);
     sirin.spawner.spawn(flash_io_task(unsafe {
