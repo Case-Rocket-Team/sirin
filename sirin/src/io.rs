@@ -217,8 +217,9 @@ async fn usb_output_task_impl(
 
     let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
 
+    set_usb_broadcasting_enabled(true);
     loop {
-        usb.wait_enabled().await;
+        //usb.wait_enabled().await;
 
         let packet = next_out_packet(
             &mut broadcast_sub,
@@ -257,10 +258,12 @@ async fn usb_input_task_impl(
     usb: &mut ReadEp
 ) -> Result<(), SirinError> {
     let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
-    usb.wait_enabled().await;
+    set_usb_broadcasting_enabled(true);
+    //usb.wait_enabled().await;
     usb.read(&mut buf).await?;
     let packet = InPacket::from_song(&buf)?;
-    received_packet(IoPacket::new(IoChannel::Usb, packet));
+    //received_packet(IoPacket::new(IoChannel::Usb, packet));
+    INTERNAL_CHANNEL.send(IoPacket::new(IoChannel::Usb, packet));
     Ok(())
 }
 

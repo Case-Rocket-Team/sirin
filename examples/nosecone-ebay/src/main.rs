@@ -124,7 +124,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     let ms_since_epoch = reference.ms_since_epoch - Instant::now().as_millis();
 
                     set_duration_since_epoch(Duration::from_millis(ms_since_epoch));
-                    flash.lock().await.set_absolute_time_reference(AbsoluteTimeReference { ms_since_epoch }).await?;
+                    //flash.lock().await.set_absolute_time_reference(AbsoluteTimeReference { ms_since_epoch }).await?;
 
                     // skip OK packet
                     continue;
