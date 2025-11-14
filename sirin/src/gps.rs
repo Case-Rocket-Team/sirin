@@ -52,19 +52,11 @@ pub async fn gps_impl(
     packet_parser: &mut Parser<FixedBuffer<512>, Proto31>
 ) -> Result<(), SirinError> {
     loop {
-        info!("Reading GPS data...");
-        if fix.satellites >= 100{
-            fix.satellites = 0;
-        }
-        fix.satellites += 1;
-        GPS_FIX.signal(fix.clone());
-        embassy_time::Timer::after(embassy_time::Duration::from_millis(500)).await;
-        //GPS_FIX.signal(fix.clone());
-        //Read 32 bytes from RingBuffer at a time
-        let mut bytes = [0u8;16];
+        //Read 1 bytes from RingBuffer at a time
+        let mut bytes = [0u8;1];
         read(gps_rx, &mut bytes).await?;
         for b in &bytes {
-            info!("Byte: {:x}", b);
+            info!("Byte Read Successfully: {:x}", b);
         }
     }
     
