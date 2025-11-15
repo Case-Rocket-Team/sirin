@@ -14,7 +14,7 @@ use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task}, io::{FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
+use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task}, io::{FLASH_LOGGING_ENABLED, IN_CHANNEL, INTERNAL_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, Publisher, Subscriber}};
 use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
@@ -82,7 +82,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
     sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
     sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
-    sirin.spawner.spawn(gps_task(&mut sirin.gps_rx, &mut sirin.gps_tx)).unwrap();
+    //sirin.spawner.spawn(gps_task(&mut sirin.gps_rx, &mut sirin.gps_tx)).unwrap();
 
     let mut i = 0;
     
@@ -116,6 +116,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 },
                 InPacket::Ping => {}
                 InPacket::SetTime(ref reference) => {
+                    info!("SetTime packet received!");
                     if duration_since_epoch().is_some() {
                         continue;
                     }
@@ -124,7 +125,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     let ms_since_epoch = reference.ms_since_epoch - Instant::now().as_millis();
 
                     set_duration_since_epoch(Duration::from_millis(ms_since_epoch));
-                    //flash.lock().await.set_absolute_time_reference(AbsoluteTimeReference { ms_since_epoch }).await?;
+                    flash.lock().await.set_absolute_time_reference(AbsoluteTimeReference { ms_since_epoch }).await?;
 
                     // skip OK packet
                     continue;
@@ -151,6 +152,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     desired_mode = Some(m);
                 }
                 InPacket::QueryFlights => {
+                    //info!("QueryFlights packet received!");
                     let flash = flash.lock().await;
 
                     //info!("Querying flights...");
@@ -213,12 +215,12 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         ).await;
 
         //info!("Calculate altitude");
-        info!("Initial altitude: {}", initial_altitude.value);
+        //info!("Initial altitude: {}", initial_altitude.value);
         if let Ok(pressure) = sirin.data.baro.pressure {
             let measured_altitude = approx_pressure_altitude(pressure.convert());
-            info!("Measured altitude: {}", measured_altitude.value);
+            //info!("Measured altitude: {}", measured_altitude.value);
             state.altitude = measured_altitude - initial_altitude;
-            info!("Relative altitude: {}", state.altitude.value);
+            //info!("Relative altitude: {}", state.altitude.value);
             //info!("Estimated altitude: {}m", state.altitude.value);
 
             if state.altitude.value > max_altitude.value {
@@ -340,7 +342,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 ))
             ));
         }
-        info!("Final state altitude: {}", state.altitude.value);
+        //info!("Final state altitude: {}", state.altitude.value);
         //info!("Done with GPS");
 
 
