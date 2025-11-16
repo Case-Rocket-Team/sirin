@@ -1,45 +1,66 @@
+use crate::{
+    error::SirinError,
+    io::{broadcast, broadcast_log},
+    usb,
+};
 use defmt::{error, info, println, warn, Debug2Format};
 use embassy_executor::task;
-use embassy_stm32::{mode::Async, pac::Interrupt::PVD_AVD, usart::{self, RingBufferedUartRx, Uart, UartTx}};
+use embassy_stm32::{
+    mode::Async,
+    pac::Interrupt::PVD_AVD,
+    sai::B,
+    usart::{self, RingBufferedUartRx, Uart, UartTx},
+};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::Instant;
-use sirin_shared::{packet::{self, GpsFix, GpsFixType, Log, OutPacket, Vec3}, song::FromSong};
+use sirin_shared::{
+    packet::{self, GpsFix, GpsFixType, Log, OutPacket, Vec3},
+    song::FromSong,
+};
+use ublox::{
+    cfg_gnss::CfgGnssBuilder,
+    cfg_inf::CfgInfBuilder,
+    cfg_nav5::CfgNav5Builder,
+    cfg_prt::{
+        CfgPrtUartBuilder, DataBits, InProtoMask, OutProtoMask, Parity, StopBits, UartMode,
+        UartPortId,
+    },
+    proto31::Proto31,
+    FixedBuffer,
+};
+use ublox::{proto31::*, GnssFixType, Parser, Position, UbxPacket, Velocity};
 use uunit::{Meters, MetersPerSecond, WithUnits};
-use crate::{error::SirinError, io::{broadcast, broadcast_log}, usb};
-use ublox::{FixedBuffer, cfg_nav5::CfgNav5Builder, cfg_prt::{CfgPrtUartBuilder, DataBits, InProtoMask, OutProtoMask, Parity, StopBits, UartMode, UartPortId}, proto31::Proto31};
-use ublox::{Parser,UbxPacket,proto31::*,GnssFixType,Position,Velocity};
 
 pub static GPS_FIX: Signal<CriticalSectionRawMutex, GpsFix> = Signal::new();
 
 #[task]
 pub async fn gps_task(
     gps_rx: &'static mut RingBufferedUartRx<'static>,
-    gps_tx: &'static mut UartTx<'static, Async>
+    gps_tx: &'static mut UartTx<'static, Async>,
 ) {
     let mut fix = GpsFix::default();
-    
-
     //Create packet parser
-    let mut packet_parser:Parser<FixedBuffer<512>,Proto31> = ublox::Parser::new_fixed();
-    
+    let mut packet_parser: Parser<FixedBuffer<512>, Proto31> = ublox::Parser::new_fixed();
+
     //Task loop
     loop {
-        match gps_impl(gps_rx, &mut fix, &mut packet_parser).await {
+        info!("New gps loop iteration");
+        match gps_impl(gps_rx, &mut fix, &mut packet_parser, gps_tx).await {
             Err(err) => error!("GPS Error: {}", Debug2Format(&err)),
             Ok(_) => {}
         };
-    }   
+    }
 }
 
 pub async fn read(
     gps_rx: &mut RingBufferedUartRx<'static>,
-    buf: &mut [u8]
+    buf: &mut [u8],
 ) -> Result<(), SirinError> {
     let mut len = buf.len();
     let mut i = 0;
     loop {
         i += gps_rx.read(&mut buf[i..]).await?;
-    
+
         if i >= len {
             return Ok(());
         }
@@ -49,29 +70,121 @@ pub async fn read(
 pub async fn gps_impl(
     gps_rx: &mut RingBufferedUartRx<'static>,
     fix: &mut GpsFix,
-    packet_parser: &mut Parser<FixedBuffer<512>, Proto31>
+    packet_parser: &mut Parser<FixedBuffer<512>, Proto31>,
+    gps_tx: &mut UartTx<'static, Async>,
 ) -> Result<(), SirinError> {
-    loop {
-        //Read 1 bytes from RingBuffer at a time
-        let mut bytes = [0u8;1];
-        read(gps_rx, &mut bytes).await?;
-        for b in &bytes {
-            info!("Byte Read Successfully: {:x}", b);
+    let mut bytes = [0u8; 1];
+    gps_rx.read(&mut bytes).await;
+    info!("Read Byte: {:?}", bytes);
+    let mut iterator = packet_parser.consume_ubx(&mut bytes);
+    while let Some(packet) = iterator.next() {
+        match packet {
+            Ok(UbxPacket::Proto31(packet)) => {
+                match packet {
+                    PacketRef::MonVer(mon_ver_packet) => {
+                        info!("Got version message: mon_ver_packet");
+                    }
+                    PacketRef::NavPvt(nav_pvt_packet) => {
+                        info!("Got version message: nav_pvt_packet");
+                        let mut has_time = false;
+                        let mut has_posvel = false;
+
+                        match nav_pvt_packet.fix_type() {
+                            GnssFixType::TimeOnlyFix => {
+                                fix.fix_type = GpsFixType::TimeOnlyFix;
+                                has_time = true;
+                                has_posvel = false;
+                            }
+                            GnssFixType::GPSPlusDeadReckoning => {
+                                fix.fix_type = GpsFixType::FixDifferential;
+                                has_time = true;
+                                has_posvel = true;
+                            }
+                            GnssFixType::NoFix => {
+                                fix.fix_type = GpsFixType::NoFix;
+                                has_time = false;
+                                has_posvel = false;
+                            }
+                            GnssFixType::DeadReckoningOnly => {
+                                fix.fix_type = GpsFixType::FixPrediction;
+                                has_time = true;
+                                has_posvel = false;
+                            }
+                            GnssFixType::Fix2D => {
+                                fix.fix_type = GpsFixType::Fix2d;
+                                has_time = true;
+                                has_posvel = true;
+                            }
+                            GnssFixType::Fix3D => {
+                                fix.fix_type = GpsFixType::Fix3d;
+                                has_time = true;
+                                has_posvel = true;
+                            }
+                            _ => {
+                                fix.fix_type = GpsFixType::NoFix;
+                                has_time = false;
+                                has_posvel = false;
+                                fix.pos = Vec3 {
+                                    x: 10.0.with_units(),
+                                    y: 10.0.with_units(),
+                                    z: 10.0.with_units(),
+                                }
+                            }
+                        }
+
+                        if has_posvel {
+                            fix.pos = Vec3 {
+                                x: nav_pvt_packet.longitude().with_units(),
+                                y: nav_pvt_packet.latitude().with_units(),
+                                z: nav_pvt_packet.height_msl().with_units(),
+                            }
+                        }
+
+                        if has_time {}
+                        //new gps fix available
+                    }
+                    PacketRef::EsfRaw(raw_packet) => {
+                        //info!("Got raw message: {raw:?}");
+                        info!("Got raw message: esf_raw_packet");
+                    }
+                    PacketRef::AckAck(raw_packet) => {
+                        info!("Got message: AckAck");
+                    }
+                    PacketRef::AckNak(raw_packet) => {
+                        info!("Got message: AckNak");
+                    }
+                    _ => {
+                        info!("packet_ref");
+                    }
+                }
+                GPS_FIX.signal(fix.clone());
+            }
+            Err(e) => {
+                error!("GPS Packet parse error: {}", Debug2Format(&e));
+            }
         }
     }
-    
-    //loop {
-        
-        //fix.satellites += 1;
 
+    Ok(())
+}
+
+/*
+pub async fn gps_impl(
+    gps_rx: &mut RingBufferedUartRx<'static>,
+    fix: &mut GpsFix,
+    packet_parser: &mut Parser<FixedBuffer<512>, Proto31>,
+    gps_tx: &mut UartTx<'static, Async>
+) -> Result<(), SirinError> {
+    let mut bytes = [0u8; 1];
+
+    loop {
+        info!("New gps loop iteration");
+        gps_rx.read(&mut bytes).await;
         //Copy those 32 bytes to Parser internal buffer
-        //let mut iterator = packet_parser.consume_ubx(&bytes);
-        /*
-
+        let mut iterator = packet_parser.consume_ubx(&mut bytes);
         while let Some(packet) = iterator.next() {
             match packet {
                 Ok(UbxPacket::Proto31(packet)) => {
-                    fix.satellites = 30;
                     match packet{
                         PacketRef::MonVer(mon_ver_packet) => {
                             info!("Got version message: mon_ver_packet");
@@ -121,41 +234,42 @@ pub async fn gps_impl(
                             }
 
                             if has_posvel {
-                                fix.pos = Vec3 { 
+                                fix.pos = Vec3 {
                                     x: nav_pvt_packet.longitude().with_units(),
-                                    y: nav_pvt_packet.latitude().with_units(), 
+                                    y: nav_pvt_packet.latitude().with_units(),
                                     z: nav_pvt_packet.height_msl().with_units()
                                 }
                             }
 
                             if has_time {
-                                
+
                             }
                             //new gps fix available
                         },
                         PacketRef::EsfRaw(raw_packet) => {
                             //info!("Got raw message: {raw:?}");
                             info!("Got raw message: esf_raw_packet");
-                            fix.ephemerides = 10;
                         },
+                        PacketRef::AckAck(raw_packet) => {
+                            info!("Got message: AckAck");
+                        },
+                        PacketRef::AckNak(raw_packet) => {
+                            info!("Got message: AckNak");
+                        }
                         _ => {
                             info!("packet_ref");
-                            //info!("{packet_ref:?}");
-                            fix.ephemerides = 20;
                         },
                     }
                     GPS_FIX.signal(fix.clone());
                 },
                 Err(e) => {
                     error!("GPS Packet parse error: {}", Debug2Format(&e));
-                    fix.satellites = 10;
-                    GPS_FIX.signal(fix.clone());
                 }
             }
         }
-        */
 
-    //}
+    }
+
     /*let mut start_byte_0 = [0u8; 1];
         read(gps, &mut start_byte_0).await?;
 
@@ -246,7 +360,7 @@ pub async fn gps_impl(
                 let mut vel_z_arr = [0; 4];
                 vel_z_arr.copy_from_slice(&payload[49..53]);
                 let vel_z = f32::from_be_bytes(vel_z_arr);
-                
+
                 fix.time = (Instant::now().as_millis() as u32).with_units();
                 fix.fix_type = fix_type;
                 fix.pos = Vec3 {
@@ -292,7 +406,7 @@ pub async fn gps_impl(
                     }
 
                     info!(
-                        "GPS (chid: {}, svid: {}): [{}] almanac, [{}] ephemeris, [{}] healthy", 
+                        "GPS (chid: {}, svid: {}): [{}] almanac, [{}] ephemeris, [{}] healthy",
                         chid, svid, almanac, ephemeris, healthy
                     )
                 }
@@ -304,6 +418,7 @@ pub async fn gps_impl(
             },
             id => {
                 info!("Received message with ID {:x}, len {}", message_id, payload_length)
-            } 
+            }
         }*/
 }
+*/

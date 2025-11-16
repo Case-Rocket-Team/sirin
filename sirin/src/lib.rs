@@ -26,7 +26,7 @@ use h3lis::H3lis;
 use spi::{Spi, SpiConfig, SpiConfigStruct, SpiDev, SpiInstance, WithSpiHandle};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State as UsbState};
 use embassy_usb::Builder as UsbBuilder;
-use ublox::{FixedBuffer, cfg_nav5::CfgNav5Builder, cfg_prt::{CfgPrtUartBuilder, DataBits, InProtoMask, OutProtoMask, Parity, StopBits, UartMode, UartPortId}, proto31::Proto31};
+use ublox::{FixedBuffer, cfg_inf::{CfgInf, CfgInfBuilder, CfgInfMask}, cfg_nav5::CfgNav5Builder, cfg_prt::{CfgPrtUartBuilder, DataBits, InProtoMask, OutProtoMask, Parity, StopBits, UartMode, UartPortId}, proto31::Proto31};
 use ublox::{Parser,UbxPacket,proto31::*,GnssFixType,Position,Velocity};
 
 pub use uunit;
@@ -220,6 +220,9 @@ impl Sirin {
             let magnetometer_cs = Output::new(p.PA3, Level::High, Speed::High); 
             magnetometer_ptr.write(Lis3mdl::new((*spi1).handle(magnetometer_cs)));
             
+            let mut gps_config = usart::Config::default();
+            gps_config.baudrate = 9600;
+
             let mut gps_uart = Uart::new(
                 p.USART3,
                 p.PD9,
@@ -227,7 +230,7 @@ impl Sirin {
                 Irqs,
                 p.DMA1_CH6,
                 p.DMA1_CH7,
-                usart::Config::default()
+                gps_config
             ).unwrap();
 
             //Send GPS setup packet(s)
@@ -246,8 +249,11 @@ impl Sirin {
             let mut nav_mode_config = CfgNav5Builder::default();
             nav_mode_config.dyn_model = ublox::cfg_nav5::NavDynamicModel::Pedestrian;
             nav_mode_config.fix_mode = ublox::cfg_nav5::NavFixMode::Auto2D3D;
+            let mut inf_config = CfgInfBuilder::default();
+
             gps_uart.write(&port_config_packet).await.unwrap();
             gps_uart.write(&nav_mode_config.into_packet_bytes()).await.unwrap();
+            gps_uart.write(&inf_config.into_packet_bytes()).await.unwrap();
 
             let (mut tx,rx) = gps_uart.split();
 
