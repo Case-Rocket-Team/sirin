@@ -14,7 +14,7 @@ use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{error::SirinError, flash::Flash, gps::{gps_task, GPS_FIX}, io::{broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL}, packet::{GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}, Radio, Sirin};
+use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task}, io::{FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_inpacket_receiving_enabled, set_inpacket_sending_enabled, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, MAX_OUT_PACKET_SIZE, OutPacket, PacketError, Page, RadioPacket, SirinData, SirinState}, song::{FromSong, SongSize, ToSong}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, Publisher, Subscriber}};
 use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
@@ -53,28 +53,28 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 }
 
 async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
-    let state = SirinState::default();
-    let _initial_altitude = approx_pressure_altitude(sirin.baro.read().await?.pressure.convert());
 
-    sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
-    sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
-    sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
-    sirin.spawner.spawn(gps_task(&mut sirin.gps_rx, &mut sirin.gps_tx)).unwrap();
+    //sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
+    //sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
+    //sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
+    //sirin.spawner.spawn(gps_task(&mut sirin.gps_rx, &mut sirin.gps_tx)).unwrap();
 
-    let mut flash = Mutex::new(&mut sirin.flash);
+    //let mut flash = Mutex::new(&mut sirin.flash);
     
-    sirin.spawner.spawn(flash_io_task(unsafe {
-        transmute_into_static(&mut flash)
-    })).unwrap();
+    //sirin.spawner.spawn(flash_io_task(unsafe {
+    //    transmute_into_static(&mut flash)
+    //})).unwrap();
 
     info!("Start main");
 
     let mut ticker = Ticker::every(Duration::from_millis(500));
-    let sender = IN_CHANNEL.sender();
+    let mut radio = &mut sirin.radio;
     loop {
-        sender.send(IoPacket::new(IoChannel::ToLoRa, InPacket::DeployApo)).await;
+        let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
+        let radio_packet = RadioPacket::new(&sirin.config, InPacket::DeployApo);
+        radio_packet.to_song(&mut buf);
+        radio.transmit(&buf[0..radio_packet.song_size()]).await;
         info!("Transmitting!");
-        info!("Free capacity of InChannel: {}", IN_CHANNEL.free_capacity());
         sirin.led.set_high();
         Timer::after_millis(500).await;
         sirin.led.set_low();

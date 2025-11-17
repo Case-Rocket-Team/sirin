@@ -24,13 +24,14 @@ pub static BROADCAST_CHANNEL: PubSubChannel<OutPacket, 3> = EmbassyPubSubChannel
 pub static OUT_CHANNEL: PubSubChannel<IoPacket<OutPacket>, 3> = EmbassyPubSubChannel::new();
 pub static IN_CHANNEL: Channel<CriticalSectionRawMutex, IoPacket<InPacket>, 32> = Channel::new();
 pub static INTERNAL_CHANNEL: Channel<CriticalSectionRawMutex, IoPacket<InPacket>, 32> = Channel::new();
-pub static INTERNAL_SENDING_ENABLED: AtomicBool = AtomicBool::new(false);
+
+pub static INTERNAL_RECEIVING_ENABLED: AtomicBool = AtomicBool::new(false);
 
 static USB_BROADCASTING_ENABLED: AtomicBool = AtomicBool::new(false);
 pub static FLASH_LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
 
-pub fn set_inpacket_sending_enabled(bool: bool){
-    INTERNAL_SENDING_ENABLED.store(bool, Ordering::Relaxed);
+pub fn set_inpacket_receiving_enabled(bool: bool){
+    INTERNAL_RECEIVING_ENABLED.store(bool, Ordering::Relaxed);
 }
 
 pub fn broadcast_log(time: Milliseconds<u32>, log: Log) {
@@ -160,44 +161,28 @@ async fn radio_task_impl(
             }
             None => {}
         }
-
-        //Send InPackets
-        if INTERNAL_SENDING_ENABLED.load(Ordering::Relaxed){
-            let packet = IN_CHANNEL.try_receive();
-            match packet{
-                Ok(packet) => {
-                    //info!("IoPacket found!");
-                    let packet: IoPacket<InPacket> = packet;
-                    if packet.channel == IoChannel::ToLoRa{
-                        //info!("InPacket wants to be sent via radio!");
-                        let radio_packet = RadioPacket::new(config, packet.packet);
-                        radio_packet.to_song(&mut buf3);
-                        radio.transmit(&buf3[0..radio_packet.song_size()]).await;
-                    //info!("InPacket is sent over radio!");
-                    }
-                },
-                Err(..) => {}
-            }
-        }
         
         //Receive InPackets
-        match radio.recieve(&mut buf2).await{
-            Ok(len) => {
-                //info!("Radio data received!");
-                let len = len as usize;
-                let radio_packet = RadioPacket::from_song(&buf2[..len]);
-                if let Ok(packet) = radio_packet{
-                    //info!("InPacket is received from radio!");
-                    let inpacket: InPacket = packet.packet;
-                    internal_sender.send(IoPacket::new(IoChannel::FromLoRa, inpacket)).await;
-                    //info!("InPacket is sent to proper channel!");
-                    //info!("Free capacity of InChannel: {}", INTERNAL_CHANNEL.free_capacity());
+        if INTERNAL_RECEIVING_ENABLED.load(Ordering::Relaxed) {
+            match radio.recieve(&mut buf2).await{
+                Ok(len) => {
+                    info!("Radio data received!");
+                    let len = len as usize;
+                    let radio_packet = RadioPacket::from_song(&buf2[..len]);
+                    if let Ok(packet) = radio_packet{
+                        info!("InPacket is received from radio!");
+                        let inpacket: InPacket = packet.packet;
+                        internal_sender.send(IoPacket::new(IoChannel::FromLoRa, inpacket)).await;
+                        info!("InPacket is sent to proper channel!");
+                        info!("Free capacity of InternalChannel: {}", INTERNAL_CHANNEL.free_capacity());
+                    }
+                },
+                Err(..) => {
+                    //info!("No radio packet received");
                 }
-            },
-            Err(..) => {
-                //info!("No radio packet received");
-            }
-        };
+            };
+        }
+        
     }
 }
 
@@ -229,7 +214,7 @@ async fn usb_output_task_impl(
 
     set_usb_broadcasting_enabled(true);
     loop {
-        //usb.wait_enabled().await;
+        usb.wait_enabled().await;
 
         let packet = next_out_packet(
             &mut broadcast_sub,
@@ -269,7 +254,7 @@ async fn usb_input_task_impl(
 ) -> Result<(), SirinError> {
     let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
     set_usb_broadcasting_enabled(true);
-    //usb.wait_enabled().await;
+    usb.wait_enabled().await;
     usb.read(&mut buf).await?;
     let packet = InPacket::from_song(&buf)?;
     //info!("Packet received and forwarded through USB: {:?}", Debug2Format(&packet));
