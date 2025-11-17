@@ -25,8 +25,7 @@ pub static OUT_CHANNEL: PubSubChannel<IoPacket<OutPacket>, 3> = EmbassyPubSubCha
 pub static IN_CHANNEL: Channel<CriticalSectionRawMutex, IoPacket<InPacket>, 32> = Channel::new();
 pub static INTERNAL_CHANNEL: Channel<CriticalSectionRawMutex, IoPacket<InPacket>, 32> = Channel::new();
 
-pub static INTERNAL_RECEIVING_ENABLED: AtomicBool = AtomicBool::new(false);
-
+pub static INTERNAL_RECEIVING_ENABLED: AtomicBool = AtomicBool::new(true);
 static USB_BROADCASTING_ENABLED: AtomicBool = AtomicBool::new(false);
 pub static FLASH_LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
 
@@ -138,7 +137,6 @@ async fn radio_task_impl(
 
     let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
     let mut buf2 = [0u8; 255];
-    let mut buf3 = [0u8; 255];
 
     loop {
         //Send OutPackets
@@ -212,7 +210,6 @@ async fn usb_output_task_impl(
 
     let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
 
-    set_usb_broadcasting_enabled(true);
     loop {
         usb.wait_enabled().await;
 
@@ -253,7 +250,6 @@ async fn usb_input_task_impl(
     usb: &mut ReadEp
 ) -> Result<(), SirinError> {
     let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
-    set_usb_broadcasting_enabled(true);
     usb.wait_enabled().await;
     usb.read(&mut buf).await?;
     let packet = InPacket::from_song(&buf)?;
@@ -289,7 +285,9 @@ pub async fn flash_task_impl(flash_mutex: &Mutex<&mut Flash>) -> Result<(), Siri
 
         if FLASH_LOGGING_ENABLED.load(Ordering::Relaxed) {
             let mut flash = flash_mutex.lock().await;
+            info!("Flash locked by Flash Task");
             flash.log(&packet).await.unwrap();
+            info!("Flash unlocked by Flash Task");
             drop(flash);
         }       
     }
