@@ -23,19 +23,13 @@ pub static BROADCAST_CHANNEL: PubSubChannel<OutPacket, 3> = EmbassyPubSubChannel
 // High priority I/O channels
 pub static OUT_CHANNEL: PubSubChannel<IoPacket<OutPacket>, 3> = EmbassyPubSubChannel::new();
 pub static IN_CHANNEL: Channel<CriticalSectionRawMutex, IoPacket<InPacket>, 32> = Channel::new();
-pub static INTERNAL_CHANNEL: Channel<CriticalSectionRawMutex, IoPacket<InPacket>, 32> = Channel::new();
 
-pub static INTERNAL_RECEIVING_ENABLED: AtomicBool = AtomicBool::new(true);
 static USB_BROADCASTING_ENABLED: AtomicBool = AtomicBool::new(false);
 pub static FLASH_LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
 
 
 pub fn set_flash_logging_enabled(bool: bool) {
     FLASH_LOGGING_ENABLED.store(bool, Ordering::Relaxed);
-}
-
-pub fn set_inpacket_receiving_enabled(bool: bool){
-    INTERNAL_RECEIVING_ENABLED.store(bool, Ordering::Relaxed);
 }
 
 pub fn broadcast_log(time: Milliseconds<u32>, log: Log) {
@@ -53,18 +47,18 @@ pub fn send_packet(packet: IoPacket<OutPacket>) {
 }
 
 pub async fn receive_packet() -> IoPacket<InPacket> {
-    INTERNAL_CHANNEL.receive().await
+    IN_CHANNEL.receive().await
 }
 
 //Receives only InPackets coming from LoRa
 pub fn try_receive_packet() -> Result<IoPacket<InPacket>, TryReceiveError> {
-    let packet = INTERNAL_CHANNEL.try_receive();
+    let packet = IN_CHANNEL.try_receive();
     //info!("Packet try_received: {:?}", Debug2Format(&packet));
     packet
 }
 
 fn received_packet(mut packet: IoPacket<InPacket>) {
-    while let Err(err) = INTERNAL_CHANNEL.try_send(packet) {
+    while let Err(err) = IN_CHANNEL.try_send(packet) {
         // drop the last packet in the queue
         match try_receive_packet() {
             Ok(p) => drop(p),
@@ -136,10 +130,8 @@ async fn radio_task_impl(
     radio.set_mode(rfm9::Mode::Sleep).await?;
     let mut broadcast_sub = BROADCAST_CHANNEL.subscriber()?;
     let mut out_sub = OUT_CHANNEL.subscriber()?;
-    let internal_sender = INTERNAL_CHANNEL.sender();
 
     let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
-    let mut buf2 = [0u8; 255];
 
     loop {
         //Send OutPackets
@@ -155,7 +147,6 @@ async fn radio_task_impl(
 
         radio.transmit(&buf[0..radio_packet.song_size()]).await?;
         radio.set_mode(rfm9::Mode::Sleep).await?;
-        //info!("Outpacket sent over radio!");
         
     }
 }
@@ -227,13 +218,9 @@ async fn usb_input_task_impl(
 ) -> Result<(), SirinError> {
     let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
     usb.wait_enabled().await;
-    //info!("USB active!");
     usb.read(&mut buf).await?;
     let packet = InPacket::from_song(&buf)?;
-    //info!("Packet received and forwarded through USB: {:?}", Debug2Format(&packet));
     received_packet(IoPacket::new(IoChannel::Usb, packet));
-    //INTERNAL_CHANNEL.send(IoPacket::new(IoChannel::Usb, packet));
-    //info!("Free space in Internal Channel: {}", INTERNAL_CHANNEL.capacity());
     Ok(())
 }
 
@@ -250,26 +237,20 @@ pub async fn flash_io_task(flash: &'static Mutex<&'static mut Flash>){
 }
 
 pub async fn flash_task_impl(flash_mutex: &Mutex<&mut Flash>) -> Result<(), SirinError> {
-    //info!("Flash task started");
     let mut broadcast_sub = BROADCAST_CHANNEL.subscriber()?;
     let mut out_sub = OUT_CHANNEL.subscriber()?;
 
     loop {
-        //info!("Packet loop started...");
         let packet = next_out_packet(
             &mut broadcast_sub,
             &mut out_sub,
             IoChannel::Flash
         ).await;
-        //info!("Packet loop finished");
 
         if FLASH_LOGGING_ENABLED.load(Ordering::Relaxed) {
-            //info!("try to lock flash...");
             let mut flash = flash_mutex.lock().await;
-            //info!("Flash locked by Flash Task");
             flash.log(&packet).await.unwrap();
             drop(flash);
-            //info!("Flash unlocked by Flash Task");
         }       
     }
 }
