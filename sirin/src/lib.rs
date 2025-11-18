@@ -222,6 +222,9 @@ impl Sirin {
             
             let mut gps_config = usart::Config::default();
             gps_config.baudrate = 9600;
+            gps_config.data_bits = usart::DataBits::DataBits8;
+            gps_config.stop_bits = usart::StopBits::STOP1;
+            gps_config.parity = usart::Parity::ParityNone;
 
             let mut gps_uart = Uart::new(
                 p.USART3,
@@ -240,18 +243,18 @@ impl Sirin {
                 tx_ready: 0,
                 mode: UartMode::new(DataBits::Eight, Parity::None, StopBits::One),
                 baud_rate: 9600,
-                in_proto_mask: InProtoMask::all(),
+                in_proto_mask: InProtoMask::UBLOX,
                 out_proto_mask: OutProtoMask::UBLOX,
                 flags: 0,
                 reserved5: 0,
-            }.into_packet_bytes();
+            };
 
             let mut nav_mode_config = CfgNav5Builder::default();
             nav_mode_config.dyn_model = ublox::cfg_nav5::NavDynamicModel::Pedestrian;
             nav_mode_config.fix_mode = ublox::cfg_nav5::NavFixMode::Auto2D3D;
             let mut inf_config = CfgInfBuilder::default();
 
-            gps_uart.write(&port_config_packet).await.unwrap();
+            gps_uart.write(&port_config_packet.into_packet_bytes()).await.unwrap();
             gps_uart.write(&nav_mode_config.into_packet_bytes()).await.unwrap();
             gps_uart.write(&inf_config.into_packet_bytes()).await.unwrap();
 
@@ -259,7 +262,7 @@ impl Sirin {
 
             ptr!(sirin.gps_rx).write(rx.into_ring_buffered(&mut GPS_BUF));
 
-            //ptr!(sirin.gps_tx).write(tx.into());
+            ptr!(sirin.gps_tx).write(tx.into());
 
             //ptr!(sirin.gps_tx).write(gps_uart.split().0);            
 

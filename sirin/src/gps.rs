@@ -4,7 +4,7 @@ use crate::{
     usb,
 };
 use defmt::{error, info, println, warn, Debug2Format};
-use embassy_executor::task;
+use embassy_executor::{raw, task};
 use embassy_stm32::{
     mode::Async,
     pac::Interrupt::PVD_AVD,
@@ -12,7 +12,7 @@ use embassy_stm32::{
     usart::{self, RingBufferedUartRx, Uart, UartTx},
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
-use embassy_time::Instant;
+use embassy_time::{Instant, Timer};
 use sirin_shared::{
     packet::{self, GpsFix, GpsFixType, Log, OutPacket, Vec3},
     song::FromSong,
@@ -40,7 +40,7 @@ pub async fn gps_task(
 ) {
     let mut fix = GpsFix::default();
     //Create packet parser
-    let mut packet_parser: Parser<FixedBuffer<512>, Proto31> = ublox::Parser::new_fixed();
+    let mut packet_parser: Parser<FixedBuffer<64>, Proto31> = ublox::Parser::new_fixed();
 
     //Task loop
     loop {
@@ -70,14 +70,20 @@ pub async fn read(
 pub async fn gps_impl(
     gps_rx: &mut RingBufferedUartRx<'static>,
     fix: &mut GpsFix,
-    packet_parser: &mut Parser<FixedBuffer<512>, Proto31>,
+    packet_parser: &mut Parser<FixedBuffer<64>, Proto31>,
     gps_tx: &mut UartTx<'static, Async>,
 ) -> Result<(), SirinError> {
-    let mut bytes = [0u8; 1];
-    gps_rx.read(&mut bytes).await;
+    let mut bytes = [0u8; 64];
+    info!("Trying to read!");
+    let result = gps_rx.read(&mut bytes).await;
+    let len = match result{
+        Ok(n) => n,
+        Err(..) => 64
+    };
     info!("Read Byte: {:?}", bytes);
-    let mut iterator = packet_parser.consume_ubx(&mut bytes);
+    let mut iterator = packet_parser.consume_ubx(&mut bytes[0..len]);
     while let Some(packet) = iterator.next() {
+        info!("New packet...");
         match packet {
             Ok(UbxPacket::Proto31(packet)) => {
                 match packet {
@@ -149,12 +155,14 @@ pub async fn gps_impl(
                     }
                     PacketRef::AckAck(raw_packet) => {
                         info!("Got message: AckAck");
+                        info!("{}", raw_packet.as_bytes());
+                        info!("{}", raw_packet.payload_len());
                     }
                     PacketRef::AckNak(raw_packet) => {
                         info!("Got message: AckNak");
                     }
                     _ => {
-                        info!("packet_ref");
+                        info!("Other packet not listed");
                     }
                 }
                 GPS_FIX.signal(fix.clone());
