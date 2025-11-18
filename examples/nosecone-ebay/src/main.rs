@@ -14,7 +14,7 @@ use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task}, io::{FLASH_LOGGING_ENABLED, IN_CHANNEL, INTERNAL_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_inpacket_receiving_enabled, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
+use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task}, io::{FLASH_LOGGING_ENABLED, IN_CHANNEL, INTERNAL_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_flash_logging_enabled, set_inpacket_receiving_enabled, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, Publisher, Subscriber}};
 use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
@@ -53,19 +53,19 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 }
 
 async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
-    let accel_threshold: Gs<f64> = (10.0).with_units(); //In Gs
-    let altitude_threshold = 33.0; //In meters
+    let accel_threshold: Gs<f64> = (4.0).with_units(); //In Gs
+    let altitude_threshold = 2.0; //In meters
     let main_deployment_altitude= 1500.0; //In meters
-    let flight_duration = 100; //In seconds
-    let apogee_error = 7.0; //In meters
+    let flight_duration = 10; //In seconds
+    let apogee_error = 4.0; //In meters
 
     let mut apo_deployed = false;
     let mut main_deployed = false;
     
 
     let mut state = SirinState::default();
+    FLASH_LOGGING_ENABLED.store(false, Ordering::Relaxed);
 
-    let mut initial_altitude = approx_pressure_altitude(sirin.baro.read().await?.pressure.convert());
     let mut altitude_array: [f64; 100] = [0.0; 100];
     for i in 0..100 {
         let altitude = approx_pressure_altitude(sirin.baro.read().await?.pressure.convert());
@@ -74,7 +74,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     }
     
     altitude_array.sort_unstable_by(|a, b | a.partial_cmp(b).unwrap());
-    initial_altitude = altitude_array[50].with_units();
+    let initial_altitude = altitude_array[50].with_units();
    
 
     info!("Initial altitude: {}", initial_altitude.value);
@@ -101,6 +101,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut desired_mode = None;
 
     loop {
+        let mut buf = [0u8; 256];
         //info!("Handle input packets");
         while let Ok(io_packet) = try_receive_packet() {
             info!("Received packet: {:?}", Debug2Format(&io_packet));
@@ -125,7 +126,13 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     let ms_since_epoch = reference.ms_since_epoch - Instant::now().as_millis();
 
                     set_duration_since_epoch(Duration::from_millis(ms_since_epoch));
-                    flash.lock().await.set_absolute_time_reference(AbsoluteTimeReference { ms_since_epoch }).await?;
+                    //set_flash_logging_enabled(true);
+                    info!("Awaiting flash lock...");
+                    let mut flash = flash.lock().await;
+                    info!("Flash locked in main");
+                    flash.set_absolute_time_reference(AbsoluteTimeReference { ms_since_epoch }).await?;
+                    info!("Flash task complete");
+                    //set_flash_logging_enabled(false);
 
                     // skip OK packet
                     continue;
@@ -142,7 +149,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 InPacket::SetConfig(ref config) => {
                     //info!("Updating the config to {:?}", Debug2Format(&config));
 
-                    flash.lock().await.save_config(&config).await.unwrap();
+                    //flash.lock().await.save_config(&config).await.unwrap();
                     Sirin::reboot();
                 }
                 InPacket::QueryMode => {
@@ -189,10 +196,11 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 }
                 InPacket::EraseFlash(..) => {
                     let mut flash = flash.lock().await;
-                    //info!("Starting chip erase...");
+                    info!("Starting chip erase...");
                     flash.w25q.chip_erase().await?;
+                    info!("Waiting until flash is ready...");
                     flash.w25q.until_ready().await?;
-                    //info!("Finished chip erase.");
+                    info!("Finished chip erase.");
                     send_packet(io_packet.reply(OutPacket::Ok));
 
                     Timer::after_millis(500).await;
@@ -329,13 +337,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         
         if i % 10 == 0 {
             OUT_CHANNEL.publish_immediate(IoPacket::new(
-                IoChannel::Flash, OutPacket::LogEntry(LogEntry::new(
-                    sirin.data.time,
-                    Log::Data(sirin.data.clone())
-
-                ))
-            ));
-            OUT_CHANNEL.publish_immediate(IoPacket::new(
                 IoChannel::ToLoRa, OutPacket::LogEntry(LogEntry::new(
                     sirin.data.time,
                     Log::Data(sirin.data.clone())
@@ -347,7 +348,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
 
         
-        //i = i.wrapping_add(1);
+        i += 1;
 
     }
 }

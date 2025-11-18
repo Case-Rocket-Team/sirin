@@ -19,10 +19,10 @@ members = [
     "examples/h3lis-test",
     "examples/nosecone-ebay",
     "examples/dongle",
-    "examples/radiotest",
-    "examples/ejection-test",
+    "examples/radio-test-send",
     "examples/gps-test",
-    "examples/radiotest2"
+    "examples/radio-test-receive",
+    "examples/any-test"
 ]
 resolver = "2"
 

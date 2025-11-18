@@ -1,7 +1,7 @@
 # This file was automatically generated.
 [package]
 edition = "2021"
-name = "radiotest"
+name = "radio-test-receive"
 version = "0.1.0"
 
 [package.metadata.release]
@@ -48,7 +48,7 @@ sirin-shared = { version = "0.1.0", path = "../../sirin-shared" }
 #panic-halt = "0.2.0"
 
 [[bin]]
-name = "radiotest"
+name = "radio-test-receive"
 test = false
 bench = false
 

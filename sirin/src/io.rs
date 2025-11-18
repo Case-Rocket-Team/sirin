@@ -29,6 +29,11 @@ pub static INTERNAL_RECEIVING_ENABLED: AtomicBool = AtomicBool::new(true);
 static USB_BROADCASTING_ENABLED: AtomicBool = AtomicBool::new(false);
 pub static FLASH_LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
 
+
+pub fn set_flash_logging_enabled(bool: bool) {
+    FLASH_LOGGING_ENABLED.store(bool, Ordering::Relaxed);
+}
+
 pub fn set_inpacket_receiving_enabled(bool: bool){
     INTERNAL_RECEIVING_ENABLED.store(bool, Ordering::Relaxed);
 }
@@ -127,12 +132,10 @@ async fn radio_task_impl(
     config: &'static SirinConfig,
     radio: &mut Radio,
 ) -> Result<(), SirinError> {
-    info!("Radio task is running!");
+    //info!("Radio task is running!");
     radio.set_mode(rfm9::Mode::Sleep).await?;
-    //let mut broadcast_sub = BROADCAST_CHANNEL.subscriber()?;
+    let mut broadcast_sub = BROADCAST_CHANNEL.subscriber()?;
     let mut out_sub = OUT_CHANNEL.subscriber()?;
-    let mut in_sub = IN_CHANNEL.sender();
-    let in_receiver = IN_CHANNEL.receiver();
     let internal_sender = INTERNAL_CHANNEL.sender();
 
     let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
@@ -140,46 +143,19 @@ async fn radio_task_impl(
 
     loop {
         //Send OutPackets
-        let packet = out_sub.try_next_message_pure();
-        match packet {
-            Some(io_packet) => {
-                //info!("OutPacket found!");
-                if io_packet.channel == IoChannel::ToLoRa {
-                    //info!("OutPacket wants to be sent via radio!");
-                    let packet = io_packet.packet;
+        let packet = next_out_packet(
+            &mut broadcast_sub,
+            &mut out_sub,
+            IoChannel::ToLoRa
+        ).await;
 
-                    let radio_packet = RadioPacket::new(config, packet);
+        let radio_packet = RadioPacket::new(config, packet);
 
-                    radio_packet.to_song(&mut buf)?;
+        radio_packet.to_song(&mut buf)?;
 
-                    radio.transmit(&buf[0..radio_packet.song_size()]).await?;
-                    radio.set_mode(rfm9::Mode::Sleep).await?;
-                    //info!("Outpacket sent over radio!");
-                }
-            }
-            None => {}
-        }
-        
-        //Receive InPackets
-        if INTERNAL_RECEIVING_ENABLED.load(Ordering::Relaxed) {
-            match radio.recieve(&mut buf2).await{
-                Ok(len) => {
-                    info!("Radio data received!");
-                    let len = len as usize;
-                    let radio_packet = RadioPacket::from_song(&buf2[..len]);
-                    if let Ok(packet) = radio_packet{
-                        info!("InPacket is received from radio!");
-                        let inpacket: InPacket = packet.packet;
-                        internal_sender.send(IoPacket::new(IoChannel::FromLoRa, inpacket)).await;
-                        info!("InPacket is sent to proper channel!");
-                        info!("Free capacity of InternalChannel: {}", INTERNAL_CHANNEL.free_capacity());
-                    }
-                },
-                Err(..) => {
-                    //info!("No radio packet received");
-                }
-            };
-        }
+        radio.transmit(&buf[0..radio_packet.song_size()]).await?;
+        radio.set_mode(rfm9::Mode::Sleep).await?;
+        //info!("Outpacket sent over radio!");
         
     }
 }
@@ -251,6 +227,7 @@ async fn usb_input_task_impl(
 ) -> Result<(), SirinError> {
     let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
     usb.wait_enabled().await;
+    //info!("USB active!");
     usb.read(&mut buf).await?;
     let packet = InPacket::from_song(&buf)?;
     //info!("Packet received and forwarded through USB: {:?}", Debug2Format(&packet));
@@ -273,22 +250,26 @@ pub async fn flash_io_task(flash: &'static Mutex<&'static mut Flash>){
 }
 
 pub async fn flash_task_impl(flash_mutex: &Mutex<&mut Flash>) -> Result<(), SirinError> {
+    //info!("Flash task started");
     let mut broadcast_sub = BROADCAST_CHANNEL.subscriber()?;
     let mut out_sub = OUT_CHANNEL.subscriber()?;
 
     loop {
+        //info!("Packet loop started...");
         let packet = next_out_packet(
             &mut broadcast_sub,
             &mut out_sub,
             IoChannel::Flash
         ).await;
+        //info!("Packet loop finished");
 
         if FLASH_LOGGING_ENABLED.load(Ordering::Relaxed) {
+            //info!("try to lock flash...");
             let mut flash = flash_mutex.lock().await;
-            info!("Flash locked by Flash Task");
+            //info!("Flash locked by Flash Task");
             flash.log(&packet).await.unwrap();
-            info!("Flash unlocked by Flash Task");
             drop(flash);
+            //info!("Flash unlocked by Flash Task");
         }       
     }
 }
