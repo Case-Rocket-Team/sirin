@@ -74,14 +74,12 @@ pub async fn gps_impl(
     gps_tx: &mut UartTx<'static, Async>,
 ) -> Result<(), SirinError> {
     let mut bytes = [0u8; 64];
+
     info!("Trying to read!");
-    let result = gps_rx.read(&mut bytes).await;
-    let len = match result{
-        Ok(n) => n,
-        Err(..) => 64
-    };
-    info!("Read Byte: {:?}", bytes);
-    let mut iterator = packet_parser.consume_ubx(&mut bytes[0..len]);
+    read(gps_rx, &mut bytes).await;
+    info!("Read Bytes: {:?}", bytes);
+
+    let mut iterator = packet_parser.consume_ubx(&mut bytes);
     while let Some(packet) = iterator.next() {
         info!("New packet...");
         match packet {
