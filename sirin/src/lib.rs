@@ -250,7 +250,7 @@ impl Sirin {
             };
 
             let mut nav_mode_config = CfgNav5Builder::default();
-            nav_mode_config.dyn_model = ublox::cfg_nav5::NavDynamicModel::Pedestrian;
+            nav_mode_config.dyn_model = ublox::cfg_nav5::NavDynamicModel::AirborneWithLess4gAcceleration;
             nav_mode_config.fix_mode = ublox::cfg_nav5::NavFixMode::Auto2D3D;
             let msg_config = CfgMsgSinglePortBuilder{
                 msg_class: 1,

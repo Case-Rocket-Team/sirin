@@ -95,36 +95,43 @@ pub async fn gps_impl(
 
                         match nav_pvt_packet.fix_type() {
                             GnssFixType::TimeOnlyFix => {
+                                info!("GPS Fix Type: TimeOnlyFix");
                                 fix.fix_type = GpsFixType::TimeOnlyFix;
                                 has_time = true;
                                 has_posvel = false;
                             }
                             GnssFixType::GPSPlusDeadReckoning => {
+                                info!("GPS Fix Type: GPSPlusDeadReckoning");
                                 fix.fix_type = GpsFixType::FixDifferential;
                                 has_time = true;
                                 has_posvel = true;
                             }
                             GnssFixType::NoFix => {
+                                info!("GPS Fix Type: NoFix");
                                 fix.fix_type = GpsFixType::NoFix;
                                 has_time = false;
                                 has_posvel = false;
                             }
                             GnssFixType::DeadReckoningOnly => {
+                                info!("GPS Fix Type: DeadReckoningOnly");
                                 fix.fix_type = GpsFixType::FixPrediction;
                                 has_time = true;
                                 has_posvel = false;
                             }
                             GnssFixType::Fix2D => {
+                                info!("GPS Fix Type: Fix2D");
                                 fix.fix_type = GpsFixType::Fix2d;
                                 has_time = true;
                                 has_posvel = true;
                             }
                             GnssFixType::Fix3D => {
+                                info!("GPS Fix Type: Fix3D");
                                 fix.fix_type = GpsFixType::Fix3d;
                                 has_time = true;
                                 has_posvel = true;
                             }
                             _ => {
+                                info!("GPS Fix Type: Unknown");
                                 fix.fix_type = GpsFixType::NoFix;
                                 has_time = false;
                                 has_posvel = false;
@@ -141,7 +148,11 @@ pub async fn gps_impl(
                                 x: nav_pvt_packet.longitude().with_units(),
                                 y: nav_pvt_packet.latitude().with_units(),
                                 z: nav_pvt_packet.height_msl().with_units(),
-                            }
+                            };
+                            info!("GPS Position: lon {:?}, lat {:?}, alt {:?}",
+                                fix.pos.x.value,
+                                fix.pos.y.value,
+                                fix.pos.z.value);
                         }
 
                         if has_time {}
