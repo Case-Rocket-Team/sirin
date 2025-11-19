@@ -40,7 +40,7 @@ pub async fn gps_task(
 ) {
     let mut fix = GpsFix::default();
     //Create packet parser
-    let mut packet_parser: Parser<FixedBuffer<64>, Proto31> = ublox::Parser::new_fixed();
+    let mut packet_parser: Parser<FixedBuffer<512>, Proto31> = ublox::Parser::new_fixed();
 
     //Task loop
     loop {
@@ -70,13 +70,13 @@ pub async fn read(
 pub async fn gps_impl(
     gps_rx: &mut RingBufferedUartRx<'static>,
     fix: &mut GpsFix,
-    packet_parser: &mut Parser<FixedBuffer<64>, Proto31>,
+    packet_parser: &mut Parser<FixedBuffer<512>, Proto31>,
     gps_tx: &mut UartTx<'static, Async>,
 ) -> Result<(), SirinError> {
-    let mut bytes = [0u8; 64];
+    let mut bytes = [0u8; 512];
 
     info!("Trying to read!");
-    read(gps_rx, &mut bytes).await;
+    read(gps_rx, &mut bytes).await?;
     info!("Read Bytes: {:?}", bytes);
 
     let mut iterator = packet_parser.consume_ubx(&mut bytes);
