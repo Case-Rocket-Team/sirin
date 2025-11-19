@@ -40,7 +40,7 @@ pub async fn gps_task(
 ) {
     let mut fix = GpsFix::default();
     //Create packet parser
-    let mut packet_parser: Parser<FixedBuffer<64>, Proto31> = ublox::Parser::new_fixed();
+    let mut packet_parser: Parser<FixedBuffer<512>, Proto31> = ublox::Parser::new_fixed();
 
     //Task loop
     loop {
@@ -70,18 +70,16 @@ pub async fn read(
 pub async fn gps_impl(
     gps_rx: &mut RingBufferedUartRx<'static>,
     fix: &mut GpsFix,
-    packet_parser: &mut Parser<FixedBuffer<64>, Proto31>,
+    packet_parser: &mut Parser<FixedBuffer<512>, Proto31>,
     gps_tx: &mut UartTx<'static, Async>,
 ) -> Result<(), SirinError> {
-    let mut bytes = [0u8; 64];
+    let mut bytes = [0u8; 512];
+
     info!("Trying to read!");
-    let result = gps_rx.read(&mut bytes).await;
-    let len = match result{
-        Ok(n) => n,
-        Err(..) => 64
-    };
-    info!("Read Byte: {:?}", bytes);
-    let mut iterator = packet_parser.consume_ubx(&mut bytes[0..len]);
+    read(gps_rx, &mut bytes).await?;
+    info!("Read Bytes: {:?}", bytes);
+
+    let mut iterator = packet_parser.consume_ubx(&mut bytes);
     while let Some(packet) = iterator.next() {
         info!("New packet...");
         match packet {
@@ -97,36 +95,43 @@ pub async fn gps_impl(
 
                         match nav_pvt_packet.fix_type() {
                             GnssFixType::TimeOnlyFix => {
+                                info!("GPS Fix Type: TimeOnlyFix");
                                 fix.fix_type = GpsFixType::TimeOnlyFix;
                                 has_time = true;
                                 has_posvel = false;
                             }
                             GnssFixType::GPSPlusDeadReckoning => {
+                                info!("GPS Fix Type: GPSPlusDeadReckoning");
                                 fix.fix_type = GpsFixType::FixDifferential;
                                 has_time = true;
                                 has_posvel = true;
                             }
                             GnssFixType::NoFix => {
+                                info!("GPS Fix Type: NoFix");
                                 fix.fix_type = GpsFixType::NoFix;
                                 has_time = false;
                                 has_posvel = false;
                             }
                             GnssFixType::DeadReckoningOnly => {
+                                info!("GPS Fix Type: DeadReckoningOnly");
                                 fix.fix_type = GpsFixType::FixPrediction;
                                 has_time = true;
                                 has_posvel = false;
                             }
                             GnssFixType::Fix2D => {
+                                info!("GPS Fix Type: Fix2D");
                                 fix.fix_type = GpsFixType::Fix2d;
                                 has_time = true;
                                 has_posvel = true;
                             }
                             GnssFixType::Fix3D => {
+                                info!("GPS Fix Type: Fix3D");
                                 fix.fix_type = GpsFixType::Fix3d;
                                 has_time = true;
                                 has_posvel = true;
                             }
                             _ => {
+                                info!("GPS Fix Type: Unknown");
                                 fix.fix_type = GpsFixType::NoFix;
                                 has_time = false;
                                 has_posvel = false;
@@ -143,7 +148,11 @@ pub async fn gps_impl(
                                 x: nav_pvt_packet.longitude().with_units(),
                                 y: nav_pvt_packet.latitude().with_units(),
                                 z: nav_pvt_packet.height_msl().with_units(),
-                            }
+                            };
+                            info!("GPS Position: lon {:?}, lat {:?}, alt {:?}",
+                                fix.pos.x.value,
+                                fix.pos.y.value,
+                                fix.pos.z.value);
                         }
 
                         if has_time {}

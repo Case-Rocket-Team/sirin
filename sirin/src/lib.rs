@@ -7,7 +7,7 @@ use bmp3::Bmp3;
 use defmt::{info, Display2Format};
 use embassy_executor::{Executor, Spawner};
 use embassy_futures::join::{join, join3, join5, join_array};
-use embassy_stm32::{ Config, Peripherals, bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, mode::Async, pac, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, usart::{self, UartTx, BufferedUartTx, RingBufferedUartRx, Uart} };
+use embassy_stm32::{ Config, Peripherals, bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, mode::Async, pac::{self, Interrupt::TIM16}, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, usart::{self, BufferedUartTx, RingBufferedUartRx, Uart, UartTx} };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
 use embassy_time::Timer;
 use flash::Flash;
@@ -26,7 +26,7 @@ use h3lis::H3lis;
 use spi::{Spi, SpiConfig, SpiConfigStruct, SpiDev, SpiInstance, WithSpiHandle};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State as UsbState};
 use embassy_usb::Builder as UsbBuilder;
-use ublox::{FixedBuffer, cfg_inf::{CfgInf, CfgInfBuilder, CfgInfMask}, cfg_nav5::CfgNav5Builder, cfg_prt::{CfgPrtUartBuilder, DataBits, InProtoMask, OutProtoMask, Parity, StopBits, UartMode, UartPortId}, proto31::Proto31};
+use ublox::{FixedBuffer, cfg_inf::{CfgInf, CfgInfBuilder, CfgInfMask}, cfg_msg::CfgMsgSinglePortBuilder, cfg_nav5::CfgNav5Builder, cfg_prt::{CfgPrtUartBuilder, DataBits, InProtoMask, OutProtoMask, Parity, StopBits, UartMode, UartPortId}, proto31::Proto31};
 use ublox::{Parser,UbxPacket,proto31::*,GnssFixType,Position,Velocity};
 
 pub use uunit;
@@ -250,13 +250,19 @@ impl Sirin {
             };
 
             let mut nav_mode_config = CfgNav5Builder::default();
-            nav_mode_config.dyn_model = ublox::cfg_nav5::NavDynamicModel::Pedestrian;
+            nav_mode_config.dyn_model = ublox::cfg_nav5::NavDynamicModel::AirborneWithLess4gAcceleration;
             nav_mode_config.fix_mode = ublox::cfg_nav5::NavFixMode::Auto2D3D;
-            let mut inf_config = CfgInfBuilder::default();
+            let msg_config = CfgMsgSinglePortBuilder{
+                msg_class: 1,
+                msg_id: 7,
+                rate: 1
+            };
 
             gps_uart.write(&port_config_packet.into_packet_bytes()).await.unwrap();
+            Timer::after_millis(100).await;
             gps_uart.write(&nav_mode_config.into_packet_bytes()).await.unwrap();
-            gps_uart.write(&inf_config.into_packet_bytes()).await.unwrap();
+            Timer::after_millis(100).await;
+            gps_uart.write(&msg_config.into_packet_bytes()).await.unwrap();
 
             let (mut tx,rx) = gps_uart.split();
 
