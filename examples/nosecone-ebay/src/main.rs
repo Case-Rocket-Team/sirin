@@ -53,11 +53,24 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 }
 
 async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
-    let accel_threshold: Gs<f64> = (4.0).with_units(); //In Gs
-    let altitude_threshold = 2.0; //In meters
+
+    /*
+
+    FOR IREC ROCKET - CHECK TO ENSURE THESE VALUES ARE CODED:
+    DO NOT PUSH CODE WITH THESE VALUES SIGNIFICANTLY CHANGED
+    accel_threshold = 100G^2
+    altitude_threshold = 20m
+    main_deployment_altitude = 1500m
+    flight_duration = 600s
+    apogee_error = 5m
+
+     */
+
+    let accel_threshold: Gs<f64> = (100.0).with_units(); //In Gs squared
+    let altitude_threshold = 20.0; //In meters
     let main_deployment_altitude= 1500.0; //In meters
-    let flight_duration = 10; //In seconds
-    let apogee_error = 4.0; //In meters
+    let flight_duration = 600; //In seconds
+    let apogee_error = 5.0; //In meters
 
     let mut apo_deployed = false;
     let mut main_deployed = false;
