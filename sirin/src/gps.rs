@@ -17,7 +17,7 @@ use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal}
 use embassy_time::{Instant, Timer};
 use serde::de;
 use sirin_shared::{
-    packet::{self, GpsFix, GpsFixType, Log, OutPacket, Vec3},
+    packet::{self, GpsFix, GpsFixType, GpsDop, Log, OutPacket, Vec3},
     song::FromSong,
 };
 use ublox::{
@@ -35,6 +35,7 @@ use ublox::{proto31::*, GnssFixType, Parser, Position, UbxPacket, Velocity};
 use uunit::{Meters, MetersPerSecond, WithUnits};
 
 pub static GPS_FIX: Signal<CriticalSectionRawMutex, GpsFix> = Signal::new();
+pub static GPS_DOP: Signal<CriticalSectionRawMutex, GpsDop> = Signal::new();
 
 #[task]
 pub async fn gps_task(
@@ -42,6 +43,7 @@ pub async fn gps_task(
     gps_tx: &'static mut UartTx<'static, Async>,
 ) {
     let mut fix = GpsFix::default();
+    let mut dop = GpsDop::default();
     //Create packet parser
     let mut packet_parser: Parser<FixedBuffer<512>, Proto31> = ublox::Parser::new_fixed();
     //Create buffer to read into from RingBuffer
@@ -50,7 +52,7 @@ pub async fn gps_task(
     //Task loop
     loop {
         info!("New gps loop iteration");
-        match gps_impl(gps_rx, &mut fix, &mut packet_parser, gps_tx, &mut bytes_from_ring_buf).await {
+        match gps_impl(gps_rx, &mut fix, &mut dop, &mut packet_parser, gps_tx, &mut bytes_from_ring_buf).await {
             Err(err) => error!("GPS Error: {}", Debug2Format(&err)),
             Ok(_) => {}
         };
@@ -75,6 +77,7 @@ pub async fn read(
 pub async fn gps_impl(
     gps_rx: &mut RingBufferedUartRx<'static>,
     fix: &mut GpsFix,
+    dop: &mut GpsDop,
     packet_parser: &mut Parser<FixedBuffer<512>, Proto31>,
     gps_tx: &mut UartTx<'static, Async>,
     bytes: &mut [u8],
@@ -91,7 +94,7 @@ pub async fn gps_impl(
             Ok(UbxPacket::Proto31(packet)) => {
                 match packet {
                     PacketRef::NavPvt(nav_pvt_packet) => {
-                        //info!("Got version message: nav_pvt_packet");
+                        //info!("Got version message: nav_pvt");
                         let has_time: bool;
                         let has_posvel: bool;
 
@@ -144,6 +147,9 @@ pub async fn gps_impl(
                                 y: nav_pvt_packet.vel_north().with_units(), 
                                 z: nav_pvt_packet.vel_down().with_units()
                             };
+                            fix.horizontal_accuracy = nav_pvt_packet.horizontal_accuracy().with_units();
+                            fix.vertical_accuracy = nav_pvt_packet.vertical_accuracy().with_units();
+                            fix.pos_dop = nav_pvt_packet.pdop();
                         }
 
                         if has_time {
@@ -162,14 +168,30 @@ pub async fn gps_impl(
                         info!("Got message: AckNak");
                         //info!("{}", raw_packet.as_bytes());
                     }
+                    PacketRef::NavDop(dop_packet) => {
+                        info!("Got message: nav_dop");
+                        info!("NavDop: {:?}", Debug2Format(&dop_packet));
+                        dop.time_of_week_millis = dop_packet.itow().with_units();
+                        dop.geometric_dop = dop_packet.geometric_dop();
+                        dop.position_dop = dop_packet.position_dop();
+                        dop.time_dop = dop_packet.time_dop();
+                        dop.vertical_dop = dop_packet.vertical_dop();
+                        dop.horizontal_dop = dop_packet.horizontal_dop();
+                        dop.northing_dop = dop_packet.northing_dop();
+                        dop.easting_dop = dop_packet.easting_dop();
+                        //New GPS DOP available
+                        GPS_DOP.signal(dop.clone());
+                    }
                     PacketRef::MonRf(mon_rf_packet) => {
                         for block in mon_rf_packet.blocks(){
+                            info!("Got message: mon_rf");
                             info!("Block: {:?}", Debug2Format(&block));
                         }
                     }
                     PacketRef::NavSat(nav_sat_packet) => {
                         for nav_sat_info in nav_sat_packet.svs(){
-                            info!("Nav Sat Info: {:?}", Debug2Format(&nav_sat_info));   
+                            info!("Got message: nav_sat");
+                            info!("Nav Sat Info: {:?}", Debug2Format(&nav_sat_info));  
                         }
                     }
                     _ => {

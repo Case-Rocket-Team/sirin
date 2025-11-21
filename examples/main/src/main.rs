@@ -296,7 +296,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         //info!("Try get GPS fix");
         if let Some(fix) = GPS_FIX.try_take() {
             if fix.fix_type != GpsFixType::NoFix {
-                state.gps = fix;
+                state.gps_fix = fix;
             }
         }
 
