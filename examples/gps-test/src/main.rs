@@ -57,23 +57,13 @@ async fn main_task(sirin: &'static mut Sirin) {
 
     info!("Start main");
     let mut ticker = Ticker::every(Duration::from_millis(500));
-    return;
     
     loop {
-        info!("New Main task loop iteration");
-        ticker.next().await;
-        ticker.next().await;
-        ticker.next().await;
-        ticker.next().await;
-        ticker.next().await;
-        ticker.next().await;
-        /*
-
+        Timer::after_secs(1).await;
         info!("Try get GPS fix data");
-        //Try to get latest GPS fix
         if let Some(fix) = GPS_FIX.try_take() {
             //if fix.fix_type != GpsFixType::NoFix {
-            info!("Got GPS fix data: {:?}", Debug2Format(&fix));
+            info!("Got GPS fix data");
             state.gps = fix;
             //}
         }else{
@@ -81,6 +71,8 @@ async fn main_task(sirin: &'static mut Sirin) {
         }
         println!("GPS fix: {:?}", Debug2Format(&state.gps));
 
+        ticker.next().await;
+        /*
         info!("Measure Sirin data");
         sirin.data = measure_sirin(
             &mut sirin.baro,
@@ -91,7 +83,7 @@ async fn main_task(sirin: &'static mut Sirin) {
 
         println!("Sirin data: {:?}", Debug2Format(&sirin.data));
         println!("Sirin state: {:?}", Debug2Format(&state));
-         */
+        */
     }
 
 }
