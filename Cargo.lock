@@ -997,6 +997,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "kalman-test"
+version = "0.1.0"
+dependencies = [
+ "bmp3",
+ "chrono",
+ "cortex-m",
+ "cortex-m-rt",
+ "critical-section",
+ "defmt",
+ "defmt-rtt",
+ "embassy-executor",
+ "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
+ "embassy-net",
+ "embassy-stm32",
+ "embassy-sync",
+ "embassy-time",
+ "embassy-usb",
+ "embedded-hal 0.2.7",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "embedded-io-async",
+ "embedded-nal-async 0.7.1",
+ "embedded-storage",
+ "futures",
+ "heapless 0.8.0",
+ "micromath",
+ "panic-probe",
+ "rand_core",
+ "rfm9",
+ "sirin",
+ "sirin-c",
+ "static_cell",
+ "stm32-fmc",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.169"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1020,9 +1056,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.25"
+version = "0.4.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04cbf5b083de1c7e0222a7a51dbfdba1cbe1c6ab0b15e29fff3f6c077fd9cd9f"
+checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
 
 [[package]]
 name = "lsm6dso-spi"
@@ -1404,6 +1440,8 @@ name = "sirin-c"
 version = "0.1.1"
 dependencies = [
  "cc",
+ "defmt",
+ "defmt-rtt",
  "libc",
  "sirin-shared",
  "uunit",

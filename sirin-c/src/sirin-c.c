@@ -1,9 +1,18 @@
 #include "arm_math.h"
 
-
 // Following https://www.iri.upc.edu/people/jsola/JoanSola/objectes/notes/kinematics.pdf    
 
 // ref. table 3, pg. 52
+
+#define GRAVITY 9.80665
+#define STATE_DIMS 18
+#define STATE_MAT_SIZE 324 // 6 3d state vars -> 18 dims -> 18*18 mat
+
+#define VEL_NOISE 1
+#define ANGLES_NOISE 1
+#define ACCEL_NOISE 1
+#define ANGULAR_VEL_NOISE 1
+
 struct NominalState {
     float32_t pos[3];
     float32_t vel[3];
@@ -28,7 +37,11 @@ struct ErrorState {
     float32_t angles_vector[3]; 
 };
 
-#define GRAVITY 9.80665
+struct CovarianceMatrixP {
+    float32_t data[STATE_MAT_SIZE];
+};
+
+extern void sirin_log(char *msg);
 
 float64_t pressure_altitude(float64_t pressure_hpa) {
     // TODO
@@ -87,6 +100,57 @@ void skew_mat(
     pDst[8] = 0;
 }
 
+/**
+ * Assuming src is smaller than dst
+ */
+void set_block(
+    const float32_t *pSrc,
+    float32_t *pDst,
+    size_t srcWidth,
+    size_t dstWidth,
+    size_t row,
+    size_t col 
+) {
+    for (size_t y = 0; y < srcWidth; y++) {
+        for (size_t x = 0; x < srcWidth; x++) {
+            pDst[(row + y) * dstWidth + (col + x)] =
+                pSrc[y * srcWidth + x];
+        }
+    }
+}
+
+
+void set_3d_identity_block(
+    float32_t *pDst,
+    size_t dstWidth,
+    size_t row,
+    size_t col 
+) {
+    for (size_t i = 0; i < 3; i++) {
+        size_t rowDst = row + i;
+        size_t colDst = col + i;
+
+        float32_t *pDstI = pDst + rowDst * dstWidth + colDst;
+        *pDstI = 1.0f;
+    }
+}
+
+void set_3d_diagonal_block(
+    float32_t *pDst,
+    size_t dstWidth,
+    size_t row,
+    size_t col,
+    float32_t value
+) {
+    for (size_t i = 0; i < 3; i++) {
+        size_t rowDst = row + i;
+        size_t colDst = col + i;
+
+        float32_t *pDstI = pDst + rowDst * dstWidth + colDst;
+        *pDstI = value;
+    }
+}
+
 
 // vector times its transpose
 // vv^T
@@ -94,8 +158,8 @@ void vec_outer_product(
     const float32_t *pSrcVec,
     float32_t *pDstMat
 ) {
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 3; j++) {
+    for (size_t i = 0; i < 3; i++) {
+        for (size_t j = 0; j < 3; j++) {
             pDstMat[i*3 + j] = pSrcVec[i] * pSrcVec[j];
         }
     }
@@ -128,6 +192,10 @@ void decompose_vec(
     arm_sqrt_f32(mag, &mag);
     *pDstMag = mag;
 
+    if (mag < 0.001) {
+        sirin_log("Magnitude of decompose_vec is too small, might get NaNs!");
+    }
+
     arm_scale_f32(pSrcVec, 1 / mag, pDstUnitVec, 3);
 }
 
@@ -138,6 +206,14 @@ void vec2quaternion(
     float32_t mag;
     float32_t axis[3];
     decompose_vec(pSrcVec, &mag, axis);
+
+    if (mag < 0.001) {
+        pDstQuaternion[0] = 1;
+        pDstQuaternion[1] = 0;
+        pDstQuaternion[2] = 0;
+        pDstQuaternion[3] = 0;
+        return;
+    }
 
     rot_axis2quaternion(axis, mag, pDstQuaternion);
 }
@@ -197,20 +273,20 @@ void init_with_imu(
 
     float32_t gravity[3];
     arm_scale_f32(accel_unit, GRAVITY, gravity, 3);
-
-
 }
 
 void update_with_imu(
     struct NominalState *nominal,
     struct ErrorState *error,
+    struct CovarianceMatrixP *cov,
     float32_t dt,
     float32_t *accel_measurement,
     float32_t *angular_vel_measurement
 ) {
+    sirin_log("Update with IMU: Starting nominal updates");
 
     // NOMINAL UPDATES
-    memcpy(nominal->accel, accel_measurement, 3*4);
+    memcpy(nominal->accel, accel_measurement, sizeof(nominal->accel));
 
     // Section 5.4.1
     // Create rotation matrix from quaternion
@@ -235,17 +311,19 @@ void update_with_imu(
     arm_sub_f32(accel_measurement, nominal->accel_bias, accel_term, 3);
     arm_mat_vec_mult_f32(&rot_mat, accel_term, accel_term);
     //arm_add_f32(accel_term, nominal->gravity, accel_term, 3);
-    accel_term[2] -= gravity_at_altitude(nominal->pos[2]);
+
+    // TODO: gravity
+    //accel_term[2] -= gravity_at_altitude(nominal->pos[2]);
 
     // Updating position -- 259a
     {
         float32_t vel_term[3];
         arm_scale_f32(nominal->vel, dt, vel_term, 3);
         arm_add_f32(nominal->pos, vel_term, nominal->pos, 3);
-        arm_add_f32(nominal->pos, accel_term, nominal->pos, 3);
         
         float32_t accel_term2[3];
         arm_scale_f32(accel_term, 0.5 * dt * dt, accel_term2, 3);
+        arm_add_f32(nominal->pos, accel_term2, nominal->pos, 3);
     }
 
     // Updating velocity -- 259b
@@ -269,6 +347,8 @@ void update_with_imu(
         arm_quaternion_normalize_f32(nominal->rot_quaternion, nominal->rot_quaternion, 1);
     }
 
+    sirin_log("Error updates");
+
     // ERROR UPDATES
 
     // Update pos err -- 260a
@@ -278,9 +358,17 @@ void update_with_imu(
         arm_add_f32(error->pos, vel_term, error->pos, 3);
     }
 
+    // this will be used later
+    float32_t accel_mat_for_jacobian_data[9];
+    memset(accel_mat_for_jacobian_data, 0, sizeof(accel_mat_for_jacobian_data));
+    arm_matrix_instance_f32 accel_mat_for_jacobian_mat = {
+        .numCols = 3,
+        .numRows = 3,
+        .pData = accel_mat_for_jacobian_data
+    };
+
     // Update velocity error -- 260b
     {
-        // (R [a_m - a_b]_times dTheta - R da_b - dg) dt
         float32_t deterministic_term[3];
 
         // R [a_m - a_b]_times dTheta
@@ -309,6 +397,9 @@ void update_with_imu(
 
             // R [a_m - a_b]_times
             arm_mat_mult_f32(&rot_mat, &accel_mat_unrotated, &accel_mat);
+            
+            memcpy(accel_mat_for_jacobian_data, accel_mat_data, sizeof(accel_mat_for_jacobian_data));
+            arm_mat_scale_f32(&accel_mat_for_jacobian_mat, -dt, &accel_mat_for_jacobian_mat);
 
             // R [a_m - a_b]_times dTheta
             arm_mat_vec_mult_f32(&accel_mat, error->angles_vector, deterministic_term);
@@ -329,6 +420,14 @@ void update_with_imu(
 
         // TODO: stochastic term
     }
+
+    float32_t angular_mat_for_jacobian_data[9];
+    memset(angular_mat_for_jacobian_data, 0, sizeof(angular_mat_for_jacobian_data));
+    arm_matrix_instance_f32 angular_mat_for_jacobian_mat = {
+        .numCols = 3,
+        .numRows = 3,
+        .pData = angular_mat_for_jacobian_data
+    };
 
     // Update angles error -- 260c
     {
@@ -353,6 +452,7 @@ void update_with_imu(
             };
             vec2rot_matrix(angular_vel_term, angles_rot_mat_data);
             arm_mat_trans_f32(&angles_rot_mat, &angles_rot_mat_trans);
+            memcpy(angular_mat_for_jacobian_data, angles_rot_mat_trans_data, sizeof(angles_rot_mat_trans_data));
 
             float32_t angles_term[3];
             arm_mat_vec_mult_f32(&angles_rot_mat, error->angles_vector, angles_term);
@@ -368,4 +468,102 @@ void update_with_imu(
 
         // TODO: stochastic term
     }
+
+    sirin_log("Covariance matrix update");
+    sirin_log("Set up Jacobian");
+
+    // Update covariance matrix P -- 268
+    float32_t jacobian_f[STATE_MAT_SIZE];
+    memset(jacobian_f, 0, sizeof(jacobian_f));
+
+    sirin_log("Row 1");
+
+    // Row #1
+    set_3d_identity_block(jacobian_f, STATE_DIMS, 0, 0);
+    set_3d_diagonal_block(jacobian_f, STATE_DIMS, 0, 3, dt);
+
+    sirin_log("Row 2");
+
+    // Row #2
+    set_3d_identity_block(jacobian_f, STATE_DIMS, 3, 3);
+    set_block(accel_mat_for_jacobian_data, jacobian_f, 3, STATE_DIMS, 3, 6);
+    set_3d_diagonal_block(jacobian_f, STATE_DIMS, 3, 15, dt);
+
+    sirin_log("Row 3");
+
+    // Row #3
+    set_block(angular_mat_for_jacobian_data, jacobian_f, 3, 3, 6, 6);
+    set_3d_diagonal_block(jacobian_f, STATE_DIMS, 6, 12, -dt);
+
+    sirin_log("Row 4");
+
+    // Row #4
+    set_3d_identity_block(jacobian_f, STATE_DIMS, 9, 9);
+
+    sirin_log("Row 5");
+
+    // Row #5
+    set_3d_identity_block(jacobian_f, STATE_DIMS, 12, 12);
+
+    sirin_log("Row 6");
+
+    // Row #6
+    set_3d_identity_block(jacobian_f, STATE_DIMS, 15, 15);
+    
+    sirin_log("Multiply covariance by Jacobian of state pt. 1");
+
+    arm_matrix_instance_f32 cov_mat = {
+        .numCols = 18,
+        .numRows = 18,
+        .pData = cov->data
+    };
+
+    float32_t cov_mat_copy_data[STATE_MAT_SIZE];
+    arm_matrix_instance_f32 cov_mat_copy = {
+        .numCols = 18,
+        .numRows = 18,
+        .pData = cov_mat_copy_data
+    };
+
+    arm_matrix_instance_f32 jacobian_f_mat = {
+        .numCols = 18,
+        .numRows = 18,
+        .pData = jacobian_f
+    };
+
+    arm_mat_mult_f32(&jacobian_f_mat, &cov_mat, &cov_mat_copy);
+
+    sirin_log("Multiply covariance by Jacobian of state pt. 2");
+    
+    float32_t jacobian_f_trans_data[STATE_MAT_SIZE];
+    arm_matrix_instance_f32 jacobian_f_trans = {
+        .numCols = 18,
+        .numRows = 18,
+        .pData = jacobian_f_trans_data
+    };
+
+    sirin_log("Jacobian transpose");
+
+    arm_mat_trans_f32(&jacobian_f_mat, &jacobian_f_trans);
+
+    sirin_log("Multiply by Jacobian transpose");
+
+    arm_mat_mult_f32(&cov_mat_copy, &jacobian_f_trans, &cov_mat);
+
+    sirin_log("Add covariance from uncertainty");
+
+    float32_t FQFt_data[STATE_MAT_SIZE];
+    memset(FQFt_data, 0, sizeof(FQFt_data));
+    arm_matrix_instance_f32 FQFt = {
+        .numCols = 18,
+        .numRows = 18,
+        .pData = FQFt_data
+    };
+
+    set_3d_diagonal_block(FQFt_data, 18, 3, 3, VEL_NOISE);
+    set_3d_diagonal_block(FQFt_data, 18, 6, 6, ANGLES_NOISE);
+    set_3d_diagonal_block(FQFt_data, 18, 9, 9, ACCEL_NOISE);
+    set_3d_diagonal_block(FQFt_data, 18, 12, 12, ANGULAR_VEL_NOISE);
+
+    arm_mat_add_f32(&FQFt, &cov_mat, &cov_mat);
 }
