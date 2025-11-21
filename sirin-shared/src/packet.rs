@@ -132,12 +132,12 @@ pub enum GpsFixType {
 pub struct GpsFix {
     pub time: Milliseconds<u32>,
     pub satellites: u8,
-    pub almanac: u8,
-    pub ephemerides: u8,
-    pub healthy_satellites: u8,
+    //pub almanac: u8,
+    //pub ephemerides: u8,
+    //pub healthy_satellites: u8,
     pub fix_type: GpsFixType,
     pub pos: Vec3<Meters<f64>>,
-    pub vel: Vec3<MetersPerSecond<f32>>,
+    pub vel: Vec3<MetersPerSecond<f64>>,
 }
 
 impl Default for GpsFix {
@@ -145,9 +145,9 @@ impl Default for GpsFix {
         GpsFix {
             time: 0u32.with_units(),
             satellites: 0,
-            almanac: 0,
-            ephemerides: 0,
-            healthy_satellites: 0,
+            //almanac: 0,
+            //ephemerides: 0,
+            //healthy_satellites: 0,
             fix_type: GpsFixType::NoFix,
             pos: Vec3 {
                 x: 0.0.with_units(),
@@ -155,9 +155,9 @@ impl Default for GpsFix {
                 z: 0.0.with_units()
             },
             vel: Vec3 {
-                x: 0.0f32.with_units(),
-                y: 0.0f32.with_units(),
-                z: 0.0f32.with_units()
+                x: 0.0f64.with_units(),
+                y: 0.0f64.with_units(),
+                z: 0.0f64.with_units()
             },
         }
     }
