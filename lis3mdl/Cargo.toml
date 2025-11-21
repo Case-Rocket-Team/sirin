@@ -1,9 +1,9 @@
 [package]
-name = "h3lis"
+name = "lis3mdl"
 version = "0.1.1"
 edition = "2021"
 license = "MIT"
-description = "H3LIS Accelerometer/IMU"
+description = "Lis3mdl Magnetometer"
 repository = "https://github.com/Nautki/sirin"
 
 [dependencies]

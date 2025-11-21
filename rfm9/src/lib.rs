@@ -459,7 +459,7 @@ impl <S: SpiHandle> Rfm9<S> {
 
         //self.set_payload_length(26).await?;
         self.write_reg(RegPayloadLength, len).await?;
-        info!("Len: {}", len);
+        //info!("Len: {}", len);
 
         self.set_mode(Mode::Tx).await?;
 
@@ -504,7 +504,7 @@ impl <S: SpiHandle> Rfm9<S> {
         //let rx_cur_addr: u8 = self.fifo_rx_current_addr().await?;
         //self.set_fifo_addr_ptr(rx_cur_addr).await?;
         let len: u8 = self.fifo_rx_nb_bytes().await?;
-        info!("{}", len);
+        //info!("{}", len);
         self.read_contiguous_regs(RegFifo, &mut data[..len as usize]).await?;
         self.set_mode(Mode::Stdby).await?;
         Ok(len)

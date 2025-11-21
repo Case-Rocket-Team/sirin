@@ -38,7 +38,7 @@ unsafe fn main() -> ! {
 async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
     debug!("Begin Sirin init");
 
-    let sirin = Sirin::init(sirin, spawner).await;
+    let sirin = Sirin::init(sirin, spawner).await;    
 
     debug!("End Sirin init");
 
@@ -61,9 +61,9 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
     sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
     sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
-    sirin.spawner.spawn(gps_task(&mut sirin.gps_rx)).unwrap();
+    sirin.spawner.spawn(gps_task(&mut sirin.gps_rx, &mut sirin.gps_tx)).unwrap();
 
-    let mut i = 0;
+    /*let mut i = 0;
     loop {
         let mut sector = [0; 4096];
         sirin.flash.w25q.read(i * 4096, &mut sector).await?;
@@ -84,7 +84,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         i += 1;
     }
 
-    loop {}
+    loop {}*/
 
     let mut flash = Mutex::new(&mut sirin.flash);
     sirin.spawner.spawn(flash_io_task(unsafe {
@@ -191,18 +191,25 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
                     panic!("Reboot");
                 }
+                InPacket::DeployMain => {
+                    Sirin::deploy_chute_main(&mut sirin.parachute_main);
+                }
+                InPacket::DeployApo => {
+                    Sirin::deploy_chute_apo(&mut sirin.parachute_apo);
+                }
             }
 
             send_packet(io_packet.reply(OutPacket::Ok));
         }
-
         ticker.next().await;
+
 
         //info!("Measure Sirin data");
         sirin.data = measure_sirin(
             &mut sirin.baro,
             &mut sirin.imu,
-            &mut sirin.high_g_imu
+            &mut sirin.high_g_imu,
+            &mut sirin.magnetometer
         ).await;
 
         //info!("Calculate altitude");
@@ -295,7 +302,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
         if i % 10 == 0 {
             OUT_CHANNEL.publish_immediate(IoPacket::new(
-                IoChannel::LoRa, OutPacket::LogEntry(
+                IoChannel::ToLoRa, OutPacket::LogEntry(
                     LogEntry::new(
                         sirin.data.time,
                         Log::State(state.clone())

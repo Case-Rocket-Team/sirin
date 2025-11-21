@@ -1,5 +1,4 @@
 use core::ops::Div;
-
 use crate::{config::{CallsignBuf, SirinConfig, SirinId}, mode::SirinMode, song::{magic::MagicU8, maybe_unwritten_max_bytes::MaybeUnwrittenMaxBytes, *}, state::NominalState, time::AbsoluteTimeReference};
 use derive_more::Display;
 use sirin_macros::*;
@@ -84,7 +83,9 @@ pub enum OutPacket {
     FlightStart(u8),
     LogEntry(LogEntry),
     FlightHeader(Page<FlightHeader>),
-    State(SirinState)
+    State(SirinState),
+    DeployedApoAt(u32),
+    DeployedMainAt(u32)
 }
 
 #[derive(Debug, Clone, SongSize, FromSong, ToSong)]
@@ -123,7 +124,8 @@ pub enum GpsFixType {
     FixPrediction,
     Fix2d,
     Fix3d,
-    FixDifferential
+    FixDifferential,
+    TimeOnlyFix
 }
 
 #[derive(Debug, Clone, SongSize, FromSong, ToSong)]
@@ -208,6 +210,8 @@ pub enum InPacket {
     ReadFlight(u16),
     Tail(bool),
     EraseFlash(MagicU8<0xA8>),
+    DeployMain,
+    DeployApo,
 }
 
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
@@ -240,7 +244,9 @@ pub struct SirinData {
     pub time: Milliseconds<u32>,
     pub baro: BaroData,
     pub imu: ImuData,
-    pub high_g_imu: HighGImuData
+    pub high_g_imu: HighGImuData,
+    pub magnetometer: MagnetometerData,
+    pub altitude: Meters<f64>
 }
 
 pub trait Measurement {
@@ -253,7 +259,9 @@ impl Measurement for SirinData {
             time: 0u32.with_units(),
             baro: BaroData::unmeasured(),
             imu: ImuData::unmeasured(),
-            high_g_imu: HighGImuData::unmeasured()
+            high_g_imu: HighGImuData::unmeasured(),
+            magnetometer: MagnetometerData::unmeasured(),
+            altitude: 0.0.with_units()
         }
     }
 }
@@ -277,6 +285,13 @@ pub struct ImuData {
 pub struct HighGImuData {
     // TODO: Put units on this!
     pub accel: Result<Vec3<i32>, SubsystemError>
+}
+
+#[derive(Debug, Clone, SongSize, ToSong, FromSong, Measurement)]
+#[allow(dead_code)]
+pub struct MagnetometerData {
+    pub mag: Result<Vec3<i16>, SubsystemError>,
+    pub temp: Result<i16, SubsystemError>
 }
 
 // TODO: maybe change to `derive_more` crate and remove snafu
@@ -308,8 +323,9 @@ impl From<SpiErrorKind> for SubsystemError {
 pub enum IoChannel {
     Broadcast = 0,
     Usb,
-    LoRa,
-    Flash
+    ToLoRa,
+    FromLoRa,
+    Flash,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

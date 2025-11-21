@@ -2,7 +2,7 @@
 
 [package]
 edition = "2021"
-name = "ejection-test"
+name = "gps-test"
 version = "0.1.0"
 
 [package.metadata.release]
@@ -13,7 +13,8 @@ release = false
 embassy-futures = { git = "https://github.com/embassy-rs/embassy" }
 embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", features = ["defmt", "stm32h743ii", "time-driver-tim2", "exti", "memory-x", "unstable-pac", "chrono"] }
 embassy-sync = { git = "https://github.com/embassy-rs/embassy", features = ["defmt"] }
-embassy-executor = { git = "https://github.com/embassy-rs/embassy", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt", "task-arena-size-98304"] }
+# "task-arena-size-98304"
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", features = ["task-arena-size-98304", "arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
 embassy-time = { git = "https://github.com/embassy-rs/embassy", features = ["defmt", "defmt-timestamp-uptime", "tick-hz-32_768"] }
 embassy-net = { git = "https://github.com/embassy-rs/embassy", features = ["defmt", "tcp", "dhcpv4", "medium-ethernet", "proto-ipv6", "dns"] }
 embassy-usb = { git = "https://github.com/embassy-rs/embassy", features = ["defmt"] }
@@ -43,12 +44,13 @@ chrono = { version = "^0.4", default-features = false }
 sirin = { version = "0.1.1", path = "../../sirin" }
 bmp3 = { version = "0.1.1", path = "../../bmp3" }
 rfm9 = { version = "0.1.1", path = "../../rfm9", features = ['defmt'] }
-sirin-c = { version = "0.1.1", path = "../../sirin-c" }
 postcard = "1.1.1"
+w25qx = { version = "0.1.1", path = "../../w25qx" }
+sirin-shared = { version = "0.1.0", path = "../../sirin-shared" }
 #panic-halt = "0.2.0"
 
 [[bin]]
-name = "ejection-test"
+name = "gps-test"
 test = false
 bench = false
 

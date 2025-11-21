@@ -3,10 +3,9 @@ use dev_csr::dev_csr;
 use embedded_hal::spi::ErrorType;
 use embedded_hal_async::spi::SpiBus;
 use spi_handle::SpiHandle;
-use core::mem;
 
 dev_csr!{
-    dev H3lis {
+    dev Lis3mdl {
         regs {
             /// Should be 32h
             0x0F WHO_AM_I r who_am_i,
@@ -180,7 +179,8 @@ dev_csr!{
                 5 ths5,
                 6 ths6,
                 7 ths7
-            }
+            },
+
             0x33 INT_THS_H rw {
                 /// bit 7 must be set to 0
                 0 ths8,
@@ -195,11 +195,11 @@ dev_csr!{
     }
 }
 
-pub struct lis3mdl<S: SpiHandle> {
+pub struct Lis3mdl<S: SpiHandle> {
     spi: S
 }
 
-impl <S: SpiHandle> lis3mdl<S> {
+impl <S: SpiHandle> Lis3mdl<S> {
     pub fn new(spi: S) -> Self {
         Self {
             spi
@@ -210,22 +210,25 @@ impl <S: SpiHandle> lis3mdl<S> {
         &mut self
     ) -> Result<(),<S::Bus as ErrorType>::Error> {
         // self.write_reg(reg, value as u8).await?;
-        // enable x,y,z axis
-        self.write_reg(RegCtrlReg1, 0b001_10_111 as u8).await?;
+        //self.write_reg(CTRL_REG1, 0b1001_0000 as u8).await?;
+
+        //self.write_reg(CtrlReg1, 0b001_10_111 as u8).await?;
         //self.write_reg().await?;
         Ok(())    
     }
 
-    pub async fn acceleration(&mut self) -> Result<(i32, i32, i32), <S::Bus as ErrorType>::Error> {
-         Ok(unsafe {
-            let accel_x: i8 = mem::transmute(self.x().await?);
-            let accel_y: i8 = mem::transmute(self.y().await?);
-            let accel_z: i8 = mem::transmute(self.z().await?);
-            //xyz are corrected so that
-            //x -> cable direction
-            //yz follow from right hand rule, x as index finger
-            ((accel_x as i32) * 780000, (accel_y as i32) * -780000, (accel_z as i32) * -780000)
-       })
+    pub async fn magnetic(&mut self) -> Result<(i16,i16,i16), <S::Bus as ErrorType>::Error> {
+        //MSB stored in the low register
+        let mag_x = i16::from_ne_bytes([self.x_l().await? as u8,self.x_h().await? as u8]);
+        let mag_y = i16::from_ne_bytes([self.y_l().await? as u8,self.y_h().await? as u8]);
+        let mag_z = i16::from_ne_bytes([self.z_l().await? as u8,self.z_h().await? as u8]);
+        Ok((mag_x, mag_y, mag_z))
+    }
+    
+    pub async fn temp(&mut self) -> Result<i16, <S::Bus as ErrorType>::Error> {
+         Ok(
+            i16::from_ne_bytes([self.temp_out_l().await? as u8, self.temp_out_h().await? as u8])
+       )
     }
 
     pub async fn manufacturer_id(&mut self) -> Result<u8, <S::Bus as ErrorType>::Error> {
@@ -234,7 +237,7 @@ impl <S: SpiHandle> lis3mdl<S> {
 
 }
 
-impl <S: SpiHandle> ReadLis3mdl for lis3mdl<S>{
+impl <S: SpiHandle> ReadLis3mdl for Lis3mdl<S>{
     type Error = <S::Bus as ErrorType>::Error;
 
     async fn read_contiguous_regs(
@@ -261,32 +264,9 @@ impl <S: SpiHandle> ReadLis3mdl for lis3mdl<S>{
         Ok(())
     }
 
-    async fn read_regs(
-        &mut self,
-        addr: impl ReadableAddr,
-        out: &mut [u8]
-    ) -> Result<(), Self::Error> {
-        let mut bus = self.spi.select().await;
-        // bit 0: READ bit. The value is 1. 
-        // bit 1: MS bit. When 0, does not increment the address. When 1, increments the address in multiple reads. 
-        // bit 2-7: address AD(5:0). This is the address field of the indexed register.
-        // bit 8-15: data DO(7:0) (read mode). This is the data that is read from the device (MSB first). 
-        // bit 16-... : data DO(...-8). Further data in multiple byte reads.
-
-        // set rw bit
-        
-        // write = 1, read = 0
-        
-        // If broken try | 0b1100_0000;
-        let addr: u8 = addr.as_addr() | 0b1000_0000;
-        
-        bus.write(&[addr]).await?;
-        bus.transfer_in_place(out).await?;
-        Ok(())
-    }
 }
 
-impl <S: SpiHandle> WriteLis3mdl for lis3mdl<S>{
+impl <S: SpiHandle> WriteLis3mdl for Lis3mdl<S>{
     type Error = <S::Bus as ErrorType>::Error;
 
     async fn write_contiguous_regs(
@@ -312,26 +292,4 @@ impl <S: SpiHandle> WriteLis3mdl for lis3mdl<S>{
         Ok(())
     }
 
-    async fn write_regs(
-        &mut self,
-        addr: impl WritableAddr,
-        values: &[u8]
-    ) -> Result<(), Self::Error> {
-        let mut bus = self.spi.select().await;
-        // The SPI Write command is performed with 16 clock pulses. 
-        // A multiple byte write command is performed by adding blocks of 8 clock pulses to the previous one. 
-        // bit 0: WRITE bit. The value is 0. 
-        // bit 1: MS bit. When 0, does not increment the address; when 1, increments the address in multiple writes. 
-        // bit 2 -7: address AD(5:0). This is the address field of the indexed register. 
-        // bit 8-15: data DI(7:0) (write mode). This is the data that is written inside the device (MSb first). 
-        // bit 16-... : data DI(...-8). Further data in multiple byte writes.
-
-        // If broken try & 0b0011_1111;
-        let addr: u8 = addr.as_addr() & 0b0111_1111;
-
-        bus.write(&[addr.as_addr()]).await?;
-        bus.write(values).await?;
-
-        Ok(())
-    }
 }

@@ -18,7 +18,7 @@ embassy-executor = { git = "https://github.com/embassy-rs/embassy", features = [
 embassy-time = { git = "https://github.com/embassy-rs/embassy" }
 embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", features = [ "stm32h743ii" ]}
 embassy-sync = { git = "https://github.com/embassy-rs/embassy" }
-embassy-futures = { git = "https://github.com/embassy-rs/embassy" }
+embassy-futures = { git = "https://github.com/embassy-rs/embassy"}
 embassy-usb = { git = "https://github.com/embassy-rs/embassy" }
 embassy-usb-driver = { git = "https://github.com/embassy-rs/embassy" }
 static_cell = "^2.1.0"
@@ -31,6 +31,7 @@ spi-handle = { version = "0.1.1", path = "../spi-handle" }
 bmp3 = { version = "0.1.1", path = "../bmp3" }
 defmt = "0.3.8"
 rfm9 = { version = "0.1.1", path = "../rfm9" }
+lis3mdl = { version = "0.1.1", path = "../lis3mdl" }
 w25qx = { version = "0.1.1", path = "../w25qx" }
 lsm6dso-spi = { version = "0.1.1", path = "../lsm6dso-spi" }
 h3lis = { version = "0.1.1", path = "../h3lis" }
@@ -48,4 +49,4 @@ sirin-shared = { version = "0.1.0", path = "../sirin-shared" }
 derive_more = { version = "2.0.1", features = ["from"], default-features = false }
 static_assertions = "1.1.0"
 cortex-m = "0.7.7"
-ublox = { version = "0.6.0", features = ["ubx_proto23"], default-features = false }
+ublox = { version = "0.7.0", features = ["ubx_proto31"], default-features = false }

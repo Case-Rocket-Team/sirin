@@ -1,14 +1,15 @@
 #![no_std]
 #![allow(unused_imports)]
-//#![doc = include_str!("../README.md")]
+#![doc = include_str!("../../README.md")]
 
 use core::{ffi::CStr, marker::PhantomPinned, mem::MaybeUninit, pin::{pin, Pin}, ptr::addr_of_mut};
 use bmp3::Bmp3;
 use defmt::{info, Display2Format};
 use embassy_executor::{Executor, Spawner};
 use embassy_futures::join::{join, join3, join5, join_array};
-use embassy_stm32::{ bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, mode::Async, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, usart::{self, RingBufferedUartRx, Uart}, Config, Peripherals };
+use embassy_stm32::{ Config, Peripherals, bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, mode::Async, pac, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, usart::{self, UartTx, BufferedUartTx, RingBufferedUartRx, Uart} };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
+use embassy_time::Timer;
 use flash::Flash;
 use gpio::GpioPins;
 use rfm9::{ReadRfm9, Rfm9};
@@ -20,10 +21,13 @@ use usb::{setup_usb, WriteEp, ReadEp, SirinUsb, UsbSerialClass};
 use uunit::{Celsius, Pascals};
 use w25qx::W25Q;
 use lsm6dso_spi::Lsm6dso;
+use lis3mdl::Lis3mdl;
 use h3lis::H3lis;
 use spi::{Spi, SpiConfig, SpiConfigStruct, SpiDev, SpiInstance, WithSpiHandle};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State as UsbState};
 use embassy_usb::Builder as UsbBuilder;
+use ublox::{FixedBuffer, cfg_nav5::CfgNav5Builder, cfg_prt::{CfgPrtUartBuilder, DataBits, InProtoMask, OutProtoMask, Parity, StopBits, UartMode, UartPortId}, proto31::Proto31};
+use ublox::{Parser,UbxPacket,proto31::*,GnssFixType,Position,Velocity};
 
 pub use uunit;
 pub mod spi;
@@ -57,6 +61,7 @@ pub struct SirinHealth {
     pub baro: Result<(), SubsystemError>,
     pub imu: Result<(), SubsystemError>,
     pub high_g_imu: Result<(), SubsystemError>,
+    pub magnetometer: Result<(), SubsystemError>
 }
 
 pub struct Sirin {
@@ -71,20 +76,28 @@ pub struct Sirin {
     pub radio: Rfm9<SpiDev>,
     pub usb: SirinUsb,
     pub led: Output<'static>,
+    pub parachute_main: Output<'static>,
+    pub main_power: Output<'static>,
+    pub parachute_apo: Output<'static>,
+    pub apo_power: Output<'static>,
+
 
     // Instrument subsytems
     pub baro: Bmp3<SpiDev>,
     pub imu: Lsm6dso<SpiDev>,
     pub high_g_imu: H3lis<SpiDev>,
+    pub magnetometer: Lis3mdl<SpiDev>,
+
     //pub gps: S1315F8,
     //pub gps: Uart<'static, Async>,
     pub gps_rx: RingBufferedUartRx<'static>,
+    pub gps_tx: UartTx<'static, Async>,
     //pub driver: Driver<'static, peripherals::USB_OTG_FS>
 
     pub data: SirinData,
     pub health: SirinHealth,
     pub config: SirinConfig,
-
+    
     _phantom_pinned: PhantomPinned
 }
 
@@ -173,14 +186,10 @@ impl Sirin {
                 p11: p.PD7,
                 p12: p.PD6,
                 p13: p.PD5,
-                p14: p.PD4,
-                p15: p.PD3,
-                p16: p.PD1,
-                p17: p.PD0,
-                p18: p.PC12,
-                p19: p.PC11,
-                p20: p.PC10,
+                p14: p.PD4
             });
+
+
 
             let baro_ptr: *mut Bmp3<SpiDev> = ptr!(sirin.baro);
             let baro_cs = Output::new(p.PA2, Level::High, Speed::High);
@@ -204,10 +213,14 @@ impl Sirin {
             imu_ptr.write(Lsm6dso::new((*spi1).handle(imu_cs)));
 
             let highg_imu_ptr: *mut H3lis<SpiDev> = ptr!(sirin.high_g_imu);
-            let highg_imu_cs = Output::new(p.PE13,Level::High, Speed::High);
+            let highg_imu_cs = Output::new(p.PE13, Level::High, Speed::High);
             highg_imu_ptr.write(H3lis::new((*spi1).handle(highg_imu_cs)));
 
-            let gps = Uart::new(
+            let magnetometer_ptr: *mut Lis3mdl<SpiDev> = ptr!(sirin.magnetometer);
+            let magnetometer_cs = Output::new(p.PA3, Level::High, Speed::High); 
+            magnetometer_ptr.write(Lis3mdl::new((*spi1).handle(magnetometer_cs)));
+            
+            let mut gps_uart = Uart::new(
                 p.USART3,
                 p.PD9,
                 p.PD8,
@@ -217,7 +230,32 @@ impl Sirin {
                 usart::Config::default()
             ).unwrap();
 
-            ptr!(sirin.gps_rx).write(gps.split().1.into_ring_buffered(&mut GPS_BUF));
+            //Send GPS setup packet(s)
+            let port_config_packet = CfgPrtUartBuilder {
+                portid: UartPortId::Uart2,
+                reserved0: 0,
+                tx_ready: 0,
+                mode: UartMode::new(DataBits::Eight, Parity::None, StopBits::One),
+                baud_rate: 9600,
+                in_proto_mask: InProtoMask::all(),
+                out_proto_mask: OutProtoMask::UBLOX,
+                flags: 0,
+                reserved5: 0,
+            }.into_packet_bytes();
+
+            let mut nav_mode_config = CfgNav5Builder::default();
+            nav_mode_config.dyn_model = ublox::cfg_nav5::NavDynamicModel::Pedestrian;
+            nav_mode_config.fix_mode = ublox::cfg_nav5::NavFixMode::Auto2D3D;
+            gps_uart.write(&port_config_packet).await.unwrap();
+            gps_uart.write(&nav_mode_config.into_packet_bytes()).await.unwrap();
+
+            let (mut tx,rx) = gps_uart.split();
+
+            ptr!(sirin.gps_rx).write(rx.into_ring_buffered(&mut GPS_BUF));
+
+            //ptr!(sirin.gps_tx).write(tx.into());
+
+            //ptr!(sirin.gps_tx).write(gps_uart.split().0);            
 
             ptr!(sirin.data).write(SirinData::unmeasured());
 
@@ -230,20 +268,47 @@ impl Sirin {
 
             ptr!(sirin.led).write(Output::new(p.PA1, Level::Low, Speed::High));
 
+            ptr!(sirin.parachute_main).write(Output::new(p.PA8, Level::Low, Speed::High));
+            ptr!(sirin.main_power).write(Output::new(p.PD3, Level::High, Speed::High));
+
+            ptr!(sirin.parachute_apo).write(Output::new(p.PA10, Level::Low, Speed::High));
+
+            ptr!(sirin.apo_power).write(Output::new(p.PD1, Level::High, Speed::High));
+
             // TODO: JOIN FUTURES, AWAIT
             baro_ptr.write(baro_future.await.unwrap());
             (*radio_ptr).init().await.unwrap();
             (*radio_ptr).use_high_power().await.unwrap();
             (*imu_ptr).setup().await.unwrap();
             (*highg_imu_ptr).setup().await.unwrap();
+            (*magnetometer_ptr).setup().await.unwrap();
 
             {
-                let (flash, radio, baro, imu, high_g_imu) = join5(
+                /*
+                let [flash, radio, baro, imu, high_g_imu, magnetometer] = embassy_futures::join::join_array([
                     (*flash_ptr).w25q.selfcheck(),
                     (*radio_ptr).selfcheck(),
                     (*baro_ptr).selfcheck(),
                     (*imu_ptr).selfcheck(),
-                    (*highg_imu_ptr).selfcheck()
+                    (*highg_imu_ptr).selfcheck(), 
+                    (*magnetometer_ptr).selfcheck()
+                ]).await;
+             */
+                let join1 = join3(
+                    (*flash_ptr).w25q.selfcheck(),
+                    (*radio_ptr).selfcheck(),
+                    (*baro_ptr).selfcheck(),
+                );
+
+                let join2 = join3(
+                    (*imu_ptr).selfcheck(),
+                    (*highg_imu_ptr).selfcheck(),
+                    (*magnetometer_ptr).selfcheck(),
+                );
+
+                let ((flash, radio, baro), (imu, high_g_imu, magnetometer)) = join(
+                    join1,
+                    join2,
                 ).await;
 
                 ptr!(sirin.health).write(SirinHealth {
@@ -252,15 +317,25 @@ impl Sirin {
                     baro,
                     imu,
                     high_g_imu,
+                    magnetometer
                 });
-            }
 
-            let sirin: &'static mut _ = sirin.assume_init_mut();
-            sirin
+                let sirin: &'static mut _ = sirin.assume_init_mut();
+                
+                sirin
+            }
         }
     }
 
     pub fn reboot() {
         cortex_m::peripheral::SCB::sys_reset();
+    }
+
+    pub fn deploy_chute_main(parachute_main: &mut Output<'static>){
+        parachute_main.set_high();
+    }
+    
+    pub fn deploy_chute_apo(parachute_apo: &mut Output<'static>){
+        parachute_apo.set_high();
     }
 }

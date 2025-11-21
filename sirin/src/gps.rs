@@ -1,25 +1,30 @@
 use defmt::{error, info, println, warn, Debug2Format};
 use embassy_executor::task;
-use embassy_stm32::{mode::Async, pac::Interrupt::PVD_AVD, usart::{self, RingBufferedUartRx, Uart}};
+use embassy_stm32::{mode::Async, pac::Interrupt::PVD_AVD, usart::{self, RingBufferedUartRx, Uart, UartTx}};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::Instant;
-use sirin_shared::{packet::{GpsFix, GpsFixType, Log, OutPacket, Vec3}, song::FromSong};
+use sirin_shared::{packet::{self, GpsFix, GpsFixType, Log, OutPacket, Vec3}, song::FromSong};
 use uunit::{Meters, MetersPerSecond, WithUnits};
-
-use crate::{error::SirinError, io::{broadcast, broadcast_log}};
+use crate::{error::SirinError, io::{broadcast, broadcast_log}, usb};
+use ublox::{FixedBuffer, cfg_nav5::CfgNav5Builder, cfg_prt::{CfgPrtUartBuilder, DataBits, InProtoMask, OutProtoMask, Parity, StopBits, UartMode, UartPortId}, proto31::Proto31};
+use ublox::{Parser,UbxPacket,proto31::*,GnssFixType,Position,Velocity};
 
 pub static GPS_FIX: Signal<CriticalSectionRawMutex, GpsFix> = Signal::new();
 
 #[task]
 pub async fn gps_task(
-    gps: &'static mut RingBufferedUartRx<'static>
+    gps_rx: &'static mut RingBufferedUartRx<'static>,
+    gps_tx: &'static mut UartTx<'static, Async>
 ) {
     let mut fix = GpsFix::default();
+    
 
-    //gps.write(&[0xA0, 0xA1, 0x00, 0x03, 0x09, 0x02, 0x00, 0x09 ^ 0x02, 0x0D, 0x0A]).await.unwrap();
-
+    //Create packet parser
+    let mut packet_parser:Parser<FixedBuffer<512>,Proto31> = ublox::Parser::new_fixed();
+    
+    //Task loop
     loop {
-        match gps_impl(gps, &mut fix).await {
+        match gps_impl(gps_rx, &mut fix, &mut packet_parser).await {
             Err(err) => error!("GPS Error: {}", Debug2Format(&err)),
             Ok(_) => {}
         };
@@ -27,13 +32,13 @@ pub async fn gps_task(
 }
 
 pub async fn read(
-    gps: &mut RingBufferedUartRx<'static>,
+    gps_rx: &mut RingBufferedUartRx<'static>,
     buf: &mut [u8]
 ) -> Result<(), SirinError> {
     let mut len = buf.len();
     let mut i = 0;
     loop {
-        i += gps.read(&mut buf[i..]).await?;
+        i += gps_rx.read(&mut buf[i..]).await?;
     
         if i >= len {
             return Ok(());
@@ -42,14 +47,124 @@ pub async fn read(
 }
 
 pub async fn gps_impl(
-    gps: &mut RingBufferedUartRx<'static>,
+    gps_rx: &mut RingBufferedUartRx<'static>,
     fix: &mut GpsFix,
+    packet_parser: &mut Parser<FixedBuffer<512>, Proto31>
 ) -> Result<(), SirinError> {
-
     loop {
+        info!("Reading GPS data...");
+        if fix.satellites >= 100{
+            fix.satellites = 0;
+        }
+        fix.satellites += 1;
         GPS_FIX.signal(fix.clone());
+        embassy_time::Timer::after(embassy_time::Duration::from_millis(500)).await;
+        //GPS_FIX.signal(fix.clone());
+        //Read 32 bytes from RingBuffer at a time
+        let mut bytes = [0u8;16];
+        read(gps_rx, &mut bytes).await?;
+        for b in &bytes {
+            info!("Byte: {:x}", b);
+        }
+    }
+    
+    //loop {
+        
+        //fix.satellites += 1;
 
-        let mut start_byte_0 = [0u8; 1];
+        //Copy those 32 bytes to Parser internal buffer
+        //let mut iterator = packet_parser.consume_ubx(&bytes);
+        /*
+
+        while let Some(packet) = iterator.next() {
+            match packet {
+                Ok(UbxPacket::Proto31(packet)) => {
+                    fix.satellites = 30;
+                    match packet{
+                        PacketRef::MonVer(mon_ver_packet) => {
+                            info!("Got version message: mon_ver_packet");
+                        },
+                        PacketRef::NavPvt(nav_pvt_packet) => {
+                            info!("Got version message: nav_pvt_packet");
+                            let mut has_time = false;
+                            let mut has_posvel = false;
+
+                            match nav_pvt_packet.fix_type(){
+                                GnssFixType::TimeOnlyFix => {
+                                    fix.fix_type = GpsFixType::TimeOnlyFix;
+                                    has_time = true;
+                                    has_posvel = false;
+                                },
+                                GnssFixType::GPSPlusDeadReckoning => {
+                                    fix.fix_type = GpsFixType::FixDifferential;
+                                    has_time = true;
+                                    has_posvel = true;
+                                },
+                                GnssFixType::NoFix => {
+                                    fix.fix_type = GpsFixType::NoFix;
+                                    has_time = false;
+                                    has_posvel = false;
+                                },
+                                GnssFixType::DeadReckoningOnly => {
+                                    fix.fix_type = GpsFixType::FixPrediction;
+                                    has_time = true;
+                                    has_posvel = false;
+                                },
+                                GnssFixType::Fix2D => {
+                                    fix.fix_type = GpsFixType::Fix2d;
+                                    has_time = true;
+                                    has_posvel = true;
+                                },
+                                GnssFixType::Fix3D => {
+                                    fix.fix_type = GpsFixType::Fix3d;
+                                    has_time = true;
+                                    has_posvel = true;
+                                },
+                                _=> {
+                                    fix.fix_type = GpsFixType::NoFix;
+                                    has_time = false;
+                                    has_posvel = false;
+                                    fix.pos = Vec3 {x: 10.0.with_units(), y: 10.0.with_units(), z: 10.0.with_units() }
+                                }
+                            }
+
+                            if has_posvel {
+                                fix.pos = Vec3 { 
+                                    x: nav_pvt_packet.longitude().with_units(),
+                                    y: nav_pvt_packet.latitude().with_units(), 
+                                    z: nav_pvt_packet.height_msl().with_units()
+                                }
+                            }
+
+                            if has_time {
+                                
+                            }
+                            //new gps fix available
+                        },
+                        PacketRef::EsfRaw(raw_packet) => {
+                            //info!("Got raw message: {raw:?}");
+                            info!("Got raw message: esf_raw_packet");
+                            fix.ephemerides = 10;
+                        },
+                        _ => {
+                            info!("packet_ref");
+                            //info!("{packet_ref:?}");
+                            fix.ephemerides = 20;
+                        },
+                    }
+                    GPS_FIX.signal(fix.clone());
+                },
+                Err(e) => {
+                    error!("GPS Packet parse error: {}", Debug2Format(&e));
+                    fix.satellites = 10;
+                    GPS_FIX.signal(fix.clone());
+                }
+            }
+        }
+        */
+
+    //}
+    /*let mut start_byte_0 = [0u8; 1];
         read(gps, &mut start_byte_0).await?;
 
         if start_byte_0[0] != 0xA0 {
@@ -91,7 +206,7 @@ pub async fn gps_impl(
             0xDF => {
                 info!("Received 0xDF fix packet");
 
-                println!("Payload: {:x}", payload);
+                info!("Payload: {:x}", payload);
 
                 if payload.len() < 48  {
                     warn!("GPS Fix response is too short!");
@@ -197,7 +312,6 @@ pub async fn gps_impl(
             },
             id => {
                 info!("Received message with ID {:x}, len {}", message_id, payload_length)
-            }
-        }
-    }
+            } 
+        }*/
 }

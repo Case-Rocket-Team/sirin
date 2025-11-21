@@ -9,10 +9,11 @@ use lsm6dso_spi::{Accel, AngularVel, Lsm6dso};
 use paste::paste;
 use rfm9::Rfm9;
 use sirin_macros::Measurement;
-use sirin_shared::packet::{BaroData, HighGImuData, ImuData, Measurement, SirinData, SubsystemError, Vec3};
+use sirin_shared::{packet::{BaroData, HighGImuData, ImuData, MagnetometerData, Measurement, SirinData, SubsystemError, Vec3}, physics::approx_pressure_altitude};
 use snafu::prelude::*;
 use uunit::{Celsius, Milliseconds, Pascals, WithUnits};
 use w25qx::W25Q;
+use lis3mdl::Lis3mdl;
 
 use crate::spi::SpiDev;
 
@@ -181,6 +182,30 @@ impl Instrument for H3lis<SpiDev> {
                 }
             }
         }
+
+    }
+}
+
+impl Subsystem for Lis3mdl<SpiDev> {
+    const NAME: &str = "Magnetometer";
+    const PART: &str = "LIS3MDL";
+
+    async fn selfcheck(&mut self) -> Result<(), SubsystemError> {
+        let manufacturer_id = self.manufacturer_id().await?;
+
+        sanity_check!(manufacturer_id => 50)?;
+        Ok(())
+    }
+}
+
+impl Instrument for Lis3mdl<SpiDev> {
+    type Data = MagnetometerData;
+
+    async fn measure(&mut self) -> Self::Data {
+        Self::Data{
+            mag: self.magnetic().await.map(|mag| Vec3 { x: mag.0, y: mag.1, z: mag.2 }).map_err(|e| e.into()),
+            temp: self.temp().await.map(|t: i16| t as i16).map_err(|e| e.into())
+        }
         
     }
 }
@@ -200,13 +225,17 @@ impl Subsystem for Rfm9<SpiDev> {
 pub async fn measure_sirin(
     baro: &mut Bmp3<SpiDev>,
     imu: &mut Lsm6dso<SpiDev>,
-    high_g_imu: &mut H3lis<SpiDev>
+    high_g_imu: &mut H3lis<SpiDev>,
+    magnetometer: &mut Lis3mdl<SpiDev>
 ) -> SirinData {
-    // TODO: join futures?
+    let barodata = baro.measure().await;
+    //TODO: join futures?
     SirinData {
         time: (Instant::now().as_millis() as u32).with_units(),
-        baro: baro.measure().await,
+        baro: barodata.clone(),
         imu: imu.measure().await,
-        high_g_imu: high_g_imu.measure().await
+        high_g_imu: high_g_imu.measure().await,
+        magnetometer: magnetometer.measure().await,
+        altitude: approx_pressure_altitude(barodata.pressure.unwrap().convert())
     }
 }
