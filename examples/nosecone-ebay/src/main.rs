@@ -66,11 +66,12 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
      */
 
-    let accel_threshold: Gs<f64> = (100.0).with_units(); //In Gs squared
+    let accel_threshold: Gs<f64> = (10.0 * 10.0).with_units(); //In Gs squared
     let altitude_threshold = 20.0; //In meters
     let main_deployment_altitude= 1500.0; //In meters
     let flight_duration = 600; //In seconds
-    let apogee_error = 5.0; //In meters
+    let apogee_error = 2.0; //In meters
+    let timeout = 10; //In seconds
 
     let mut apo_deployed = false;
     let mut main_deployed = false;
@@ -109,6 +110,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut ticker = Ticker::every(Duration::from_millis(500));
 
     let mut launched_at = None;
+    let mut dur: Option<Duration> = None;
     let mut max_altitude: Meters<f64> = 0.0.with_units();
 
     let mut desired_mode = None;
@@ -280,15 +282,23 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
                 //Check apogee, deploy apo parachute
                 if let None = state.apogee {
-                    if max_altitude.value > state.altitude.value + apogee_error {
+                    if max_altitude.value > state.altitude.value + apogee_error{
                         state.apogee = Some(max_altitude);
-                        if !apo_deployed{
-                            Sirin::deploy_chute_apo(&mut sirin.parachute_apo);
-                            OUT_CHANNEL.publish_immediate(IoPacket::new(
-                        IoChannel::Flash, 
-                        OutPacket::DeployedApoAt(sirin.data.time.value)
-                            ));
-                            apo_deployed = true;
+                        match dur{
+                            Some(duration) => {
+                                if duration > Duration::from_secs(timeout){
+                                    if !apo_deployed{
+                                        //Timer::after_millis(1000).await;
+                                        Sirin::deploy_chute_apo(&mut sirin.parachute_apo);
+                                        OUT_CHANNEL.publish_immediate(IoPacket::new(
+                                        IoChannel::Flash, 
+                                        OutPacket::DeployedApoAt(sirin.data.time.value)
+                                        ));
+                                        apo_deployed = true;
+                                    }
+                                }
+                            },
+                            None => {}
                         }
                     }
                 }
@@ -308,8 +318,8 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
                 //Timeout after designated time
                 if let Some(launched_at) = launched_at {
-                    let dur = Instant::now() - launched_at;
-                    if dur > Duration::from_secs(flight_duration) {
+                    dur = Some(Instant::now() - launched_at);
+                    if dur.unwrap() > Duration::from_secs(flight_duration) {
                         desired_mode = Some(SirinMode::Landed)
                     }
                 }
@@ -346,7 +356,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             OUT_CHANNEL.publish_immediate(IoPacket::new(
                 IoChannel::ToLoRa, OutPacket::LogEntry(LogEntry::new(
                     sirin.data.time,
-                    Log::Data(sirin.data.clone())
+                    Log::State(state.clone())
                 ))
             ));
         }
