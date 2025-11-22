@@ -132,7 +132,7 @@ pub enum GpsFixType {
 
 #[derive(Debug, Clone, SongSize, FromSong, ToSong)]
 pub struct GpsFix {
-    pub time: Milliseconds<u32>,
+    pub time: Milliseconds<u64>,
     pub satellites: u8,
     pub fix_type: GpsFixType,
     pub pos: Vec3<Meters<f64>>,
@@ -145,7 +145,7 @@ pub struct GpsFix {
 impl Default for GpsFix {
     fn default() -> Self {
         GpsFix {
-            time: 0u32.with_units(),
+            time: 0u64.with_units(),
             satellites: 0,
             fix_type: GpsFixType::NoFix,
             pos: Vec3 {
@@ -188,6 +188,33 @@ impl Default for GpsDop {
             horizontal_dop: 0f32,
             northing_dop: 0f32,
             easting_dop: 0f32
+        }
+    }
+}
+
+
+#[derive(Debug, Clone, SongSize, FromSong, ToSong)]
+pub struct GpsRf {
+    
+}
+
+impl Default for GpsRf {
+    fn default() -> Self {
+        GpsRf {  
+            
+        }
+    }
+}
+
+#[derive(Debug, Clone, SongSize, FromSong, ToSong)]
+pub struct GpsSat {
+    
+}
+
+impl Default for GpsSat {
+    fn default() -> Self {
+        GpsSat {  
+            
         }
     }
 }

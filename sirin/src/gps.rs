@@ -17,7 +17,7 @@ use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal}
 use embassy_time::{Instant, Timer};
 use serde::de;
 use sirin_shared::{
-    packet::{self, GpsFix, GpsFixType, GpsDop, Log, OutPacket, Vec3},
+    packet::{self, GpsDop, GpsFix, GpsFixType, GpsRf, GpsSat, Log, OutPacket, Vec3},
     song::FromSong,
 };
 use ublox::{
@@ -36,6 +36,8 @@ use uunit::{Meters, MetersPerSecond, WithUnits};
 
 pub static GPS_FIX: Signal<CriticalSectionRawMutex, GpsFix> = Signal::new();
 pub static GPS_DOP: Signal<CriticalSectionRawMutex, GpsDop> = Signal::new();
+pub static GPS_RF: Signal<CriticalSectionRawMutex, GpsRf> = Signal::new();
+pub static GPS_SAT: Signal<CriticalSectionRawMutex, GpsSat> = Signal::new();
 
 #[task]
 pub async fn gps_task(
@@ -44,6 +46,8 @@ pub async fn gps_task(
 ) {
     let mut fix = GpsFix::default();
     let mut dop = GpsDop::default();
+    let mut rf = GpsRf::default();
+    let mut sat = GpsSat::default();
     //Create packet parser
     let mut packet_parser: Parser<FixedBuffer<512>, Proto31> = ublox::Parser::new_fixed();
     //Create buffer to read into from RingBuffer
@@ -52,7 +56,7 @@ pub async fn gps_task(
     //Task loop
     loop {
         info!("New gps loop iteration");
-        match gps_impl(gps_rx, &mut fix, &mut dop, &mut packet_parser, gps_tx, &mut bytes_from_ring_buf).await {
+        match gps_impl(gps_rx, &mut fix, &mut dop, &mut rf, &mut sat, &mut packet_parser, gps_tx, &mut bytes_from_ring_buf).await {
             Err(err) => error!("GPS Error: {}", Debug2Format(&err)),
             Ok(_) => {}
         };
@@ -78,6 +82,8 @@ pub async fn gps_impl(
     gps_rx: &mut RingBufferedUartRx<'static>,
     fix: &mut GpsFix,
     dop: &mut GpsDop,
+    rf: &mut GpsRf,
+    sat: &mut GpsSat,
     packet_parser: &mut Parser<FixedBuffer<512>, Proto31>,
     gps_tx: &mut UartTx<'static, Async>,
     bytes: &mut [u8],
@@ -135,6 +141,7 @@ pub async fn gps_impl(
                                 has_posvel = false;
                             }
                         }
+                        
                         //Update GPS fix
                         if has_posvel {
                             fix.pos = Vec3 {
@@ -153,7 +160,7 @@ pub async fn gps_impl(
                         }
 
                         if has_time {
-                            //TODO: figure out what to do here
+                            fix.time = 1u64.with_units();
                             fix.satellites = nav_pvt_packet.num_satellites();
                         }
                         
@@ -186,12 +193,14 @@ pub async fn gps_impl(
                         for block in mon_rf_packet.blocks(){
                             info!("Got message: mon_rf");
                             info!("Block: {:?}", Debug2Format(&block));
+                            GPS_RF.signal(rf.clone());
                         }
                     }
                     PacketRef::NavSat(nav_sat_packet) => {
                         for nav_sat_info in nav_sat_packet.svs(){
                             info!("Got message: nav_sat");
-                            info!("Nav Sat Info: {:?}", Debug2Format(&nav_sat_info));  
+                            info!("Nav Sat Info: {:?}", Debug2Format(&nav_sat_info));
+                            GPS_SAT.signal(sat.clone());
                         }
                     }
                     _ => {
