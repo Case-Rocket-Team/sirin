@@ -32,6 +32,14 @@ extern "C" {
         angular_vel_measurement: *const f32
     );
 
+    pub fn correct_from_gps(
+        nominal: &mut NominalState,
+        error: &mut ErrorState,
+        cov: &mut CovarianceMatrixP,
+        gps_position: *const f64,
+        gps_velocity: *const f32
+    );
+
     /// Calculate altitude exactly from pressure using libm
     //pub fn pressure_altitude(
     //    pressure: Hectopascals<f64>
