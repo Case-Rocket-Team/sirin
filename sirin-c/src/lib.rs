@@ -12,7 +12,7 @@ pub extern "C" fn sirin_log(str: *const core::ffi::c_char) {
     let c_str = unsafe {
         CStr::from_ptr(str)
     };
-    defmt::info!("sirin-c: {}", Debug2Format(&c_str))
+    // defmt::info!("sirin-c: {}", Debug2Format(&c_str))
 }
 
 extern "C" {
