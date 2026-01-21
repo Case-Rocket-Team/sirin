@@ -66,16 +66,19 @@ void cross_product(
 }
 
 // Finds the quaternion that rotates unit vec A into B.
-void quaternion_between_vecs(
+// https://stackoverflow.com/questions/1171849/finding-quaternion-representing-the-rotation-from-one-vector-to-another
+/*void quaternion_between_vecs(
     float32_t pSrcUnitVecA[3],
     float32_t pSrcUnitVecB[3],
     float32_t pDstQuat[4]
 ) {
     // todo optimize
     cross_product(pSrcUnitVecA, pSrcUnitVecB, &pDstQuat[1]);
-    pDstQuat[0] = 2.0f;
+    float32_t dot;
+    arm_dot_prod_f32(pSrcUnitVecA, pSrcUnitVecB, 3, &dot);
+    pDstQuat[0] = 1.0f + dot;
     arm_quaternion_normalize_f32(pDstQuat, pDstQuat, 1);
-}
+}*/
 
 // this is basically the same as a cross product, ref. eq. 20
 // TODO: see if this is included in CMSIS somewhere (I couldn't
@@ -207,11 +210,12 @@ void vec2quaternion(
     float32_t axis[3];
     decompose_vec(pSrcVec, &mag, axis);
 
-    if (mag < 0.001) {
-        pDstQuaternion[0] = 1;
-        pDstQuaternion[1] = 0;
-        pDstQuaternion[2] = 0;
-        pDstQuaternion[3] = 0;
+    if (mag < 1e-9) {
+        // Small-angle approximation
+        pDstQuaternion[0] = 1.0f;
+        pDstQuaternion[1] = 0.5f * pSrcVec[0];
+        pDstQuaternion[2] = 0.5f * pSrcVec[1];
+        pDstQuaternion[3] = 0.5f * pSrcVec[2];
         return;
     }
 

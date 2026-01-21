@@ -41,6 +41,8 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 
 #[allow(unused_variables)]
 async fn main_task(sirin: &'static mut Sirin) {
+    let mut i = 0;
+
     let mut prev_reading = Instant::now();
 
     let mut nominal = NominalState::default();
@@ -71,27 +73,32 @@ async fn main_task(sirin: &'static mut Sirin) {
         }
     }
 
+    let mut roll = 0.0;
+
     loop {
-        info!("Running loop");
+        // info!("Running loop");
 
         let curr_reading = Instant::now();
         let dt = curr_reading.duration_since(prev_reading);
 
         let accel = sirin.imu.accel().await.unwrap();
         let accel = [
-            (accel.x.value as f32) / 10e6,
-            (accel.y.value as f32) / 10e6,
-            (accel.z.value as f32) / 10e6,
+            (accel.x.value as f32) / 1e6 *  9.81,
+            (accel.y.value as f32) / 1e6 *  9.81,
+            (accel.z.value as f32) / 1e6 *  9.81,
         ];
-
-        info!("Accel: {}", accel);
 
         let angular = sirin.imu.angular_vel().await.unwrap();
+
+        //roll += (angular.x_pitch.value as f32) / 1e6 * (dt.as_millis() as f32 / 1000.0);
+        //info("roll: {} deg", roll);
+
         let angular = [
-            (angular.x_pitch.value as f32) * PI / 180.0 / 10.0e6,
-            (angular.y_roll.value as f32) * PI / 180.0 / 10.0e6,
-            (angular.z_yaw.value as f32) * PI / 180.0 / 10.0e6,
+            (angular.x_pitch.value as f32) * PI / 180.0 / 1e6,
+            (angular.y_roll.value as f32) * PI / 180.0 / 1e6,
+            (angular.z_yaw.value as f32) * PI / 180.0 / 1e6,
         ];
+
         unsafe {
             sirin_c::update_with_imu(
                 &mut nominal,
@@ -103,12 +110,11 @@ async fn main_task(sirin: &'static mut Sirin) {
             );
         }
 
-        info!("Nominal: {}", Debug2Format(&nominal));
-        
-        info!("Uncertainty: {}", Debug2Format(&cov.accel_uncertainty()));
-
-        Timer::after_millis(1_000).await;
+        if i % 50 == 0 {
+            info!("Nominal: {}", Debug2Format(&nominal));
+        }
 
         prev_reading = curr_reading;
+        i += 1;
     }
 }
