@@ -1,4 +1,5 @@
-#include "arm_math.h"
+#include "../cmsis-dsp/Include/arm_math.h"
+// #include "arm_math.h"
 
 // Following https://www.iri.upc.edu/people/jsola/JoanSola/objectes/notes/kinematics.pdf    
 
@@ -122,6 +123,25 @@ void set_block(
     }
 }
 
+/**
+ * Copies a NxN block from a src matrix to dst matrix
+ */
+void copy_block(
+    const float32_t *pSrc,
+    float32_t *pDst,
+    size_t blockSize,
+    size_t srcWidth,
+    size_t dstWidth,
+    size_t row,
+    size_t col 
+) {
+    for (size_t y = 0; y < blockSize; y++) {
+        for (size_t x = 0; x < blockSize; x++) {
+            pDst[(row + y) * dstWidth + (col + x)] =
+                pSrc[(row + y) * srcWidth + (col + x)];
+        }
+    }
+}
 
 void set_3d_identity_block(
     float32_t *pDst,
@@ -260,6 +280,72 @@ void vec2rot_matrix(
         arm_scale_f32(term, 1.0 - cos, term, 9);
         arm_add_f32(pDstRotMatrix, term, pDstRotMatrix, 9);
     }
+}
+
+void update_with_gps(
+    struct NominalState *nominal,
+    struct ErrorState *error,
+    struct CovarianceMatrixP *cov,
+    float32_t *gps_position,
+    float32_t *gps_velocity
+) {
+    // GPS horizontal accuracy: 1.5m
+    // GPS vertical accuracy (*1.7, according to google): 2.55m
+    // GPS velocity accuracy: 0.05 m/s
+    // BETTER: get hAcc and vAcc from the UBX GPS packet
+    const int N_MEAS = 6;
+    float32_t hAcc = 1.5f, vAcc = 2.55f;
+    float32_t sAcc = 0.05f;
+
+    float32_t v_mat_data[N_MEAS * N_MEAS];
+    // horizontal position accuracy
+    v_mat_data[0] = hAcc * hAcc;
+    v_mat_data[7] = hAcc * hAcc;
+    // vertical position accuracy
+    v_mat_data[14] = vAcc * vAcc;
+    // velocity accuracy
+    v_mat_data[21] = sAcc * sAcc;
+    v_mat_data[28] = sAcc * sAcc;
+    v_mat_data[35] = sAcc * sAcc;
+    arm_matrix_instance_f32 v_mat = {
+        .numCols = 6,
+        .numRows = 6,
+        .pData = v_mat_data
+    };
+
+    // GPS H: 
+    // [I 0 0 0 0 0]
+    // [0 I 0 0 0 0]
+    float32_t h_mat_data[N_MEAS * STATE_DIMS];
+    set_3d_identity_block(h_mat_data, 18, 0, 0);
+    set_3d_identity_block(h_mat_data, 18, 3, 3);
+    arm_matrix_instance_f32 h_mat = {
+        .numCols = STATE_DIMS,
+        .numRows = 6,
+        .pData = h_mat_data
+    };
+
+    // EQ 273
+    // K = P H^T (H P H^T + V)^-1
+
+    // H P H^T + V
+    float32_t s_mat_data[N_MEAS * N_MEAS];
+    arm_matrix_instance_f32 s_mat = {
+        .numCols = 6,
+        .numRows = 6,
+        .pData = s_mat_data
+    };
+    // H P H^T = first 6 rows and cols of P
+    copy_block(cov->data, s_mat_data, N_MEAS, STATE_DIMS, N_MEAS, 0, 0);
+    arm_mat_add_f32(&s_mat, &v_mat, &s_mat);
+
+    arm_status status = arm_mat_cholesky_f32(&s_mat, &s_mat);
+    if (status != ARM_MATH_SUCCESS) {
+        sirin_log("GPS update: Cholesky decomposition failed!");
+        return;
+    }
+
+
 }
 
 void init_with_imu(
