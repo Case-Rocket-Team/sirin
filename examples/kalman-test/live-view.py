@@ -15,6 +15,9 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 quat_re = re.compile(
     r"Quaternion\s*\{\s*r:\s*([-\d\.eE]+),\s*x:\s*([-\d\.eE]+),\s*y:\s*([-\d\.eE]+),\s*z:\s*([-\d\.eE]+)"
 )
+mag_re = re.compile(
+    r"Magnetometer\s*\{\s*x:\s*([-\d\.eE]+),\s*y:\s*([-\d\.eE]+),\s*z:\s*([-\d\.eE]+)"
+)
 
 def quat_to_matrix(r, x, y, z):
     q = np.array([r, x, y, z], dtype=float)

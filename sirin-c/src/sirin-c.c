@@ -415,6 +415,15 @@ void correct_from_gps(
     arm_add_f32(temp_mat_data, kvt_mat_data, cov->data, STATE_MAT_SIZE);
 }
 
+void correct_from_magnetometer(
+    struct NominalState *nominal,
+    struct ErrorState *error,
+    struct CovarianceMatrixP *cov,
+    float32_t *mag_measurement
+) {
+    
+}
+
 
 void init_with_imu(
     struct NominalState *nominal,

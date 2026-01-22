@@ -112,7 +112,9 @@ async fn main_task(sirin: &'static mut Sirin) {
 
         if i % 50 == 0 {
             info!("Nominal: {}", Debug2Format(&nominal));
+            info!("Magnetometer: {:?}", sirin.magnetometer.magnetic().await.unwrap());
         }
+        
 
         prev_reading = curr_reading;
         i += 1;
