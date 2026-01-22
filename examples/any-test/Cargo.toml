@@ -1,7 +1,7 @@
 # This file was automatically generated.
 [package]
 edition = "2021"
-name = "radiotest2"
+name = "any-test"
 version = "0.1.0"
 
 [package.metadata.release]
@@ -38,17 +38,15 @@ stm32-fmc = "0.3.0"
 embedded-storage = "0.3.1"
 static_cell = "2"
 chrono = { version = "^0.4", default-features = false }
-postcard = "1.1.1"
 
 sirin = { version = "0.1.1", path = "../../sirin" }
 bmp3 = { version = "0.1.1", path = "../../bmp3" }
 rfm9 = { version = "0.1.1", path = "../../rfm9", features = ['defmt'] }
-w25qx = { version = "0.1.1", path = "../../w25qx" }
 sirin-shared = { version = "0.1.0", path = "../../sirin-shared" }
 #panic-halt = "0.2.0"
 
 [[bin]]
-name = "radiotest2"
+name = "any-test"
 test = false
 bench = false
 
@@ -62,3 +60,4 @@ debug = [
     "embassy-time/defmt-timestamp-uptime",
     "embassy-stm32/defmt",
 ]
+

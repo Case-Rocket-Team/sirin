@@ -14,7 +14,7 @@ use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task}, io::{FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
+use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task}, io::{FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_flash_logging_enabled, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, Publisher, Subscriber}};
 use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
@@ -53,19 +53,33 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 }
 
 async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
-    let accel_threshold: Gs<f64> = (10.0).with_units(); //In Gs
-    let altitude_threshold = 33.0; //In meters
+
+    /*
+
+    FOR IREC ROCKET - CHECK TO ENSURE THESE VALUES ARE CODED:
+    DO NOT PUSH CODE WITH THESE VALUES SIGNIFICANTLY CHANGED
+    accel_threshold = 100G^2
+    altitude_threshold = 20m
+    main_deployment_altitude = 1500m
+    flight_duration = 600s
+    apogee_error = 5m
+
+     */
+
+    let accel_threshold: Gs<f64> = (10.0 * 10.0).with_units(); //In Gs squared
+    let altitude_threshold = 20.0; //In meters
     let main_deployment_altitude= 1500.0; //In meters
-    let flight_duration = 100; //In seconds
-    let apogee_error = 7.0; //In meters
+    let flight_duration = 600; //In seconds
+    let apogee_error = 2.0; //In meters
+    let timeout = 10; //In seconds
 
     let mut apo_deployed = false;
     let mut main_deployed = false;
     
 
     let mut state = SirinState::default();
+    FLASH_LOGGING_ENABLED.store(false, Ordering::Relaxed);
 
-    let mut initial_altitude = approx_pressure_altitude(sirin.baro.read().await?.pressure.convert());
     let mut altitude_array: [f64; 100] = [0.0; 100];
     for i in 0..100 {
         let altitude = approx_pressure_altitude(sirin.baro.read().await?.pressure.convert());
@@ -74,7 +88,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     }
     
     altitude_array.sort_unstable_by(|a, b | a.partial_cmp(b).unwrap());
-    initial_altitude = altitude_array[50].with_units();
+    let initial_altitude = altitude_array[50].with_units();
    
 
     info!("Initial altitude: {}", initial_altitude.value);
@@ -82,7 +96,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
     sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
     sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
-    sirin.spawner.spawn(gps_task(&mut sirin.gps_rx, &mut sirin.gps_tx)).unwrap();
+    //sirin.spawner.spawn(gps_task(&mut sirin.gps_rx, &mut sirin.gps_tx)).unwrap();
 
     let mut i = 0;
     
@@ -96,6 +110,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut ticker = Ticker::every(Duration::from_millis(500));
 
     let mut launched_at = None;
+    let mut dur: Option<Duration> = None;
     let mut max_altitude: Meters<f64> = 0.0.with_units();
 
     let mut desired_mode = None;
@@ -116,6 +131,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 },
                 InPacket::Ping => {}
                 InPacket::SetTime(ref reference) => {
+                    info!("SetTime packet received!");
                     if duration_since_epoch().is_some() {
                         continue;
                     }
@@ -124,7 +140,13 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     let ms_since_epoch = reference.ms_since_epoch - Instant::now().as_millis();
 
                     set_duration_since_epoch(Duration::from_millis(ms_since_epoch));
-                    flash.lock().await.set_absolute_time_reference(AbsoluteTimeReference { ms_since_epoch }).await?;
+                    //set_flash_logging_enabled(true);
+                    info!("Awaiting flash lock...");
+                    let mut flash = flash.lock().await;
+                    info!("Flash locked in main");
+                    flash.set_absolute_time_reference(AbsoluteTimeReference { ms_since_epoch }).await?;
+                    info!("Flash task complete");
+                    //set_flash_logging_enabled(false);
 
                     // skip OK packet
                     continue;
@@ -151,6 +173,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     desired_mode = Some(m);
                 }
                 InPacket::QueryFlights => {
+                    //info!("QueryFlights packet received!");
                     let flash = flash.lock().await;
 
                     //info!("Querying flights...");
@@ -187,10 +210,11 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 }
                 InPacket::EraseFlash(..) => {
                     let mut flash = flash.lock().await;
-                    //info!("Starting chip erase...");
+                    info!("Starting chip erase...");
                     flash.w25q.chip_erase().await?;
+                    info!("Waiting until flash is ready...");
                     flash.w25q.until_ready().await?;
-                    //info!("Finished chip erase.");
+                    info!("Finished chip erase.");
                     send_packet(io_packet.reply(OutPacket::Ok));
 
                     Timer::after_millis(500).await;
@@ -213,14 +237,9 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         ).await;
 
         //info!("Calculate altitude");
-        info!("Initial altitude: {}", initial_altitude.value);
         if let Ok(pressure) = sirin.data.baro.pressure {
             let measured_altitude = approx_pressure_altitude(pressure.convert());
-            info!("Measured altitude: {}", measured_altitude.value);
             state.altitude = measured_altitude - initial_altitude;
-            info!("Relative altitude: {}", state.altitude.value);
-            //info!("Estimated altitude: {}m", state.altitude.value);
-
             if state.altitude.value > max_altitude.value {
                 max_altitude = state.altitude;
             }
@@ -263,15 +282,23 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
                 //Check apogee, deploy apo parachute
                 if let None = state.apogee {
-                    if max_altitude.value > state.altitude.value + apogee_error {
+                    if max_altitude.value > state.altitude.value + apogee_error{
                         state.apogee = Some(max_altitude);
-                        if !apo_deployed{
-                            Sirin::deploy_chute_apo(&mut sirin.parachute_apo);
-                            OUT_CHANNEL.publish_immediate(IoPacket::new(
-                        IoChannel::Flash, 
-                        OutPacket::DeployedApoAt(sirin.data.time.value)
-                            ));
-                            apo_deployed = true;
+                        match dur{
+                            Some(duration) => {
+                                if duration > Duration::from_secs(timeout){
+                                    if !apo_deployed{
+                                        //Timer::after_millis(1000).await;
+                                        Sirin::deploy_chute_apo(&mut sirin.parachute_apo);
+                                        OUT_CHANNEL.publish_immediate(IoPacket::new(
+                                        IoChannel::Flash, 
+                                        OutPacket::DeployedApoAt(sirin.data.time.value)
+                                        ));
+                                        apo_deployed = true;
+                                    }
+                                }
+                            },
+                            None => {}
                         }
                     }
                 }
@@ -291,8 +318,8 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
                 //Timeout after designated time
                 if let Some(launched_at) = launched_at {
-                    let dur = Instant::now() - launched_at;
-                    if dur > Duration::from_secs(flight_duration) {
+                    dur = Some(Instant::now() - launched_at);
+                    if dur.unwrap() > Duration::from_secs(flight_duration) {
                         desired_mode = Some(SirinMode::Landed)
                     }
                 }
@@ -319,7 +346,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         //info!("Try get GPS fix");
         if let Some(fix) = GPS_FIX.try_take() {
             //if fix.fix_type != GpsFixType::NoFix {
-                state.gps = fix;
+                state.gps_fix = fix;
             //}
         }
 
@@ -327,25 +354,18 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         
         if i % 10 == 0 {
             OUT_CHANNEL.publish_immediate(IoPacket::new(
-                IoChannel::Flash, OutPacket::LogEntry(LogEntry::new(
-                    sirin.data.time,
-                    Log::Data(sirin.data.clone())
-
-                ))
-            ));
-            OUT_CHANNEL.publish_immediate(IoPacket::new(
                 IoChannel::ToLoRa, OutPacket::LogEntry(LogEntry::new(
                     sirin.data.time,
-                    Log::Data(sirin.data.clone())
+                    Log::State(state.clone())
                 ))
             ));
         }
-        info!("Final state altitude: {}", state.altitude.value);
+        //info!("Final state altitude: {}", state.altitude.value);
         //info!("Done with GPS");
 
 
         
-        //i = i.wrapping_add(1);
+        i += 1;
 
     }
 }

@@ -22,8 +22,10 @@ members = [
     "examples/kalman-test",
     "examples/radiotest",
     "examples/ejection-test",
+    "examples/radio-test-send",
     "examples/gps-test",
-    "examples/radiotest2"
+    "examples/radio-test-receive",
+    "examples/any-test"
 ]
 resolver = "2"
 

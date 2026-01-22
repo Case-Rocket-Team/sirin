@@ -23,10 +23,14 @@ pub static BROADCAST_CHANNEL: PubSubChannel<OutPacket, 3> = EmbassyPubSubChannel
 // High priority I/O channels
 pub static OUT_CHANNEL: PubSubChannel<IoPacket<OutPacket>, 3> = EmbassyPubSubChannel::new();
 pub static IN_CHANNEL: Channel<CriticalSectionRawMutex, IoPacket<InPacket>, 32> = Channel::new();
-pub static INTERNAL_CHANNEL: Channel<CriticalSectionRawMutex, IoPacket<InPacket>, 32> = Channel::new();
 
 static USB_BROADCASTING_ENABLED: AtomicBool = AtomicBool::new(false);
 pub static FLASH_LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
+
+
+pub fn set_flash_logging_enabled(bool: bool) {
+    FLASH_LOGGING_ENABLED.store(bool, Ordering::Relaxed);
+}
 
 pub fn broadcast_log(time: Milliseconds<u32>, log: Log) {
     broadcast(OutPacket::LogEntry(LogEntry::new(time, log)));
@@ -43,12 +47,14 @@ pub fn send_packet(packet: IoPacket<OutPacket>) {
 }
 
 pub async fn receive_packet() -> IoPacket<InPacket> {
-    INTERNAL_CHANNEL.receive().await
+    IN_CHANNEL.receive().await
 }
 
 //Receives only InPackets coming from LoRa
 pub fn try_receive_packet() -> Result<IoPacket<InPacket>, TryReceiveError> {
-    INTERNAL_CHANNEL.try_receive()
+    let packet = IN_CHANNEL.try_receive();
+    //info!("Packet try_received: {:?}", Debug2Format(&packet));
+    packet
 }
 
 fn received_packet(mut packet: IoPacket<InPacket>) {
@@ -120,74 +126,28 @@ async fn radio_task_impl(
     config: &'static SirinConfig,
     radio: &mut Radio,
 ) -> Result<(), SirinError> {
-    info!("Radio task is running!");
+    //info!("Radio task is running!");
     radio.set_mode(rfm9::Mode::Sleep).await?;
-    //let mut broadcast_sub = BROADCAST_CHANNEL.subscriber()?;
+    let mut broadcast_sub = BROADCAST_CHANNEL.subscriber()?;
     let mut out_sub = OUT_CHANNEL.subscriber()?;
-    let mut in_sub = IN_CHANNEL.sender();
-    let in_receiver = IN_CHANNEL.receiver();
-    let internal_sender = INTERNAL_CHANNEL.sender();
 
     let mut buf = [0u8; MAX_OUT_PACKET_SIZE];
-    let mut buf2 = [0u8; 255];
-    let mut buf3 = [0u8; 255];
 
     loop {
         //Send OutPackets
-        let packet = out_sub.try_next_message_pure();
-        match packet {
-            Some(io_packet) => {
-                //info!("OutPacket found!");
-                if io_packet.channel == IoChannel::ToLoRa {
-                    //info!("OutPacket wants to be sent via radio!");
-                    let packet = io_packet.packet;
+        let packet = next_out_packet(
+            &mut broadcast_sub,
+            &mut out_sub,
+            IoChannel::ToLoRa
+        ).await;
 
-                    let radio_packet = RadioPacket::new(config, packet);
+        let radio_packet = RadioPacket::new(config, packet);
 
-                    radio_packet.to_song(&mut buf)?;
+        radio_packet.to_song(&mut buf)?;
 
-                    radio.transmit(&buf[0..radio_packet.song_size()]).await?;
-                    radio.set_mode(rfm9::Mode::Sleep).await?;
-                    //info!("Outpacket sent over radio!");
-                }
-            }
-            None => {}
-        }
-
-        //Send InPackets
-        let packet = IN_CHANNEL.try_receive();
-        match packet{
-            Ok(packet) => {
-                //info!("IoPacket found!");
-                let packet: IoPacket<InPacket> = packet;
-                if packet.channel == IoChannel::ToLoRa{
-                    //info!("InPacket wants to be sent via radio!");
-                    let radio_packet = RadioPacket::new(config, packet.packet);
-                    radio_packet.to_song(&mut buf3);
-                    radio.transmit(&buf3[0..radio_packet.song_size()]).await;
-                    //info!("InPacket is sent over radio!");
-                }
-            },
-            Err(..) => {}
-        }
-        //Receive InPackets
-        match radio.recieve(&mut buf2).await{
-            Ok(len) => {
-                //info!("Radio data received!");
-                let len = len as usize;
-                let radio_packet = RadioPacket::from_song(&buf2[..len]);
-                if let Ok(packet) = radio_packet{
-                    //info!("InPacket is received from radio!");
-                    let inpacket: InPacket = packet.packet;
-                    internal_sender.send(IoPacket::new(IoChannel::FromLoRa, inpacket)).await;
-                    //info!("InPacket is sent to proper channel!");
-                    //info!("Free capacity of InChannel: {}", INTERNAL_CHANNEL.free_capacity());
-                }
-            },
-            Err(..) => {
-                //info!("No radio packet received");
-            }
-        };
+        radio.transmit(&buf[0..radio_packet.song_size()]).await?;
+        radio.set_mode(rfm9::Mode::Sleep).await?;
+        
     }
 }
 
@@ -291,7 +251,7 @@ pub async fn flash_task_impl(flash_mutex: &Mutex<&mut Flash>) -> Result<(), Siri
             let mut flash = flash_mutex.lock().await;
             flash.log(&packet).await.unwrap();
             drop(flash);
-        }        
+        }       
     }
 }
 
