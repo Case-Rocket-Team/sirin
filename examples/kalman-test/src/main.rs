@@ -115,7 +115,7 @@ async fn main_task(sirin: &'static mut Sirin) {
             info!("Magnetometer: {:?}", sirin.magnetometer.magnetic().await.unwrap());
         }
         
-
+        
         prev_reading = curr_reading;
         i += 1;
     }
