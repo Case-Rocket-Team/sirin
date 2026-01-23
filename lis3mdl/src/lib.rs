@@ -212,8 +212,8 @@ impl <S: SpiHandle> Lis3mdl<S> {
         // self.write_reg(reg, value as u8).await?;
         //self.write_reg(CTRL_REG1, 0b1001_0000 as u8).await?;
 
-        //self.write_reg(CtrlReg1, 0b001_10_111 as u8).await?;
-        //self.write_reg().await?;
+        //self.write_reg(RegCtrlReg1, 0b0100_0101 as u8).await?;
+        self.write_reg(RegCtrlReg3, 0b00_0_00_000 as u8).await?;      //self.write_reg().await?;
         Ok(())    
     }
 

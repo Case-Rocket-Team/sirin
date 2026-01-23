@@ -53,7 +53,7 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 }
 
 async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
-    info!("Start main");
+    /*info!("Start main");
     let mut i = 5;
     while i > 0 {
         info!("{}", i);
@@ -70,5 +70,27 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         Timer::after_millis(500).await;
         sirin.led.set_low();
         Timer::after_millis(500).await;   
+    }*/
+
+    sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
+    loop{
+        sirin.data = measure_sirin(
+            &mut sirin.baro,
+            &mut sirin.imu,
+            &mut sirin.high_g_imu,
+            &mut sirin.magnetometer
+        ).await;
+
+        OUT_CHANNEL.publish_immediate(IoPacket::new(
+        IoChannel::ToLoRa, OutPacket::LogEntry(LogEntry::new(
+                sirin.data.time,
+                Log::Data(sirin.data.clone())
+            ))
+        ));
+        info!("Transmitting!");
+        sirin.led.set_high();
+        Timer::after_millis(500).await;
+        sirin.led.set_low();
+        Timer::after_millis(500).await; 
     }
 }

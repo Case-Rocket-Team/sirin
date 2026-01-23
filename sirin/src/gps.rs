@@ -49,7 +49,7 @@ pub async fn gps_task(
 
     //Task loop
     loop {
-        info!("New gps loop iteration");
+        //info!("New gps loop iteration");
         match gps_impl(gps_rx, &mut fix, &mut packet_parser, gps_tx, &mut bytes_from_ring_buf).await {
             Err(err) => error!("GPS Error: {}", Debug2Format(&err)),
             Ok(_) => {}
@@ -153,6 +153,7 @@ pub async fn gps_impl(
                         
                         //Make new gps fix available to main task
                         GPS_FIX.signal(fix.clone());
+                        info!("GPS fix sent to main!");
                     }
                     PacketRef::AckAck(_raw_packet) => {
                         info!("Got message: AckAck");
