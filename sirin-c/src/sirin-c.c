@@ -124,19 +124,20 @@ void set_block(
 }
 
 /**
- * Copies a NxN block from a src matrix to dst matrix
+ * Copies a NxM block from a src matrix to dst matrix
  */
 void copy_block(
     const float32_t *pSrc,
     float32_t *pDst,
-    size_t blockSize,
+    size_t blockCols,
+    size_t blockRows,
     size_t srcWidth,
     size_t dstWidth,
     size_t row,
     size_t col 
 ) {
-    for (size_t y = 0; y < blockSize; y++) {
-        for (size_t x = 0; x < blockSize; x++) {
+    for (size_t y = 0; y < blockRows; y++) {
+        for (size_t x = 0; x < blockCols; x++) {
             pDst[(row + y) * dstWidth + (col + x)] =
                 pSrc[(row + y) * srcWidth + (col + x)];
         }
@@ -282,7 +283,7 @@ void vec2rot_matrix(
     }
 }
 
-void update_with_gps(
+void correct_from_gps(
     struct NominalState *nominal,
     struct ErrorState *error,
     struct CovarianceMatrixP *cov,
@@ -298,6 +299,7 @@ void update_with_gps(
     float32_t sAcc = 0.05f;
 
     float32_t v_mat_data[N_MEAS * N_MEAS];
+    memset(v_mat_data, 0, sizeof(v_mat_data));
     // horizontal position accuracy
     v_mat_data[0] = hAcc * hAcc;
     v_mat_data[7] = hAcc * hAcc;
@@ -316,14 +318,14 @@ void update_with_gps(
     // GPS H: 
     // [I 0 0 0 0 0]
     // [0 I 0 0 0 0]
-    float32_t h_mat_data[N_MEAS * STATE_DIMS];
-    set_3d_identity_block(h_mat_data, 18, 0, 0);
-    set_3d_identity_block(h_mat_data, 18, 3, 3);
-    arm_matrix_instance_f32 h_mat = {
-        .numCols = STATE_DIMS,
-        .numRows = 6,
-        .pData = h_mat_data
-    };
+    // float32_t h_mat_data[N_MEAS * STATE_DIMS];
+    // set_3d_identity_block(h_mat_data, 18, 0, 0);
+    // set_3d_identity_block(h_mat_data, 18, 3, 3);
+    // arm_matrix_instance_f32 h_mat = {
+    //     .numCols = STATE_DIMS,
+    //     .numRows = N_MEAS,
+    //     .pData = h_mat_data
+    // };
 
     // EQ 273
     // K = P H^T (H P H^T + V)^-1
@@ -331,22 +333,97 @@ void update_with_gps(
     // H P H^T + V
     float32_t s_mat_data[N_MEAS * N_MEAS];
     arm_matrix_instance_f32 s_mat = {
-        .numCols = 6,
-        .numRows = 6,
+        .numCols = N_MEAS,
+        .numRows = N_MEAS,
         .pData = s_mat_data
     };
     // H P H^T = first 6 rows and cols of P
-    copy_block(cov->data, s_mat_data, N_MEAS, STATE_DIMS, N_MEAS, 0, 0);
+    copy_block(cov->data, s_mat_data, N_MEAS, N_MEAS, STATE_DIMS, N_MEAS, 0, 0);
     arm_mat_add_f32(&s_mat, &v_mat, &s_mat);
 
-    arm_status status = arm_mat_cholesky_f32(&s_mat, &s_mat);
-    if (status != ARM_MATH_SUCCESS) {
-        sirin_log("GPS update: Cholesky decomposition failed!");
-        return;
+    // arm_status status = arm_mat_cholesky_f32(&s_mat, &s_mat);
+    // if (status != ARM_MATH_SUCCESS) {
+    //     sirin_log("GPS update: Cholesky decomposition failed!");
+    //     return;
+    // }
+
+    arm_mat_inverse_f32(&s_mat, &s_mat);
+
+    // P H^T
+    float32_t pht_mat_data[STATE_DIMS * N_MEAS];
+    arm_matrix_instance_f32 pht_mat = {
+        .numCols = N_MEAS,
+        .numRows = STATE_DIMS,
+        .pData = pht_mat_data
+    };
+    copy_block(cov->data, pht_mat_data, N_MEAS, STATE_DIMS, N_MEAS, STATE_DIMS, 0, 0);
+
+    // pht_mat = K
+    arm_mat_mult_f32(&pht_mat, &s_mat, &pht_mat);
+
+    // 275 Joseph form
+    // P ← (I − KH)P(I − KH)^T + KVK^T
+
+    // I - KH
+    float32_t ikh_mat_data[STATE_MAT_SIZE];
+    memset(ikh_mat_data, 0, sizeof(ikh_mat_data));
+    set_3d_identity_block(ikh_mat_data, STATE_DIMS, 0, 0);
+    for (size_t i = 0; i < N_MEAS; i++) {
+        for (size_t j = 0; j < STATE_DIMS; j++) {
+            ikh_mat_data[i * STATE_DIMS + j] -= pht_mat_data[j * N_MEAS + i];
+        }
     }
+    arm_matrix_instance_f32 ikh_mat = {
+        .numCols = STATE_DIMS,
+        .numRows = STATE_DIMS,
+        .pData = ikh_mat_data
+    };
 
+    arm_matrix_instance_f32 p_mat = {
+        .numCols = STATE_DIMS,
+        .numRows = STATE_DIMS,
+        .pData = cov->data
+    };
 
+    // (I - KH) P
+    float32_t temp_mat_data[STATE_MAT_SIZE];
+    arm_matrix_instance_f32 temp_mat = {
+        .numCols = STATE_DIMS,
+        .numRows = STATE_DIMS,
+        .pData = temp_mat_data
+    };
+    arm_mat_mult_f32(&ikh_mat, &p_mat, &temp_mat);
+
+    // (I - KH)^T
+    arm_mat_trans_f32(&ikh_mat, &ikh_mat);
+
+    // (I - KH) P (I - KH)^T
+    arm_mat_mult_f32(&temp_mat, &ikh_mat, &temp_mat);
+
+    // K V K^T
+    float32_t kvt_mat_data[STATE_MAT_SIZE];
+    arm_matrix_instance_f32 kvt_mat = {
+        .numCols = STATE_DIMS,
+        .numRows = STATE_DIMS,
+        .pData = kvt_mat_data
+    };
+    arm_mat_mult_f32(&pht_mat, &v_mat, &kvt_mat);
+    arm_mat_trans_f32(&kvt_mat, &kvt_mat);
+    arm_mat_mult_f32(&kvt_mat, &pht_mat, &kvt_mat);
+
+    // P ← (I - KH)P(I - KH)^T + KVK^T
+    arm_add_f32(temp_mat_data, kvt_mat_data, cov->data, STATE_MAT_SIZE);
 }
+
+void correct_from_magnetometer(
+    struct NominalState *nominal,
+    struct ErrorState *error,
+    struct CovarianceMatrixP *cov,
+    float32_t *mag_measurement
+) {
+    
+}
+
 
 void init_with_imu(
     struct NominalState *nominal,

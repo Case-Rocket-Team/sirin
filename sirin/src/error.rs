@@ -5,6 +5,7 @@ use sirin_shared::song::{ToSongError, FromSongError};
 use embassy_sync::pubsub::Error as PubSubError;
 use rfm9::Rfm9Error;
 use embassy_usb::driver::EndpointError as USBError;
+use ublox::ParserError;
 
 #[derive(Debug, From)]
 pub enum SirinError {
@@ -15,5 +16,6 @@ pub enum SirinError {
     PubSubError(PubSubError),
     SpiError(ErrorKind),
     UsartError(usart::Error),
-    CorruptedData
+    CorruptedData,
+    GpsPacketParseError(ParserError),
 }

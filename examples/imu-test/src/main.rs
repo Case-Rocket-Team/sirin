@@ -51,10 +51,10 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 async fn main_task(sirin: &'static mut Sirin)  -> Result<(), SirinError> {
     let state = SirinState::default();
 
-    sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
-    sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
-    sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
-    sirin.spawner.spawn(gps_task(&mut sirin.gps_rx, &mut sirin.gps_tx)).unwrap();
+    //sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
+    //sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
+    //sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
+    //sirin.spawner.spawn(gps_task(&mut sirin.gps_rx, &mut sirin.gps_tx)).unwrap();
 
     let mut flash = Mutex::new(&mut sirin.flash);
     
@@ -63,39 +63,8 @@ async fn main_task(sirin: &'static mut Sirin)  -> Result<(), SirinError> {
     })).unwrap();
 
     info!("Start main");
-    let starting_pressure = sirin.baro.read().await.unwrap().pressure;
+    loop{}
     
-    let mut initial_altitude = approx_pressure_altitude(sirin.baro.read().await?.pressure.convert());
-    let mut altitude_array: [f64; 100] = [0.0; 100];
-    for i in 0..100 {
-        let altitude = approx_pressure_altitude(sirin.baro.read().await?.pressure.convert());
-        altitude_array[i] = altitude.value;
-        Timer::after_millis(100).await;
-    }
-    
-    altitude_array.sort_unstable_by(|a, b | a.partial_cmp(b).unwrap());
-    initial_altitude.value = altitude_array[50];
-   
-
-    info!("Initial altitude: {}", initial_altitude.value);
-
-
-    loop{
-        sirin.data = measure_sirin(
-            &mut sirin.baro,
-            &mut sirin.imu,
-            &mut sirin.high_g_imu,
-            &mut sirin.magnetometer
-        ).await;
-        let baro_pressure = sirin.data.baro.pressure.unwrap().convert();
-        let baro_altitude = approx_pressure_altitude(baro_pressure);
-        info!("Starting altitude: {}", initial_altitude.value);
-        info!("Current altitude: {}", baro_altitude.value);
-        info!("Relative altitude: {}", (baro_altitude - initial_altitude).value);
-        info!("Starting pressure: {}", starting_pressure.value);
-        info!("Current pressure: {}", baro_pressure.value);
-        Timer::after_millis(1000).await;
-    }
     // println!("set sensitivity: {}", sirin.imu.set_accel_sensitivity(4).await.unwrap());
     // println!("read ctrl: {}", sirin.imu.read_reg(0x10).await.unwrap());
     

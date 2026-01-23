@@ -52,7 +52,7 @@ pub unsafe fn setup_usb(
     
     let mut usb_config = embassy_usb::Config::new(USB_VID, USB_PID);
     usb_config.manufacturer = Some("Nautki");
-    usb_config.product = Some("Sirin S1-R2");
+    usb_config.product = Some("Sirin S1-R3");
     usb_config.serial_number = Some("SirinBeta");
     usb_config.max_power = 200;
     usb_config.max_packet_size_0 = 64;
