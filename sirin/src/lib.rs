@@ -26,7 +26,7 @@ use h3lis::H3lis;
 use spi::{Spi, SpiConfig, SpiConfigStruct, SpiDev, SpiInstance, WithSpiHandle};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State as UsbState};
 use embassy_usb::Builder as UsbBuilder;
-use ublox::{FixedBuffer, UbxPacketMeta, UbxProtocol, cfg_inf::{CfgInf, CfgInfBuilder, CfgInfMask}, cfg_msg::CfgMsgSinglePortBuilder, cfg_nav5::CfgNav5Builder, cfg_prt::{CfgPrtUartBuilder, DataBits, InProtoMask, OutProtoMask, Parity, StopBits, UartMode, UartPortId}, cfg_rate::{CfgRate, CfgRateBuilder}, mon_rf::MonRf, nav_pvt::proto27_31::{NavPvt, NavPvtRef}, nav_sat::NavSat, proto31::*, rxm_rawx::RxmRawx};
+use ublox::{FixedBuffer, UbxPacketMeta, UbxProtocol, cfg_inf::{CfgInf, CfgInfBuilder, CfgInfMask}, cfg_msg::CfgMsgSinglePortBuilder, cfg_nav5::CfgNav5Builder, cfg_prt::{CfgPrtUartBuilder, DataBits, InProtoMask, OutProtoMask, Parity, StopBits, UartMode, UartPortId}, cfg_rate::{CfgRate, CfgRateBuilder}, mon_rf::MonRf, nav_dop::NavDop, nav_pvt::proto27_31::{NavPvt, NavPvtRef}, nav_sat::NavSat, proto31::*, rxm_rawx::RxmRawx};
 use ublox::{Parser,UbxPacket,proto31::*,GnssFixType,Position,Velocity};
 
 pub use uunit;
@@ -80,7 +80,6 @@ pub struct Sirin {
     pub main_power: Output<'static>,
     pub parachute_apo: Output<'static>,
     pub apo_power: Output<'static>,
-
 
     // Instrument subsytems
     pub baro: Bmp3<SpiDev>,
@@ -262,6 +261,12 @@ impl Sirin {
                 msg_id: NavPvt::ID,
                 rate: 1
             };
+            //DOP message config (Dilution of precession) 
+            let nav_dop_config = CfgMsgSinglePortBuilder{
+                msg_class: NavDop::CLASS,
+                msg_id: NavDop::ID,
+                rate: 1
+            };
             //RF message config ()
             let rf_msg_config = CfgMsgSinglePortBuilder{
                 msg_class: MonRf::CLASS,
@@ -284,6 +289,8 @@ impl Sirin {
             gps_uart.write(&gps_update_config.into_packet_bytes()).await.unwrap();
             Timer::after_millis(gps_config_delay).await;
             gps_uart.write(&nav_msg_config.into_packet_bytes()).await.unwrap();
+            Timer::after_millis(gps_config_delay).await;
+            gps_uart.write(&nav_dop_config.into_packet_bytes()).await.unwrap();
             Timer::after_millis(gps_config_delay).await;
             gps_uart.write(&rf_msg_config.into_packet_bytes()).await.unwrap();
             Timer::after_millis(gps_config_delay).await;

@@ -91,18 +91,20 @@ pub enum OutPacket {
 #[derive(Debug, Clone, SongSize, FromSong, ToSong)]
 pub struct SirinState {
     pub mode: SirinMode,
-    pub gps: GpsFix,
+    pub gps_fix: GpsFix,
     pub altitude: Meters<f64>,
-    pub apogee: Option<Meters<f64>>
+    pub apogee: Option<Meters<f64>>,
+    pub gps_dop: GpsDop
 }
 
 impl Default for SirinState {
     fn default() -> Self {
         Self {
             mode: SirinMode::Standby,
-            gps: GpsFix::default(),
+            gps_fix: GpsFix::default(),
             altitude: 0.0.with_units(),
-            apogee: None
+            apogee: None,
+            gps_dop: GpsDop::default(),
         }
     }
 }
@@ -130,24 +132,21 @@ pub enum GpsFixType {
 
 #[derive(Debug, Clone, SongSize, FromSong, ToSong)]
 pub struct GpsFix {
-    pub time: Milliseconds<u32>,
+    pub time: Milliseconds<u64>,
     pub satellites: u8,
-    //pub almanac: u8,
-    //pub ephemerides: u8,
-    //pub healthy_satellites: u8,
     pub fix_type: GpsFixType,
     pub pos: Vec3<Meters<f64>>,
     pub vel: Vec3<MetersPerSecond<f64>>,
+    pub pos_dop: f64,
+    pub horizontal_accuracy: Meters<f64>,
+    pub vertical_accuracy: Meters<f64>,
 }
 
 impl Default for GpsFix {
     fn default() -> Self {
         GpsFix {
-            time: 0u32.with_units(),
+            time: 0u64.with_units(),
             satellites: 0,
-            //almanac: 0,
-            //ephemerides: 0,
-            //healthy_satellites: 0,
             fix_type: GpsFixType::NoFix,
             pos: Vec3 {
                 x: 0.0.with_units(),
@@ -159,6 +158,63 @@ impl Default for GpsFix {
                 y: 0.0f64.with_units(),
                 z: 0.0f64.with_units()
             },
+            pos_dop: 0f64,
+            horizontal_accuracy: 0f64.with_units(),
+            vertical_accuracy: 0f64.with_units(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, SongSize, FromSong, ToSong)]
+pub struct GpsDop {
+    pub time_of_week_millis: Milliseconds<u32>,
+    pub geometric_dop: f32,
+    pub position_dop: f32,
+    pub time_dop: f32,
+    pub vertical_dop: f32,
+    pub horizontal_dop: f32,
+    pub northing_dop: f32,
+    pub easting_dop: f32,
+}
+
+impl Default for GpsDop {
+    fn default() -> Self {
+        GpsDop {  
+            time_of_week_millis: 0u32.with_units(),
+            geometric_dop: 0f32,
+            position_dop: 0f32,
+            time_dop: 0f32,
+            vertical_dop: 0f32,
+            horizontal_dop: 0f32,
+            northing_dop: 0f32,
+            easting_dop: 0f32
+        }
+    }
+}
+
+
+#[derive(Debug, Clone, SongSize, FromSong, ToSong)]
+pub struct GpsRf {
+    
+}
+
+impl Default for GpsRf {
+    fn default() -> Self {
+        GpsRf {  
+            
+        }
+    }
+}
+
+#[derive(Debug, Clone, SongSize, FromSong, ToSong)]
+pub struct GpsSat {
+    
+}
+
+impl Default for GpsSat {
+    fn default() -> Self {
+        GpsSat {  
+            
         }
     }
 }
