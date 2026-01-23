@@ -20,8 +20,6 @@ members = [
     "examples/nosecone-ebay",
     "examples/dongle",
     "examples/kalman-test",
-    "examples/radiotest",
-    "examples/ejection-test",
     "examples/radio-test-send",
     "examples/gps-test",
     "examples/radio-test-receive",
