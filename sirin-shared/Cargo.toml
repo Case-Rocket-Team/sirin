@@ -3,10 +3,15 @@ name = "sirin-shared"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+serde = ["dep:serde"]
+
 [dependencies]
 derive_more = { version = "2.0.1", features = ["display"], default-features = false }
 embedded-hal = "1.0.0"
 num-traits = { version = "0.2.19", default-features = false }
+serde = { version = "1", features = ["derive"], default-features = false, optional = true }
 sirin-macros = { version = "0.1.1", path = "../sirin-macros" }
 snafu = { version = "0.8.6", default-features = false }
 uunit = { version = "0.1.0", git = "https://github.com/Nautki/uunit" }
