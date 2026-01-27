@@ -210,9 +210,9 @@ impl <S: SpiHandle> Lis3mdl<S> {
         &mut self
     ) -> Result<(),<S::Bus as ErrorType>::Error> {
         // self.write_reg(reg, value as u8).await?;
-        //self.write_reg(CTRL_REG1, 0b1001_0000 as u8).await?;
+        // self.write_reg(CTRL_REG1, 0b1011_0000 as u8).await?;
 
-        //self.write_reg(CtrlReg1, 0b001_10_111 as u8).await?;
+        self.write_reg(RegCtrlReg1, 0b1_01_100_0_0 as u8).await?;
         //self.write_reg().await?;
         Ok(())    
     }

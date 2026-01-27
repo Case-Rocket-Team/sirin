@@ -15,6 +15,8 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 quat_re = re.compile(
     r"Quaternion\s*\{\s*r:\s*([-\d\.eE]+),\s*x:\s*([-\d\.eE]+),\s*y:\s*([-\d\.eE]+),\s*z:\s*([-\d\.eE]+)"
 )
+
+# Regex to extract magnetometer
 mag_re = re.compile(
     r"Magnetometer\s*\{\s*x:\s*([-\d\.eE]+),\s*y:\s*([-\d\.eE]+),\s*z:\s*([-\d\.eE]+)"
 )
@@ -36,7 +38,9 @@ basis = {
     "y": np.array([0, 1, 0], dtype=float),
     "z": np.array([0, 0, 1], dtype=float),
 }
-rotated = basis.copy()
+
+last_mag = None
+R = np.eye(3)
 
 # Matplotlib interactive plot
 plt.ion()
@@ -50,42 +54,55 @@ ax.set_zlim([-1, 1])
 ax.set_xlabel("X")
 ax.set_ylabel("Y")
 ax.set_zlabel("Z")
-ax.set_title("Live Quaternion Orientation — Basis Vectors")
+ax.set_title("Live Quaternion Orientation — Basis + Magnetic Field")
 
-# Create 3 plotted vectors (x=red, y=green, z=blue)
-line_x, = ax.plot([0, 1], [0, 0], [0, 0], color="red", linewidth=3)
-line_y, = ax.plot([0, 0], [0, 1], [0, 0], color="green", linewidth=3)
-line_z, = ax.plot([0, 0], [0, 0], [0, 1], color="blue", linewidth=3)
+# Basis vectors
+line_x, = ax.plot([0, 1], [0, 0], [0, 0], color="red", linewidth=3, label="X axis")
+line_y, = ax.plot([0, 0], [0, 1], [0, 0], color="green", linewidth=3, label="Y axis")
+line_z, = ax.plot([0, 0], [0, 0], [0, 1], color="blue", linewidth=3, label="Z axis")
 
-# Read stdin line by line
+# Magnetic field line
+line_mag, = ax.plot([0, 0], [0, 0], [0, 0],
+                    color="gold", linewidth=2, linestyle="--", label="Mag Field")
+
+ax.legend()
+
 for line in sys.stdin:
-    m = quat_re.search(line)
-    if not m:
-        continue
+    # Quaternion update
+    qm = quat_re.search(line)
+    if qm:
+        r, x, y, z = map(float, qm.groups())
+        print(f"Received quaternion: r={r}, x={x}, y={y}, z={z}")
+        R = quat_to_matrix(r, x, y, z)
 
-    #print(f"Newline: {line}")
-    r, x, y, z = map(float, m.groups())
-    print(f"Received quaternion: r={r}, x={x}, y={y}, z={z}")  # log
+        rx = R @ basis["x"]
+        ry = R @ basis["y"]
+        rz = R @ basis["z"]
 
-    R = quat_to_matrix(r, x, y, z)
-    rotated = {
-        "x": R @ basis["x"],
-        "y": R @ basis["y"],
-        "z": R @ basis["z"],
-    }
+        line_x.set_data([0, rx[0]], [0, rx[1]])
+        line_x.set_3d_properties([0, rx[2]])
 
-    # Update plot even if no new quaternion
-    rx = rotated["x"]
-    ry = rotated["y"]
-    rz = rotated["z"]
+        line_y.set_data([0, ry[0]], [0, ry[1]])
+        line_y.set_3d_properties([0, ry[2]])
 
-    line_x.set_data([0, rx[0]], [0, rx[1]])
-    line_x.set_3d_properties([0, rx[2]])
+        line_z.set_data([0, rz[0]], [0, rz[1]])
+        line_z.set_3d_properties([0, rz[2]])
 
-    line_y.set_data([0, ry[0]], [0, ry[1]])
-    line_y.set_3d_properties([0, ry[2]])
+    # Magnetometer update
+    mm = mag_re.search(line)
+    if mm:
+        mx, my, mz = map(float, mm.groups())
+        mag_body = np.array([mx, my, mz], dtype=float)
 
-    line_z.set_data([0, rz[0]], [0, rz[1]])
-    line_z.set_3d_properties([0, rz[2]])
+        # Rotate magnetometer into world frame
+        mag_world = R @ mag_body
+
+        # Normalize for visualization
+        norm = np.linalg.norm(mag_world)
+        if norm > 1e-6:
+            mag_world /= norm
+
+        line_mag.set_data([0, mag_world[0]], [0, mag_world[1]])
+        line_mag.set_3d_properties([0, mag_world[2]])
 
     plt.pause(0.001)
