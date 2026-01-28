@@ -201,7 +201,8 @@ impl Sirin {
             flash_ptr.write(Flash::new(flash_dev));
 
             let config = ptr!(sirin.config);
-            config.write((*flash_ptr).init().await.unwrap());
+            (*flash_ptr).w25q.chip_erase().await.unwrap();
+            //config.write((*flash_ptr).init().await.unwrap());
             info!("{}", Display2Format(&*config));
 
             let imu_ptr: *mut Lsm6dso<SpiDev> = ptr!(sirin.imu);
