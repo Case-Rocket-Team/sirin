@@ -55,31 +55,7 @@ async fn main_task(sirin: &'static mut Sirin) {
     let mut error = ErrorState::default();
     let mut cov = CovarianceMatrixP::default();
 
-    {
-        let accel = sirin.imu.accel().await.unwrap();
-        let accel = [
-            (accel.x.value as f32) / 1e6,
-            (accel.y.value as f32) / 1e6,
-            (accel.z.value as f32) / 1e6,
-        ];
-
-        let angular = sirin.imu.angular_vel().await.unwrap();
-        let angular = [
-            (angular.x_pitch.value as f32) * PI / 180.0 / 1e6,
-            (angular.y_roll.value as f32) * PI / 180.0 / 1e6,
-            (angular.z_yaw.value as f32) * PI / 180.0 / 1e6,
-        ];
-        unsafe {
-            sirin_c::init_with_imu(
-                &mut nominal,
-                &mut error,
-                &accel as *const f32,
-                &angular as *const f32
-            );
-        }
-    }
-
-    let mut roll = 0.0;
+    let mut is_first_reading = true;
 
     loop {
         // info!("Running loop");
@@ -96,24 +72,34 @@ async fn main_task(sirin: &'static mut Sirin) {
 
         let angular = sirin.imu.angular_vel().await.unwrap();
 
-        //roll += (angular.x_pitch.value as f32) / 1e6 * (dt.as_millis() as f32 / 1000.0);
-        //info("roll: {} deg", roll);
-
         let angular = [
             (angular.x_pitch.value as f32) * PI / 180.0 / 1e6,
             (angular.y_roll.value as f32) * PI / 180.0 / 1e6,
             (angular.z_yaw.value as f32) * PI / 180.0 / 1e6,
         ];
 
-        unsafe {
-            sirin_c::update_with_imu(
-                &mut nominal,
-                &mut error,
-                &mut cov,
-                (dt.as_micros() as f32 / 1e6).with_units(),
-                &accel as *const f32,
-                &angular as *const f32
-            );
+        if is_first_reading {
+            is_first_reading = false;
+
+            unsafe {
+                sirin_c::init_with_imu(
+                    &mut nominal,
+                    &mut error,
+                    &accel as *const f32,
+                    &angular as *const f32
+                );
+            }
+        } else {
+            unsafe {
+                sirin_c::update_with_imu(
+                    &mut nominal,
+                    &mut error,
+                    &mut cov,
+                    (dt.as_micros() as f32 / 1e6).with_units(),
+                    &accel as *const f32,
+                    &angular as *const f32
+                );
+            }
         }
 
         if i % 50 == 0 {
