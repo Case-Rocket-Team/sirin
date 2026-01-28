@@ -48,7 +48,6 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 #[allow(unused_variables)]
 async fn main_task(sirin: &'static mut Sirin) {
     let mut i = 0;
-    sirin.magnetometer.setup().await.unwrap();
 
     let mut prev_reading = Instant::now();
 

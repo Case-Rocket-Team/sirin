@@ -213,10 +213,11 @@ impl <S: SpiHandle> Lis3mdl<S> {
         // self.write_reg(CTRL_REG1, 0b1011_0000 as u8).await?;
 
         self.write_reg(RegCtrlReg1, 0b1_01_100_0_0 as u8).await?;
+        self.write_reg(RegCtrlReg3, 0b00000000 as u8).await?;
         //self.write_reg().await?;
         Ok(())    
     }
-
+    // 
     pub async fn magnetic(&mut self) -> Result<(i16,i16,i16), <S::Bus as ErrorType>::Error> {
         //MSB stored in the low register
         let mag_x = i16::from_ne_bytes([self.x_l().await? as u8,self.x_h().await? as u8]);
