@@ -18,7 +18,7 @@ quat_re = re.compile(
 
 # Regex to extract magnetometer
 mag_re = re.compile(
-    r"Magnetometer\s*\{\s*x:\s*([-\d\.eE]+),\s*y:\s*([-\d\.eE]+),\s*z:\s*([-\d\.eE]+)"
+    r"Magnetometer:\s*\(([-\d\.eE]+), ([-\d\.eE]+), ([-\d\.eE]+)\)"
 )
 
 def quat_to_matrix(r, x, y, z):
@@ -87,11 +87,13 @@ for line in sys.stdin:
 
         line_z.set_data([0, rz[0]], [0, rz[1]])
         line_z.set_3d_properties([0, rz[2]])
+        plt.pause(0.001)
 
     # Magnetometer update
     mm = mag_re.search(line)
     if mm:
         mx, my, mz = map(float, mm.groups())
+        print(f"Received mag: x={mx}, y={my}, z={mz}")
         mag_body = np.array([mx, my, mz], dtype=float)
 
         # Rotate magnetometer into world frame
@@ -104,5 +106,5 @@ for line in sys.stdin:
 
         line_mag.set_data([0, mag_world[0]], [0, mag_world[1]])
         line_mag.set_3d_properties([0, mag_world[2]])
+        plt.pause(0.001)
 
-    plt.pause(0.001)
