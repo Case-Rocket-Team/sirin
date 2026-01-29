@@ -2,7 +2,7 @@ use core::ops::{Add, Sub};
 use num_traits::{One, Zero};
 use sirin_macros::{SongSize, ToSong, FromSong};
 use uunit::{Meters, MetersPerSecond, MetersPerSecond2, RadiansPerSecond, WithUnits};
-use crate::song::*;
+use crate::{packet::Vec3, song::*};
 
 macro_rules! impl_vec {
     ($ident:ident : $($field: ident),*) => {
@@ -100,6 +100,30 @@ impl <T: SongSize + ToSong + FromSong> Quaternion<T> {
 
     pub fn identity() -> Self where T: Zero + One {
         Self::new(T::one(), T::zero(), T::zero(), T::zero())
+    }
+}
+
+#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
+#[repr(C)]
+pub struct CovarianceMatrixP {
+    pub data: [f32; 324]
+}
+
+impl CovarianceMatrixP {
+    pub fn accel_uncertainty(&self) -> Vec3<f32> {
+        Vec3 { 
+            x: self.data[6 + 6 * 18],
+            y: self.data[7 + 7 * 18],
+            z: self.data[8 + 8 * 18]
+        }
+    }
+}
+
+impl Default for CovarianceMatrixP {
+    fn default() -> Self {
+        CovarianceMatrixP {
+            data: [0.0; 324]
+        }
     }
 }
 

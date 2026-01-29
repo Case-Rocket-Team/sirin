@@ -210,17 +210,19 @@ impl <S: SpiHandle> Lis3mdl<S> {
         &mut self
     ) -> Result<(),<S::Bus as ErrorType>::Error> {
         // self.write_reg(reg, value as u8).await?;
-        //self.write_reg(CTRL_REG1, 0b1001_0000 as u8).await?;
+        // self.write_reg(CTRL_REG1, 0b1011_0000 as u8).await?;
 
-        //self.write_reg(RegCtrlReg1, 0b0100_0101 as u8).await?;
-        self.write_reg(RegCtrlReg3, 0b00_0_00_000 as u8).await?;      //self.write_reg().await?;
+        self.write_reg(RegCtrlReg1, 0b1_10_100_0_0 as u8).await?;
+        self.write_reg(RegCtrlReg3, 0b00000000 as u8).await?;
+        self.write_reg(RegCtrlReg4, 0b0000_10_00 as u8).await?;
+        //self.write_reg().await?;
         Ok(())    
     }
-
+    // 
     pub async fn magnetic(&mut self) -> Result<(i16,i16,i16), <S::Bus as ErrorType>::Error> {
         //MSB stored in the low register
         let mag_x = i16::from_ne_bytes([self.x_l().await? as u8,self.x_h().await? as u8]);
-        let mag_y = i16::from_ne_bytes([self.y_l().await? as u8,self.y_h().await? as u8]);
+        let mag_y = - i16::from_ne_bytes([self.y_l().await? as u8,self.y_h().await? as u8]);
         let mag_z = i16::from_ne_bytes([self.z_l().await? as u8,self.z_h().await? as u8]);
         Ok((mag_x, mag_y, mag_z))
     }

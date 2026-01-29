@@ -17,3 +17,15 @@ Currently being worked on:
 
 Planned:
 - [ ] React Dashboard
+
+## Testing without hardware
+These following crates have unit tests that work without hardware:
+- w25qx
+
+```sh
+cargo test --target <your local target>
+```
+For example, on my computer I would do
+```sh
+cargo test --target x86_64-unknown-linux-gnu
+```

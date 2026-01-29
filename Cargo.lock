@@ -35,7 +35,7 @@ dependencies = [
  "defmt",
  "defmt-rtt",
  "embassy-executor",
- "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
+ "embassy-futures 0.1.1",
  "embassy-net",
  "embassy-stm32",
  "embassy-sync",
@@ -112,7 +112,7 @@ dependencies = [
  "defmt",
  "defmt-rtt",
  "embassy-executor",
- "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
+ "embassy-futures 0.1.1",
  "embassy-net",
  "embassy-stm32",
  "embassy-sync",
@@ -417,7 +417,7 @@ dependencies = [
  "defmt",
  "defmt-rtt",
  "embassy-executor",
- "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
+ "embassy-futures 0.1.1",
  "embassy-net",
  "embassy-stm32",
  "embassy-sync",
@@ -450,7 +450,7 @@ version = "0.3.0"
 source = "git+https://github.com/embassy-rs/embassy#556cc57c1fdc9eba0703ccc2281d39462d2d2c38"
 dependencies = [
  "defmt",
- "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
+ "embassy-futures 0.1.1",
  "embassy-sync",
  "embassy-time",
  "embedded-hal 0.2.7",
@@ -487,16 +487,16 @@ dependencies = [
 [[package]]
 name = "embassy-futures"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f878075b9794c1e4ac788c95b728f26aa6366d32eeb10c7051389f898f7d067"
-
-[[package]]
-name = "embassy-futures"
-version = "0.1.1"
 source = "git+https://github.com/embassy-rs/embassy#556cc57c1fdc9eba0703ccc2281d39462d2d2c38"
 dependencies = [
  "defmt",
 ]
+
+[[package]]
+name = "embassy-futures"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc2d050bdc5c21e0862a89256ed8029ae6c290a93aecefc73084b3002cdebb01"
 
 [[package]]
 name = "embassy-hal-internal"
@@ -539,7 +539,7 @@ name = "embassy-net-driver-channel"
 version = "0.3.0"
 source = "git+https://github.com/embassy-rs/embassy#556cc57c1fdc9eba0703ccc2281d39462d2d2c38"
 dependencies = [
- "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
+ "embassy-futures 0.1.1",
  "embassy-net-driver",
  "embassy-sync",
 ]
@@ -561,7 +561,7 @@ dependencies = [
  "defmt",
  "document-features",
  "embassy-embedded-hal",
- "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
+ "embassy-futures 0.1.1",
  "embassy-hal-internal",
  "embassy-net-driver",
  "embassy-sync",
@@ -645,7 +645,7 @@ version = "0.4.0"
 source = "git+https://github.com/embassy-rs/embassy#556cc57c1fdc9eba0703ccc2281d39462d2d2c38"
 dependencies = [
  "defmt",
- "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
+ "embassy-futures 0.1.1",
  "embassy-net-driver-channel",
  "embassy-sync",
  "embassy-usb-driver",
@@ -899,7 +899,7 @@ dependencies = [
  "defmt",
  "defmt-rtt",
  "embassy-executor",
- "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
+ "embassy-futures 0.1.1",
  "embassy-net",
  "embassy-stm32",
  "embassy-sync",
@@ -947,7 +947,7 @@ dependencies = [
  "defmt",
  "defmt-rtt",
  "embassy-executor",
- "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
+ "embassy-futures 0.1.1",
  "embassy-net",
  "embassy-stm32",
  "embassy-sync",
@@ -1046,7 +1046,7 @@ dependencies = [
  "defmt",
  "defmt-rtt",
  "embassy-executor",
- "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
+ "embassy-futures 0.1.1",
  "embassy-net",
  "embassy-stm32",
  "embassy-sync",
@@ -1070,6 +1070,42 @@ dependencies = [
  "static_cell",
  "stm32-fmc",
  "w25qx",
+]
+
+[[package]]
+name = "kalman-test"
+version = "0.1.0"
+dependencies = [
+ "bmp3",
+ "chrono",
+ "cortex-m",
+ "cortex-m-rt",
+ "critical-section",
+ "defmt",
+ "defmt-rtt",
+ "embassy-executor",
+ "embassy-futures 0.1.1",
+ "embassy-net",
+ "embassy-stm32",
+ "embassy-sync",
+ "embassy-time",
+ "embassy-usb",
+ "embedded-hal 0.2.7",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "embedded-io-async",
+ "embedded-nal-async 0.7.1",
+ "embedded-storage",
+ "futures",
+ "heapless 0.8.0",
+ "micromath",
+ "panic-probe",
+ "rand_core",
+ "rfm9",
+ "sirin",
+ "sirin-c",
+ "static_cell",
+ "stm32-fmc",
 ]
 
 [[package]]
@@ -1106,9 +1142,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.25"
+version = "0.4.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04cbf5b083de1c7e0222a7a51dbfdba1cbe1c6ab0b15e29fff3f6c077fd9cd9f"
+checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
 
 [[package]]
 name = "lsm6dso-spi"
@@ -1135,7 +1171,7 @@ dependencies = [
  "defmt",
  "defmt-rtt",
  "embassy-executor",
- "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
+ "embassy-futures 0.1.1",
  "embassy-net",
  "embassy-stm32",
  "embassy-sync",
@@ -1206,7 +1242,7 @@ dependencies = [
  "defmt",
  "defmt-rtt",
  "embassy-executor",
- "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
+ "embassy-futures 0.1.1",
  "embassy-net",
  "embassy-stm32",
  "embassy-sync",
@@ -1345,7 +1381,7 @@ dependencies = [
  "defmt",
  "defmt-rtt",
  "embassy-executor",
- "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
+ "embassy-futures 0.1.1",
  "embassy-net",
  "embassy-stm32",
  "embassy-sync",
@@ -1383,7 +1419,7 @@ dependencies = [
  "defmt",
  "defmt-rtt",
  "embassy-executor",
- "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
+ "embassy-futures 0.1.1",
  "embassy-net",
  "embassy-stm32",
  "embassy-sync",
@@ -1421,7 +1457,7 @@ version = "0.1.1"
 dependencies = [
  "defmt",
  "dev-csr",
- "embassy-futures 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "embassy-futures 0.1.2",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
  "spi-handle",
@@ -1493,6 +1529,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
 
 [[package]]
+name = "sequential-storage"
+version = "7.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4580ee0fa08cd41bee9f5b50ed309877e18735370fd4eef5766cc82863ef772"
+dependencies = [
+ "embedded-storage-async",
+]
+
+[[package]]
 name = "serde"
 version = "1.0.219"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1532,7 +1577,7 @@ dependencies = [
  "derive-new",
  "derive_more",
  "embassy-executor",
- "embassy-futures 0.1.1 (git+https://github.com/embassy-rs/embassy)",
+ "embassy-futures 0.1.1",
  "embassy-stm32",
  "embassy-sync",
  "embassy-time",
@@ -1549,6 +1594,7 @@ dependencies = [
  "paste",
  "postcard",
  "rfm9",
+ "sequential-storage",
  "serde",
  "sirin-macros",
  "sirin-shared",
@@ -1567,6 +1613,8 @@ name = "sirin-c"
 version = "0.1.1"
 dependencies = [
  "cc",
+ "defmt",
+ "defmt-rtt",
  "libc",
  "sirin-shared",
  "uunit",
@@ -1745,6 +1793,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio"
+version = "1.49.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72a2903cd7736441aac9df9d7688bd0ce48edccaadf181c3b90be801e81d3d86"
+dependencies = [
+ "pin-project-lite",
+ "tokio-macros",
+]
+
+[[package]]
+name = "tokio-macros"
+version = "2.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af407857209536a95c8e56f8231ef2c2e2aff839b22e07a1ffcbc617e9db9fa5"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
+]
+
+[[package]]
 name = "typenum"
 version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1881,6 +1950,7 @@ version = "0.1.1"
 dependencies = [
  "embedded-hal-async",
  "spi-handle",
+ "tokio",
 ]
 
 [[package]]

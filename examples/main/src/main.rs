@@ -319,7 +319,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     }
 }
 
-// TODO: airbreaks
 /*#[task]
 async fn kalman(
     mut event_sub: Subscriber<'static, CriticalSectionRawMutex, Event, 100, 4, 4>
