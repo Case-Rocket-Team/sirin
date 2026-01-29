@@ -166,6 +166,7 @@ pub async fn gps_impl(
                         
                         //Make new gps fix available to main task
                         GPS_FIX.signal(fix.clone());
+                        info!("GPS fix sent to main!");
                     }
                     PacketRef::AckAck(_raw_packet) => {
                         info!("Got message: AckAck");

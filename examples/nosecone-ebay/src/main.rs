@@ -67,11 +67,11 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
      */
 
     let accel_threshold: Gs<f64> = (10.0 * 10.0).with_units(); //In Gs squared
-    let altitude_threshold = 20.0; //In meters
+    let altitude_threshold = 10.0; //In meters
     let main_deployment_altitude= 1500.0; //In meters
-    let flight_duration = 600; //In seconds
-    let apogee_error = 2.0; //In meters
-    let timeout = 10; //In seconds
+    let flight_duration = 1200; //In seconds
+    let apogee_error = 0.0; //In meters
+    let timeout = 30; //In seconds
 
     let mut apo_deployed = false;
     let mut main_deployed = false;
@@ -308,9 +308,9 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     if state.altitude.value < main_deployment_altitude {
                         if !main_deployed {
                             Sirin::deploy_chute_main(&mut sirin.parachute_main);
-                            OUT_CHANNEL.publish_immediate(IoPacket::new(
+                            /*OUT_CHANNEL.publish_immediate(IoPacket::new(
                     IoChannel::Flash, OutPacket::DeployedMainAt(sirin.data.time.value)
-                            ));
+                            ));*/
                             main_deployed = true;
                         }
                     }
