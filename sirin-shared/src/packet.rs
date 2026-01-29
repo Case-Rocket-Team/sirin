@@ -1,5 +1,5 @@
 use core::ops::Div;
-use crate::{config::{CallsignBuf, SirinConfig, SirinId}, mode::SirinMode, song::{magic::MagicU8, maybe_unwritten_max_bytes::MaybeUnwrittenMaxBytes, *}, state::NominalState, time::AbsoluteTimeReference};
+use crate::{config::{CallsignBuf, SirinConfig, SirinId}, mode::SirinMode, song::{magic::MagicU8, maybe_unwritten_max_bytes::MaybeUnwrittenMaxBytes, *}, state::{ErrorState, NominalState}, time::AbsoluteTimeReference};
 use derive_more::Display;
 use sirin_macros::*;
 use embedded_hal::spi::ErrorKind as SpiErrorKind;
@@ -94,7 +94,13 @@ pub struct SirinState {
     pub gps_fix: GpsFix,
     pub altitude: Meters<f64>,
     pub apogee: Option<Meters<f64>>,
-    pub gps_dop: GpsDop
+    pub gps_dop: GpsDop,
+
+    pub nominal: NominalState,
+    pub error: ErrorState,
+    /// true if the coordinates given are earth-centered, earth fixed
+    /// https://en.wikipedia.org/wiki/Earth-centered,_Earth-fixed_coordinate_system
+    pub is_ecef: bool,
 }
 
 impl Default for SirinState {
@@ -105,6 +111,10 @@ impl Default for SirinState {
             altitude: 0.0.with_units(),
             apogee: None,
             gps_dop: GpsDop::default(),
+
+            nominal: Default::default(),
+            error: Default::default(),
+            is_ecef: false,
         }
     }
 }

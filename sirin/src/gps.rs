@@ -56,7 +56,16 @@ pub async fn gps_task(
     //Task loop
     loop {
         info!("New gps loop iteration");
-        match gps_impl(gps_rx, &mut fix, &mut packet_parser, gps_tx, &mut bytes_from_ring_buf).await {
+        match gps_impl(
+            gps_rx,
+            &mut fix,
+            &mut dop,
+            &mut rf,
+            &mut sat,
+            &mut packet_parser,
+            gps_tx,
+            &mut bytes_from_ring_buf
+        ).await {
             Err(err) => error!("GPS Error: {}", Debug2Format(&err)),
             Ok(_) => {}
         };
