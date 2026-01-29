@@ -24,7 +24,7 @@ pub struct Flash {
 }
 
 /// provides `i * size` except taking into account the rule that no object of size `size`
-/// should be written across indices
+/// should be written across sectors
 fn sector_aware_index(i: u32, size: u32) -> u32 {
     debug_assert!(size <= SECTOR_SIZE); 
     let items_per_sector: u32 = SECTOR_SIZE / size;
