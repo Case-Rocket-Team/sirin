@@ -1,5 +1,5 @@
-#include "../cmsis-dsp/Include/arm_math.h"
-// #include "arm_math.h"
+// #include "../cmsis-dsp/Include/arm_math.h"
+#include "arm_math.h"
 
 // Following https://www.iri.upc.edu/people/jsola/JoanSola/objectes/notes/kinematics.pdf    
 
