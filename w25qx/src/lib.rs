@@ -1,4 +1,4 @@
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 
 #[allow(unused_imports)]
 use core::{future::{poll_fn, Future}, task::Poll};
@@ -8,6 +8,14 @@ use spi_handle::SpiHandle;
 use embedded_hal_async::spi::SpiBus;
 
 mod yield_now;
+
+pub mod mock;
+
+#[cfg(test)]
+mod test;
+
+#[cfg(test)]
+fn main() {}
 
 pub struct W25Q<S: SpiHandle>{
     spi: S
