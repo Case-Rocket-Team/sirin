@@ -201,8 +201,8 @@ impl Sirin {
             flash_ptr.write(Flash::new(flash_dev));
 
             let config = ptr!(sirin.config);
-            (*flash_ptr).w25q.chip_erase().await.unwrap();
-            //config.write((*flash_ptr).init().await.unwrap());
+            //(*flash_ptr).w25q.chip_erase().await.unwrap();
+            config.write((*flash_ptr).init().await.unwrap());
             info!("{}", Display2Format(&*config));
 
             let imu_ptr: *mut Lsm6dso<SpiDev> = ptr!(sirin.imu);
@@ -327,7 +327,6 @@ impl Sirin {
             // TODO: JOIN FUTURES, AWAIT
             baro_ptr.write(baro_future.await.unwrap());
             (*radio_ptr).init().await.unwrap();
-            (*flash_ptr).init().await.unwrap();
             (*radio_ptr).use_high_power().await.unwrap();
             (*imu_ptr).setup().await.unwrap();
             (*highg_imu_ptr).setup().await.unwrap();
