@@ -2,24 +2,21 @@
 #![no_main]
 #![allow(unused_imports)]
 
-use core::{f32::consts::PI, fmt::Debug, mem::{self, MaybeUninit}};
+use core::mem::{self, MaybeUninit};
 
 use bmp3::{hal::{Bmp3RawData, ReadBmp3, RegErrReg, RegStatus}, Bmp3Readout};
+use cortex_m::interrupt::free;
 use defmt::*;
 use embassy_executor::{task, Executor, Spawner};
 use embassy_stm32::{bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, peripherals::{self, DMA1_CH0, DMA1_CH1, PD8, PD9, USART3}, usart::{self, Config, Uart}};
-use embassy_time::{Instant, Timer};
+use embassy_time::Timer;
 use rfm9::ReadRfm9;
-use crate::test_rot::test_180deg_roll_kalman;
-
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{Sirin, packet::SirinState, state::{CovarianceMatrixP, ErrorState, NominalState}, uunit::WithUnits};
+use sirin::Sirin;
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
     core::mem::transmute(item)
 }
-
-mod test_rot;
 
 #[cortex_m_rt::entry]
 unsafe fn main() -> ! {
@@ -43,20 +40,9 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
     main_task(sirin).await
 }
 
-
-// est_roll=179.78671   <-- Euler method integration
-
 #[allow(unused_variables)]
 async fn main_task(sirin: &'static mut Sirin) {
     let mut i = 0;
-
-    let mut prev_reading = Instant::now();
-
-    let mut nominal = NominalState::default();
-    let mut error = ErrorState::default();
-    let mut cov = CovarianceMatrixP::default();
-
-
     // calibration data for a sirin not in ebay
     let free_hard_iron_bias_x = -42.960563;
     let free_hard_iron_bias_y = 48.877747;
@@ -74,54 +60,7 @@ async fn main_task(sirin: &'static mut Sirin) {
     let free_soft_iron_bias_zy = 0.239927;
     let free_soft_iron_bias_zz = 16.148427;
 
-    let mut is_first_reading = true;
-
     loop {
-        // info!("Running loop");
-
-        let curr_reading = Instant::now();
-        let dt = curr_reading.duration_since(prev_reading);
-
-        let accel = sirin.imu.accel().await.unwrap();
-        // Flip X and Z axes for consistent reference frame
-        let accel = [
-            (accel.x.value as f32) / 1e6 *  9.81 * -1.0,
-            (accel.y.value as f32) / 1e6 *  9.81,
-            (accel.z.value as f32) / 1e6 *  9.81 * -1.0,
-        ];
-
-        let angular = sirin.imu.angular_vel().await.unwrap();
-
-        let angular = [
-            (angular.x_pitch.value as f32) * PI / 180.0 / 1e6,
-            (angular.y_roll.value as f32) * PI / 180.0 / 1e6,
-            (angular.z_yaw.value as f32) * PI / 180.0 / 1e6,
-        ];
-
-        if is_first_reading {
-            is_first_reading = false;
-
-            unsafe {
-                sirin_c::init_with_imu(
-                    &mut nominal,
-                    &mut error,
-                    &accel as *const f32,
-                    &angular as *const f32
-                );
-            }
-        } else {
-            unsafe {
-                sirin_c::update_with_imu(
-                    &mut nominal,
-                    &mut error,
-                    &mut cov,
-                    (dt.as_micros() as f32 / 1e6).with_units(),
-                    &accel as *const f32,
-                    &angular as *const f32
-                );
-            }
-        }
-
         let (x_raw, y_raw, z_raw) = sirin.magnetometer.magnetic().await.unwrap();
         // divide by 6842 for Gauss, mult by 100 for micro Teslas (uT)
         let mag_reading = [
@@ -142,14 +81,10 @@ async fn main_task(sirin: &'static mut Sirin) {
             mag_offset[0] * free_soft_iron_bias_xz + mag_offset[1] * free_soft_iron_bias_yz + mag_offset[2] * free_soft_iron_bias_zz,
         ];
 
-        if i % 200 == 0 {
-            info!("Nominal: {}", Debug2Format(&nominal));   
-            // info!("Accelerometer: {:?}", accel);
-            info!("Magnetometer: {:?}", mag_calibrated);
+        // when calibrating, set to mag_reading
+        if i % 100 == 0 {
+            info!("Magnetometer: {:?}", mag_reading);
         }
-        
-
-        prev_reading = curr_reading;
         i += 1;
     }
 }

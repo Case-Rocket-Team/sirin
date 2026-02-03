@@ -15,10 +15,13 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 quat_re = re.compile(
     r"Quaternion\s*\{\s*r:\s*([-\d\.eE]+),\s*x:\s*([-\d\.eE]+),\s*y:\s*([-\d\.eE]+),\s*z:\s*([-\d\.eE]+)"
 )
+accel_re = re.compile(
+    r"accel:\s*Accel\s*\{\s*x:\s*([-\d\.eE]+),\s*y:\s*([-\d\.eE]+),\s*z:\s*([-\d\.eE]+)\s*\}"
+)
 
 # Regex to extract magnetometer
 mag_re = re.compile(
-    r"Magnetometer:\s*\(([-\d\.eE]+), ([-\d\.eE]+), ([-\d\.eE]+)\)"
+    r"Magnetometer:\s*\[\s*([-+\d\.eE]+)\s*,\s*([-+\d\.eE]+)\s*,\s*([-+\d\.eE]+)\s*\]"
 )
 
 def quat_to_matrix(r, x, y, z):
@@ -31,6 +34,11 @@ def quat_to_matrix(r, x, y, z):
         [    2*(x*y + z*w), 1 - 2*(x*x + z*z),     2*(y*z - x*w)],
         [    2*(x*z - y*w),     2*(y*z + x*w), 1 - 2*(x*x + y*y)],
     ])
+def normalize(v):
+    n = np.linalg.norm(v)
+    if n > 1e-6:
+        return v / n
+    return v
 
 # Shared vector basis
 basis = {
@@ -60,7 +68,11 @@ ax.set_title("Live Quaternion Orientation — Basis + Magnetic Field")
 line_x, = ax.plot([0, 1], [0, 0], [0, 0], color="red", linewidth=3, label="X axis")
 line_y, = ax.plot([0, 0], [0, 1], [0, 0], color="green", linewidth=3, label="Y axis")
 line_z, = ax.plot([0, 0], [0, 0], [0, 1], color="blue", linewidth=3, label="Z axis")
-
+# Acceleration vector
+line_accel, = ax.plot(
+    [0, 0], [0, 0], [0, 0],
+    color="cyan", linewidth=3, label="Acceleration"
+)
 # Magnetic field line
 line_mag, = ax.plot([0, 0], [0, 0], [0, 0],
                     color="gold", linewidth=2, linestyle="--", label="Mag Field")
@@ -68,9 +80,20 @@ line_mag, = ax.plot([0, 0], [0, 0], [0, 0],
 ax.legend()
 
 for line in sys.stdin:
+    dirty = False
+    am = accel_re.search(line)
+    if am:
+        ax_, ay_, az_ = map(float, am.groups())
+        accel = normalize(np.array([ax_, ay_, az_], dtype=float))
+
+        print(f"Received accel: x={ax_}, y={ay_}, z={az_}")
+
+        line_accel.set_data([0, accel[0]], [0, accel[1]])
+        line_accel.set_3d_properties([0, accel[2]])
+        dirty = True
     # Quaternion update
     qm = quat_re.search(line)
-    if qm:
+    if False:
         r, x, y, z = map(float, qm.groups())
         print(f"Received quaternion: r={r}, x={x}, y={y}, z={z}")
         R = quat_to_matrix(r, x, y, z)
@@ -87,7 +110,7 @@ for line in sys.stdin:
 
         line_z.set_data([0, rz[0]], [0, rz[1]])
         line_z.set_3d_properties([0, rz[2]])
-        plt.pause(0.001)
+        dirty=True
 
     # Magnetometer update
     mm = mag_re.search(line)
@@ -97,14 +120,15 @@ for line in sys.stdin:
         mag_body = np.array([mx, my, mz], dtype=float)
 
         # Rotate magnetometer into world frame
-        mag_world = R @ mag_body
+        # mag_world = R @ mag_body
 
         # Normalize for visualization
-        norm = np.linalg.norm(mag_world)
-        if norm > 1e-6:
-            mag_world /= norm
+        mag_world = normalize(mag_body)
 
         line_mag.set_data([0, mag_world[0]], [0, mag_world[1]])
         line_mag.set_3d_properties([0, mag_world[2]])
-        plt.pause(0.001)
+        dirty = True
+    
+    if dirty:
+        plt.pause(0.01)
 

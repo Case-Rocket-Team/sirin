@@ -23,7 +23,8 @@ members = [
     "examples/radio-test-send",
     "examples/gps-test",
     "examples/radio-test-receive",
-    "examples/any-test"
+    "examples/any-test",
+    "examples/mag-calibrate"
 ]
 resolver = "2"
 
