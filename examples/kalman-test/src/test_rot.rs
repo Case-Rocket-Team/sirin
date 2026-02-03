@@ -4,7 +4,6 @@ use core::f32::consts::PI;
 use defmt::info;
 use embassy_time::{Duration, Instant};
 use micromath::F32Ext;
-
 use sirin::{Sirin, state::*, uunit::WithUnits};
 
 // Whatever your units wrapper is:

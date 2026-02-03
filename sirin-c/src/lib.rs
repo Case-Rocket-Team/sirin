@@ -1,6 +1,7 @@
 #![no_std]
 #![doc = include_str!("../README.md")]
-
+#![allow(unused_imports)]
+#![allow(unused_variables)]
 use core::ffi::CStr;
 
 use defmt::Debug2Format;

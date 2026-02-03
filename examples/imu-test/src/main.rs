@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![allow(unused_imports)]
+#![allow(unused_variables)]
 
 use core::mem::{self, MaybeUninit};
 

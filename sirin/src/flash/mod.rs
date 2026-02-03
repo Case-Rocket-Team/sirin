@@ -231,7 +231,7 @@ impl Flash {
         Ok(())
     }
 
-    pub fn read_logs(&mut self, header: &FlashFlightHeader) -> FlashFlightPacketsIterator {
+    pub fn read_logs(&mut self, header: &FlashFlightHeader) -> FlashFlightPacketsIterator<'_> {
         let addr_of_next_header = self.flight_headers.get((header.index + 1) % self.flight_headers.len()).unwrap().header.data_addr();
         
         FlashFlightPacketsIterator {
