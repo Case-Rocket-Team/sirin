@@ -2,6 +2,7 @@
 #![no_main]
 #![allow(unused_imports)]
 #![allow(unused_variables)]
+#![allow(unreachable_code)]
 
 use core::mem::{self, MaybeUninit};
 

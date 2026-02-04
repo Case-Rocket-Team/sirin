@@ -30,6 +30,7 @@ fn wrap180(mut deg: f32) -> f32 {
 /// Simulate an IMU performing a 180° roll over `duration_s`.
 /// - Gyro: constant roll rate
 /// - Accel: gravity vector rotated consistently with the roll angle (no linear accel)
+#[allow(unused)]
 pub async fn test_180deg_roll_kalman(sirin: &mut Sirin) {
     // --- Filter state ---
     let mut nominal = NominalState::default();
@@ -67,10 +68,9 @@ pub async fn test_180deg_roll_kalman(sirin: &mut Sirin) {
             );
         }
     }
-
+    #[allow(unused_assignments)]
     // --- Run simulation ---
     let mut roll_true = 0.0f32;
-
     for k in 0..steps {
         roll_true = (k as f32 + 1.0) * dt * rate_rad_s; // radians, monotonic to PI
 

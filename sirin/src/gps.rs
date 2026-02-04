@@ -1,3 +1,6 @@
+
+
+
 use core::fmt::Debug;
 
 use crate::{
@@ -86,7 +89,7 @@ pub async fn read(
         }
     }
 }
-
+#[allow(unused)]
 pub async fn gps_impl(
     gps_rx: &mut RingBufferedUartRx<'static>,
     fix: &mut GpsFix,

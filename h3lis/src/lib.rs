@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(unused)]
 use dev_csr::dev_csr;
 use embedded_hal::spi::ErrorType;
 use embedded_hal_async::spi::SpiBus;
@@ -191,14 +192,14 @@ impl <S: SpiHandle> H3lis<S> {
 
     pub async fn acceleration(&mut self) -> Result<(i32, i32, i32), <S::Bus as ErrorType>::Error> {
          Ok(unsafe {
-            let accel_x: i8 = mem::transmute(self.x().await?);
-            let accel_y: i8 = mem::transmute(self.y().await?);
-            let accel_z: i8 = mem::transmute(self.z().await?);
+            let accel_x: i8 = self.x().await?.cast_signed();
+            let accel_y: i8 = self.y().await?.cast_signed();
+            let accel_z: i8 = self.z().await?.cast_signed();
             //xyz are corrected so that
             //x -> cable direction
             //yz follow from right hand rule, x as index finger
             ((accel_x as i32) * 780000, (accel_y as i32) * -780000, (accel_z as i32) * -780000)
-       })
+    })
     }
 
     pub async fn manufacturer_id(&mut self) -> Result<u8, <S::Bus as ErrorType>::Error> {

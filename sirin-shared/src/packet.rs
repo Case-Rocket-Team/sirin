@@ -4,6 +4,8 @@ use derive_more::Display;
 use sirin_macros::*;
 use embedded_hal::spi::ErrorKind as SpiErrorKind;
 
+#[allow(dead_code)]
+#[allow(unused_variables)]
 pub const MAX_OUT_PACKET_SIZE: usize = 256;
 
 #[macro_export]
@@ -378,6 +380,7 @@ pub enum SubsystemError {
     NotYetMeasured
 }
 
+#[allow(unused_variables)]
 impl From<SpiErrorKind> for SubsystemError {
     fn from(value: SpiErrorKind) -> Self {
         SubsystemError::SpiError

@@ -2,7 +2,7 @@
 #![allow(unused_imports)]
 #![doc = include_str!("../../README.md")]
 
-use core::{any::Any, ffi::CStr, marker::PhantomPinned, mem::MaybeUninit, pin::{Pin, pin}, ptr::addr_of_mut};
+use core::{any::Any, ffi::CStr, marker::PhantomPinned, mem::MaybeUninit, pin::{Pin, pin}, ptr::addr_of_mut, task::RawWaker};
 use bmp3::Bmp3;
 use defmt::{info, Display2Format};
 use embassy_executor::{Executor, Spawner};
@@ -106,6 +106,8 @@ bind_interrupts!(struct Irqs {
 impl Sirin {
     /// Initializing Sirin is a PITA bc it is a self-referential struct
     #[inline]
+    #[allow(unused)]
+    #[allow(static_mut_refs)]
     pub async fn init(
         sirin: &'static mut MaybeUninit<Sirin>,
         spawner: Spawner
