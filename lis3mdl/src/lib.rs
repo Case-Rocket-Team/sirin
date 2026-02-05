@@ -218,11 +218,11 @@ impl <S: SpiHandle> Lis3mdl<S> {
         //self.write_reg().await?;
         Ok(())    
     }
-    // 
+    /// LSB/Gauss: 6842, so divide data by 6842 for the value in Gauss
     pub async fn magnetic(&mut self) -> Result<(i16,i16,i16), <S::Bus as ErrorType>::Error> {
         //MSB stored in the low register
         let mag_x = i16::from_ne_bytes([self.x_l().await? as u8,self.x_h().await? as u8]);
-        let mag_y = - i16::from_ne_bytes([self.y_l().await? as u8,self.y_h().await? as u8]);
+        let mag_y = i16::from_ne_bytes([self.y_l().await? as u8,self.y_h().await? as u8]);
         let mag_z = i16::from_ne_bytes([self.z_l().await? as u8,self.z_h().await? as u8]);
         Ok((mag_x, mag_y, mag_z))
     }

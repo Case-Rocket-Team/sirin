@@ -1,0 +1,1 @@
+cargo run | uv run store-mag.py
