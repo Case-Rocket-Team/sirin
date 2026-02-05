@@ -21,7 +21,7 @@ macro_rules! byte_array_str {
 
 pub use byte_array_str;
 use snafu::Snafu;
-use uunit::{Celsius, Meters, MetersPerSecond, MicroGs, Milliseconds, Pascals, Quantity, UnitMicrodegrees, UnitSeconds, WithUnits};
+use uunit::{Celsius, Centimeters, Meters, MetersPerSecond, MicroGs, Millimeters, Milliseconds, Pascals, Quantity, UnitCentimeters, UnitMicrodegrees, UnitSeconds, WithUnits};
 
 #[derive(Debug)]
 pub enum ByteArrayStrError {
@@ -126,8 +126,10 @@ pub struct Vec3<T: SongSize + FromSong + ToSong> {
     pub z: T
 }
 
-pub type EcefPos<T> = Vec3<Meters<T>>;
-pub type EcefVel<T> = Vec3<MetersPerSecond<T>>;
+pub type CentimetersPerSecond<T> = Quantity<T, <UnitCentimeters as Div<UnitSeconds>>::Output>;
+
+pub type EcefPos = Vec3<Centimeters<i32>>;
+pub type EcefVel = Vec3<CentimetersPerSecond<i32>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SongSize, FromSong, ToSong)]
 #[repr(u8)]
@@ -142,35 +144,35 @@ pub enum GpsFixType {
 
 #[derive(Debug, Clone, SongSize, FromSong, ToSong)]
 pub struct GpsFix {
-    pub time: Milliseconds<u64>,
+    pub itow: u32,
     pub satellites: u8,
     pub fix_type: GpsFixType,
-    pub pos: Vec3<Meters<f64>>,
-    pub vel: Vec3<MetersPerSecond<f64>>,
+    pub pos: EcefPos,
+    pub vel: EcefVel,
+    pub pos_acc: Centimeters<u32>,
+    pub vel_acc: Centimeters<u32>,
     pub pos_dop: f64,
-    pub horizontal_accuracy: Meters<f64>,
-    pub vertical_accuracy: Meters<f64>,
 }
 
 impl Default for GpsFix {
     fn default() -> Self {
         GpsFix {
-            time: 0u64.with_units(),
+            itow: 0,
             satellites: 0,
             fix_type: GpsFixType::NoFix,
             pos: Vec3 {
-                x: 0.0.with_units(),
-                y: 0.0.with_units(),
-                z: 0.0.with_units()
+                x: 0.with_units(),
+                y: 0.with_units(),
+                z: 0.with_units()
             },
             vel: Vec3 {
-                x: 0.0f64.with_units(),
-                y: 0.0f64.with_units(),
-                z: 0.0f64.with_units()
+                x: 0.with_units(),
+                y: 0.with_units(),
+                z: 0.with_units()
             },
             pos_dop: 0f64,
-            horizontal_accuracy: 0f64.with_units(),
-            vertical_accuracy: 0f64.with_units(),
+            pos_acc: 0u32.with_units(),
+            vel_acc: 0u32.with_units(),
         }
     }
 }
@@ -198,33 +200,6 @@ impl Default for GpsDop {
             horizontal_dop: 0f32,
             northing_dop: 0f32,
             easting_dop: 0f32
-        }
-    }
-}
-
-
-#[derive(Debug, Clone, SongSize, FromSong, ToSong)]
-pub struct GpsRf {
-    
-}
-
-impl Default for GpsRf {
-    fn default() -> Self {
-        GpsRf {  
-            
-        }
-    }
-}
-
-#[derive(Debug, Clone, SongSize, FromSong, ToSong)]
-pub struct GpsSat {
-    
-}
-
-impl Default for GpsSat {
-    fn default() -> Self {
-        GpsSat {  
-            
         }
     }
 }
