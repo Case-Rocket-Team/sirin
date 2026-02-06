@@ -20,7 +20,7 @@ use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal}
 use embassy_time::{Instant, Timer};
 use serde::de;
 use sirin_shared::{
-    packet::{self, GpsDop, GpsFix, GpsFixType, GpsRf, GpsSat, Log, OutPacket, Vec3},
+    packet::{self, EcefPos, GpsDop, GpsFix, GpsFixType, Log, OutPacket, Vec3},
     song::FromSong,
 };
 use ublox::{
@@ -38,9 +38,6 @@ use ublox::{proto31::*, GnssFixType, Parser, Position, UbxPacket, Velocity};
 use uunit::{Meters, MetersPerSecond, WithUnits};
 
 pub static GPS_FIX: Signal<CriticalSectionRawMutex, GpsFix> = Signal::new();
-pub static GPS_DOP: Signal<CriticalSectionRawMutex, GpsDop> = Signal::new();
-pub static GPS_RF: Signal<CriticalSectionRawMutex, GpsRf> = Signal::new();
-pub static GPS_SAT: Signal<CriticalSectionRawMutex, GpsSat> = Signal::new();
 
 #[task]
 pub async fn gps_task(
@@ -48,26 +45,21 @@ pub async fn gps_task(
     gps_tx: &'static mut UartTx<'static, Async>,
 ) {
     let mut fix = GpsFix::default();
-    let mut dop = GpsDop::default();
-    let mut rf = GpsRf::default();
-    let mut sat = GpsSat::default();
+
     //Create packet parser
     let mut packet_parser: Parser<FixedBuffer<512>, Proto31> = ublox::Parser::new_fixed();
     //Create buffer to read into from RingBuffer
-    let mut bytes_from_ring_buf = [0u8; 128];
+    let mut buf = [0u8; 128];
 
     //Task loop
     loop {
         info!("New gps loop iteration");
         match gps_impl(
             gps_rx,
-            &mut fix,
-            &mut dop,
-            &mut rf,
-            &mut sat,
-            &mut packet_parser,
             gps_tx,
-            &mut bytes_from_ring_buf
+            &mut packet_parser,
+            &mut buf,
+            &mut fix,
         ).await {
             Err(err) => error!("GPS Error: {}", Debug2Format(&err)),
             Ok(_) => {}
@@ -92,26 +84,33 @@ pub async fn read(
 #[allow(unused)]
 pub async fn gps_impl(
     gps_rx: &mut RingBufferedUartRx<'static>,
-    fix: &mut GpsFix,
-    dop: &mut GpsDop,
-    rf: &mut GpsRf,
-    sat: &mut GpsSat,
-    packet_parser: &mut Parser<FixedBuffer<512>, Proto31>,
     gps_tx: &mut UartTx<'static, Async>,
-    bytes: &mut [u8],
+    packet_parser: &mut Parser<FixedBuffer<512>, Proto31>,
+    buf: &mut [u8],
+    fix: &mut GpsFix,
 ) -> Result<(), SirinError> {
     //Read bytes from GPS RingBuffer until Bytes is full
-    read(gps_rx, bytes).await?;
+    read(gps_rx, buf).await?;
 
     //Copy bytes into the parser
-    let mut iterator = packet_parser.consume_ubx( bytes);
+    let mut iterator = packet_parser.consume_ubx( buf);
 
     //Attempt to construct packets from whatever bytes the parser has
     while let Some(packet) = iterator.next() {
         match packet {
             Ok(UbxPacket::Proto31(packet)) => {
                 match packet {
-                    PacketRef::NavPvt(nav_pvt_packet) => {
+                    PacketRef::NavPosEcef(p) => {
+                        fix.itow = p.itow();
+
+                        // Not actually meters, I think.
+                        fix.pos.x.value = p.ecef_x_meters_raw();
+                        fix.pos.y.value = p.ecef_y_meters_raw();
+                        fix.pos.z.value = p.ecef_z_meters_raw();
+                        fix.pos_acc.value = p.p_acc_meters_raw();
+                    },
+                    _ => {}
+                    /*PacketRef::NavPvt(nav_pvt_packet) => {
                         //info!("Got version message: nav_pvt");
                         let has_time: bool;
                         let has_posvel: bool;
@@ -218,7 +217,7 @@ pub async fn gps_impl(
                     }
                     _ => {
                         //info!("Other packet not listed");
-                    }
+                    }*/
                 }
             }
             //Could not parse packet
