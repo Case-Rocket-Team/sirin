@@ -89,8 +89,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         ));
         info!("Transmitting!");
         sirin.led.set_high();
-        Timer::after_millis(500).await;
-        sirin.led.set_low();
-        Timer::after_millis(500).await; 
+        Timer::after_millis(100).await; 
     }
 }

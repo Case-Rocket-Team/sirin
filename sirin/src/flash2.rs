@@ -37,5 +37,5 @@ impl Flash {
     /// Assumes that the item we're searching for is not written across sectors,
     /// but might be written across pages.
     fn binary_search<T>() -> Result<(u32, T), SirinError>
-    where T: Ord + FromSong + ConstSongSize
+    where T: Ord + FromSong + ConstSongSize;
 }

@@ -1,5 +1,6 @@
 #![no_std]
 #![allow(unused_imports)]
+#![allow(unsafe_code)]
 
 use core::{fmt::Debug, i16::MAX, mem, ops::Div};
 
@@ -797,21 +798,23 @@ impl <S: SpiHandle> Lsm6dso<S> {
           Ok(())    
     }
 
+     #[allow(unused_unsafe)]
      pub async fn raw_accel(&mut self) -> Result<(i16, i16, i16), <S::Bus as ErrorType>::Error> {
           Ok(unsafe {
-               let accel_x: i16 = mem::transmute(self.accel_x().await?);
-               let accel_y: i16 = mem::transmute(self.accel_y().await?);
-               let accel_z: i16 = mem::transmute(self.accel_z().await?);
+               let accel_x: i16 = self.accel_x().await?.cast_signed(); // switched transmute into cast_signed for warning removal. if this doesnt work revert 
+               let accel_y: i16 = self.accel_y().await?.cast_signed();
+               let accel_z: i16 = self.accel_z().await?.cast_signed();
 
                (accel_x, accel_y, accel_z)
           })
      }
 
+     #[allow(unused_unsafe)]
      pub async fn raw_gyro(&mut self) -> Result<(i16, i16, i16), <S::Bus as ErrorType>::Error> {
           Ok(unsafe {
-               let gyro_pitch: i16 = mem::transmute(self.gyro_pitch_rate().await?);
-               let gyro_roll: i16 = mem::transmute(self.gyro_roll_rate().await?);
-               let gyro_yaw: i16 = mem::transmute(self.gyro_yaw_rate().await?);
+               let gyro_pitch: i16 = self.gyro_pitch_rate().await?.cast_signed(); // switched transmute into cast_signed for warning removal. if this doesnt work revert
+               let gyro_roll: i16 = self.gyro_roll_rate().await?.cast_signed();
+               let gyro_yaw: i16 = self.gyro_yaw_rate().await?.cast_signed();
 
                (gyro_pitch, gyro_roll, gyro_yaw)
           })

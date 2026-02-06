@@ -1,5 +1,5 @@
 #![no_std]
-
+#![allow(unused_imports)]
 use core::{fmt::Debug, mem};
 
 use defmt::{error, info};

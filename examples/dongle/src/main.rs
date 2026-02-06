@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![allow(unused_imports)]
+#![allow(unused_variables)]
 
 use core::{f32::consts::PI, mem::{self, transmute_copy, MaybeUninit}, pin::Pin, u16};
 
@@ -61,7 +62,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         let mut buf = [0; MAX_OUT_PACKET_SIZE];
         let len = match sirin.radio.recieve(&mut buf).await {
             Ok(len) => len,
-            Err(e) => {
+            Err(_e) => {
                 //error!("Error in Sirin: {}", Debug2Format(&e));
                 continue;
             }
@@ -84,10 +85,10 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         };
 
         radio_packet.packet.to_song(&mut buf)?;
-        let len = radio_packet.packet.song_size();
+        let _len = radio_packet.packet.song_size();
 
         // Need to chop it up into 64-byte sized packets (full speed device)
-        let mut i = 0;
+        let _i= 0;
         /* ADD THIS BACK IN LATER WHEN YOU CAN MAKE IT STOP HANGING */
         /*while i < len {
             let j = (i + 64).min(len);

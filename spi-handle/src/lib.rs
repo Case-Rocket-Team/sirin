@@ -1,5 +1,6 @@
 #![no_std]
 #![doc = include_str!("../README.md")]
+#![allow(mismatched_lifetime_syntaxes)]
 
 use core::{future::Future, marker::PhantomData, ops::{Deref, DerefMut}};
 use embedded_hal_async::spi::{Error, ErrorKind, ErrorType, SpiBus};
@@ -11,7 +12,7 @@ pub trait SpiHandle<W: 'static + Copy = u8> {
     /// The future resolves once the SPI device has been selected on the bus. 
     /// This method is infallible. It should not panic or fail. If the 
     /// device cannot be selected, the future should wait intil it is able to select.
-    fn select(&mut self) -> impl Future<Output = SpiHandleBus<Self, W>>;
+    fn select(&mut self) -> impl Future<Output = SpiHandleBus<Self, W>> + '_;
 
     /// Deselects the chip. You'll implement this here, but you shouldn't call
     /// this from your code -- the chip will automatically be deselected when

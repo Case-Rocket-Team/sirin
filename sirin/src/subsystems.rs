@@ -1,8 +1,10 @@
+#[allow(unused)]
+
 use core::{error::Error, fmt::Debug, future::Future, ops::{Deref, DerefMut}};
 
 use bmp3::Bmp3;
 use defmt::Str;
-use embassy_time::Instant;
+use embassy_time::Instant;  
 use embedded_hal::spi::ErrorKind as SpiErrorKind;
 use h3lis::H3lis;
 use lsm6dso_spi::{Accel, AngularVel, Lsm6dso};
@@ -65,7 +67,7 @@ macro_rules! sanity_check_uunit {
 
 macro_rules! sanity_check {
     ($test:expr => $($pattern:tt)*) => {{
-        const ERR_MSG: &str = concat!("Sanity check failed: ", stringify!($test), " not in ", stringify!($($pattern)*));
+        const _ERR_MSG: &str = concat!("Sanity check failed: ", stringify!($test), " not in ", stringify!($($pattern)*));
 
         let value = $test;
 
@@ -75,7 +77,7 @@ macro_rules! sanity_check {
 
 macro_rules! sanity_check_uunit {
     ($test:expr => $($pattern:tt)*) => {{
-        const ERR_MSG: &str = concat!("Sanity check failed: ", stringify!($test), " not in ", stringify!($($pattern)*));
+        const _ERR_MSG: &str = concat!("Sanity check failed: ", stringify!($test), " not in ", stringify!($($pattern)*));
 
         let value = $test;
 
