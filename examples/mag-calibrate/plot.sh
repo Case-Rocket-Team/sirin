@@ -1,1 +1,0 @@
-uv run plot-mag-data.py

@@ -58,21 +58,29 @@ async fn main_task(sirin: &'static mut Sirin) {
 
 
     // calibration data for a sirin not in ebay
-    let free_hard_iron_bias_x = -42.960563;
-    let free_hard_iron_bias_y = 48.877747;
-    let free_hard_iron_bias_z = -166.783874;
+    // let free_hard_iron_bias_x = -47.573810;
+    // let free_hard_iron_bias_y = 44.599533;
+    // let free_hard_iron_bias_z = -169.833372;
 
-    let free_soft_iron_bias_xx = 23.226423;
-    let free_soft_iron_bias_xy = 0.593897;
-    let free_soft_iron_bias_xz = 0.491833;
+    // let free_scale_x = 0.976603;
+    // let free_scale_y = 1.056380;
+    // let free_scale_z = 0.971427;
 
-    let free_soft_iron_bias_yx = 0.593897;
-    let free_soft_iron_bias_yy = 21.800691;
-    let free_soft_iron_bias_yz = 0.239927;
+    let free_hard_iron_bias_x = -48.811444;
+    let free_hard_iron_bias_y = 47.348813;
+    let free_hard_iron_bias_z = -170.457916;
 
-    let free_soft_iron_bias_zx = 0.491833;
-    let free_soft_iron_bias_zy = 0.239927;
-    let free_soft_iron_bias_zz = 16.148427;
+    let free_soft_iron_bias_xx = 18.728720;
+    let free_soft_iron_bias_xy = 1.581941;
+    let free_soft_iron_bias_xz = 0.091705;
+
+    let free_soft_iron_bias_yx = 1.581941;
+    let free_soft_iron_bias_yy = 16.487833;
+    let free_soft_iron_bias_yz = -0.505229;
+
+    let free_soft_iron_bias_zx = 0.091705;
+    let free_soft_iron_bias_zy = -0.505229;
+    let free_soft_iron_bias_zz = 18.669202;
 
     let mut is_first_reading = true;
 
@@ -140,12 +148,15 @@ async fn main_task(sirin: &'static mut Sirin) {
             mag_offset[0] * free_soft_iron_bias_xx + mag_offset[1] * free_soft_iron_bias_yx + mag_offset[2] * free_soft_iron_bias_zx,
             mag_offset[0] * free_soft_iron_bias_xy + mag_offset[1] * free_soft_iron_bias_yy + mag_offset[2] * free_soft_iron_bias_zy,
             mag_offset[0] * free_soft_iron_bias_xz + mag_offset[1] * free_soft_iron_bias_yz + mag_offset[2] * free_soft_iron_bias_zz,
+            // mag_offset[0] * free_scale_x,
+            // mag_offset[1] * free_scale_y,
+            // mag_offset[2] * free_scale_z,
         ];
 
         if i % 200 == 0 {
             info!("Nominal: {}", Debug2Format(&nominal));   
             // info!("Accelerometer: {:?}", accel);
-            info!("Magnetometer: {:?}", mag_calibrated);
+            info!("Magnetometer: {:?}", mag_reading);
         }
         
 
