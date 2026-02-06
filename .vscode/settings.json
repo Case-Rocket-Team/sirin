@@ -1,8 +1,9 @@
 {
-    "rust-analyzer.cargo.features": [
-        
-    ],
+    "rust-analyzer.cargo.features": [],
     "rust-analyzer.check.allTargets": false,
+    "rust-analyzer.checkOnSave.extraArgs": [
+        "--target-dir", "${workspaceFolder}/target/rust-analyzer-check-on-save"
+    ],
     "cmake.ignoreCMakeListsMissing": true,
     "clangd.arguments": [],
     "files.associations": {

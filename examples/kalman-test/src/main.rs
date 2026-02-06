@@ -10,16 +10,13 @@ use embassy_executor::{task, Executor, Spawner};
 use embassy_stm32::{bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, peripherals::{self, DMA1_CH0, DMA1_CH1, PD8, PD9, USART3}, usart::{self, Config, Uart}};
 use embassy_time::{Instant, Timer};
 use rfm9::ReadRfm9;
-use crate::test_rot::test_180deg_roll_kalman;
 
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{Sirin, packet::SirinState, state::{CovarianceMatrixP, ErrorState, NominalState}, uunit::WithUnits};
+use sirin::{Sirin, error::SirinError, packet::SirinState, state::{CovarianceMatrixP, ErrorState, NominalState}, uunit::WithUnits};
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
     core::mem::transmute(item)
 }
-
-mod test_rot;
 
 #[cortex_m_rt::entry]
 unsafe fn main() -> ! {
@@ -40,14 +37,17 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 
     debug!("End Sirin init");
 
-    main_task(sirin).await
+    let res = main_task(sirin).await;
+    info!("There was an error and the main task was restarted: {}", Debug2Format(&res.err().unwrap()));
+    Timer::after_millis(200).await;
+    //Sirin::reboot();
 }
 
 
 // est_roll=179.78671   <-- Euler method integration
 
 #[allow(unused_variables)]
-async fn main_task(sirin: &'static mut Sirin) {
+async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut i = 0;
 
     let mut prev_reading = Instant::now();
@@ -82,7 +82,7 @@ async fn main_task(sirin: &'static mut Sirin) {
         let curr_reading = Instant::now();
         let dt = curr_reading.duration_since(prev_reading);
 
-        let accel = sirin.imu.accel().await.unwrap();
+        let accel = sirin.imu.accel().await?;
         // Flip X and Z axes for consistent reference frame
         let accel = [
             (accel.x.value as f32) / 1e6 *  9.81 * -1.0,
@@ -90,7 +90,7 @@ async fn main_task(sirin: &'static mut Sirin) {
             (accel.z.value as f32) / 1e6 *  9.81 * -1.0,
         ];
 
-        let angular = sirin.imu.angular_vel().await.unwrap();
+        let angular = sirin.imu.angular_vel().await?;
 
         let angular = [
             (angular.x_pitch.value as f32) * PI / 180.0 / 1e6,
@@ -101,12 +101,20 @@ async fn main_task(sirin: &'static mut Sirin) {
         if is_first_reading {
             is_first_reading = false;
 
+            let magn = sirin.magnetometer.magnetic().await?;
+            let magn = [
+                (magn.0 as f32),
+                (magn.1 as f32),
+                (magn.2 as f32),
+            ];
+
             unsafe {
                 sirin_c::init_with_imu(
                     &mut nominal,
                     &mut error,
                     &accel as *const f32,
-                    &angular as *const f32
+                    &angular as *const f32,
+                    &magn as *const f32,
                 );
             }
         } else {
@@ -122,7 +130,7 @@ async fn main_task(sirin: &'static mut Sirin) {
             }
         }
 
-        let (x_raw, y_raw, z_raw) = sirin.magnetometer.magnetic().await.unwrap();
+        let (x_raw, y_raw, z_raw) = sirin.magnetometer.magnetic().await?;
         // divide by 6842 for Gauss, mult by 100 for micro Teslas (uT)
         let mag_reading = [
             (x_raw as f32) / 6842.0 * 100.0,
@@ -145,7 +153,7 @@ async fn main_task(sirin: &'static mut Sirin) {
         if i % 200 == 0 {
             info!("Nominal: {}", Debug2Format(&nominal));   
             // info!("Accelerometer: {:?}", accel);
-            info!("Magnetometer: {:?}", mag_calibrated);
+            // info!("Magnetometer: {:?}", mag_calibrated);
         }
         
 

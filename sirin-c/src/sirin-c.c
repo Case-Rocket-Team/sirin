@@ -5,14 +5,25 @@
 
 // ref. table 3, pg. 52
 
+#define DEBUG 1
+
+#define LOGLVL_DEBUG 1
+#define LOGLVL_INFO 2
+#define LOGLVL_WARN 3
+#define LOGLVL_ERROR 4
+
 #define GRAVITY 9.80665
 #define STATE_DIMS 18
 #define STATE_MAT_SIZE 324 // 6 3d state vars -> 18 dims -> 18*18 mat
+#define EARTH_RADIUS 6378137.0
 
 #define VEL_NOISE 1
 #define ANGLES_NOISE 1
 #define ACCEL_NOISE 1
 #define ANGULAR_VEL_NOISE 1
+
+#define OK 0
+#define ERR_INIT_NO_ACCEL 1
 
 struct NominalState {
     float32_t pos[3];
@@ -42,7 +53,8 @@ struct CovarianceMatrixP {
     float32_t data[STATE_MAT_SIZE];
 };
 
-extern void sirin_log(char *msg);
+extern void sirin_log(uint32_t lvl, char *msg);
+extern void sirin_log_f32_array(float32_t *ptr, size_t len);
 
 float64_t pressure_altitude(float64_t pressure_hpa) {
     // TODO
@@ -217,7 +229,7 @@ void decompose_vec(
     *pDstMag = mag;
 
     if (mag < 0.001) {
-        sirin_log("Magnitude of decompose_vec is too small, might get NaNs!");
+        sirin_log(LOGLVL_DEBUG, "Magnitude of decompose_vec is too small, might get NaNs!");
     }
 
     arm_scale_f32(pSrcVec, 1 / mag, pDstUnitVec, 3);
@@ -343,7 +355,7 @@ void correct_from_gps(
 
     // arm_status status = arm_mat_cholesky_f32(&s_mat, &s_mat);
     // if (status != ARM_MATH_SUCCESS) {
-    //     sirin_log("GPS update: Cholesky decomposition failed!");
+    //     sirin_log(INFO, "GPS update: Cholesky decomposition failed!");
     //     return;
     // }
 
@@ -415,31 +427,84 @@ void correct_from_gps(
     arm_add_f32(temp_mat_data, kvt_mat_data, cov->data, STATE_MAT_SIZE);
 }
 
-void correct_from_magnetometer(
-    struct NominalState *nominal,
-    struct ErrorState *error,
-    struct CovarianceMatrixP *cov,
-    float32_t *mag_measurement
-) {
-    
-}
-
-
-void init_with_imu(
+uint32_t init_with_imu(
     struct NominalState *nominal,
     struct ErrorState *error,
     float32_t *accel_measurement,
-    float32_t *angular_vel_measurement 
+    float32_t *angular_vel_measurement,
+    float32_t *magnetometer_measurement
 ) {
-    // Take the current accel vector as gravity and set the rest as the accel bias.
-    // Obviously this won't be accurate but the filter can correct those errors.
-
-    float32_t accel_mag;
     float32_t accel_unit[3];
-    decompose_vec(nominal->accel, &accel_mag, accel_unit);
+    float32_t accel_mag;
+    decompose_vec(accel_measurement, &accel_mag, accel_unit);
 
-    float32_t gravity[3];
-    arm_scale_f32(accel_unit, GRAVITY, gravity, 3);
+    if (accel_mag < 1e-3) {
+        return ERR_INIT_NO_ACCEL;
+    }
+
+    // project magnetometer_measurement onto accel_unit (aka gravity)
+    float32_t dot;
+    arm_dot_prod_f32(accel_unit, magnetometer_measurement, 3, &dot);
+    
+    float32_t proj[3];
+    arm_scale_f32(accel_unit, dot, proj, 3);
+
+    float32_t north_unnorm[3];
+    arm_sub_f32(magnetometer_measurement, proj, north_unnorm, 3);
+
+    float32_t north_unit[3];
+    float32_t norm_unnorm_mag;
+    decompose_vec(north_unnorm, &norm_unnorm_mag, north_unit);
+
+    float32_t east[3];
+    cross_product(accel_unit, north_unit, east);
+
+    #if DEBUG
+        float32_t east_mag;
+        float32_t east_unit[3];
+        decompose_vec(east, &east_mag, east_unit);
+
+        if (fabs(east_mag - 1.0) > 0.01f) {
+            sirin_log(LOGLVL_ERROR, "East vector should be a unit vector because it is the cross product of two orthogonal unit vectors, but it is not a unit vector!");
+        }
+    #endif
+
+    float32_t rot_mat[9];
+    // first column is -g
+    rot_mat[0] = -accel_unit[0];
+    rot_mat[3] = -accel_unit[1];
+    rot_mat[6] = -accel_unit[2];
+
+    // second column is east
+    rot_mat[1] = east[0];
+    rot_mat[4] = east[1];
+    rot_mat[7] = east[2];
+
+    // third column is north
+    rot_mat[2] = north_unit[0];
+    rot_mat[5] = north_unit[1];
+    rot_mat[8] = north_unit[2];
+
+    arm_rotation2quaternion_f32(rot_mat, nominal->rot_quaternion, 1);
+
+    nominal->pos[0] = EARTH_RADIUS;
+
+    #if DEBUG
+        // Check: X × Y should equal Z
+        // Not sure why this always throws even when it shouldnt
+        /*float32_t x_cross_y[3];
+        cross_product(&rot_mat[0], &rot_mat[1], x_cross_y);
+
+        float32_t dot_with_z;
+        arm_dot_prod_f32(x_cross_y, &rot_mat[2], 3, &dot_with_z);
+
+        if (fabs(dot_with_z - 1.0f) > 0.01f) {
+            sirin_log_f32_array(rot_mat, 9);
+            sirin_log(LOGLVL_ERROR, "Rotation matrix not right-handed!");
+        }*/
+    #endif
+
+    return OK;
 }
 
 void update_with_imu(
@@ -450,10 +515,7 @@ void update_with_imu(
     float32_t *accel_measurement,
     float32_t *angular_vel_measurement
 ) {
-    sirin_log("Update with IMU: Starting nominal updates");
-
-    // NOMINAL UPDATES
-    memcpy(nominal->accel, accel_measurement, sizeof(nominal->accel));
+    sirin_log(LOGLVL_DEBUG, "Update with IMU: Starting nominal updates");
 
     // Section 5.4.1
     // Create rotation matrix from quaternion
@@ -479,8 +541,17 @@ void update_with_imu(
     arm_mat_vec_mult_f32(&rot_mat, accel_term, accel_term);
     //arm_add_f32(accel_term, nominal->gravity, accel_term, 3);
 
-    // TODO: gravity
-    //accel_term[2] -= gravity_at_altitude(nominal->pos[2]);
+    // g should always point towards center of the earth. 
+    float32_t pos_mag;
+    float32_t pos_unit[3];
+    // TODO: should I be using the composite pos (from incorp both nominal and error) or just the nominal?
+    decompose_vec(nominal->pos, &pos_mag, pos_unit);
+
+    float32_t gravity[3];
+    //float32_t gravity_mag = gravity_at_altitude(nominal->pos[2]);
+    arm_scale_f32(pos_unit, -GRAVITY, gravity, 3);
+    arm_add_f32(accel_term, gravity, accel_term, 3);
+    memcpy(nominal->accel, accel_term, sizeof(nominal->accel));
 
     // Updating position -- 259a
     {
@@ -514,7 +585,7 @@ void update_with_imu(
         arm_quaternion_normalize_f32(nominal->rot_quaternion, nominal->rot_quaternion, 1);
     }
 
-    sirin_log("Error updates");
+    sirin_log(LOGLVL_DEBUG, "Error updates");
 
     // ERROR UPDATES
 
@@ -636,48 +707,48 @@ void update_with_imu(
         // TODO: stochastic term
     }
 
-    sirin_log("Covariance matrix update");
-    sirin_log("Set up Jacobian");
+    sirin_log(LOGLVL_DEBUG, "Covariance matrix update");
+    sirin_log(LOGLVL_DEBUG, "Set up Jacobian");
 
     // Update covariance matrix P -- 268
     float32_t jacobian_f[STATE_MAT_SIZE];
     memset(jacobian_f, 0, sizeof(jacobian_f));
 
-    sirin_log("Row 1");
+    sirin_log(LOGLVL_DEBUG, "Row 1");
 
     // Row #1
     set_3d_identity_block(jacobian_f, STATE_DIMS, 0, 0);
     set_3d_diagonal_block(jacobian_f, STATE_DIMS, 0, 3, dt);
 
-    sirin_log("Row 2");
+    sirin_log(LOGLVL_DEBUG, "Row 2");
 
     // Row #2
     set_3d_identity_block(jacobian_f, STATE_DIMS, 3, 3);
     set_block(accel_mat_for_jacobian_data, jacobian_f, 3, STATE_DIMS, 3, 6);
     set_3d_diagonal_block(jacobian_f, STATE_DIMS, 3, 15, dt);
 
-    sirin_log("Row 3");
+    sirin_log(LOGLVL_DEBUG, "Row 3");
 
     // Row #3
     set_block(angular_mat_for_jacobian_data, jacobian_f, 3, 3, 6, 6);
     set_3d_diagonal_block(jacobian_f, STATE_DIMS, 6, 12, -dt);
 
-    sirin_log("Row 4");
+    sirin_log(LOGLVL_DEBUG, "Row 4");
 
     // Row #4
     set_3d_identity_block(jacobian_f, STATE_DIMS, 9, 9);
 
-    sirin_log("Row 5");
+    sirin_log(LOGLVL_DEBUG, "Row 5");
 
     // Row #5
     set_3d_identity_block(jacobian_f, STATE_DIMS, 12, 12);
 
-    sirin_log("Row 6");
+    sirin_log(LOGLVL_DEBUG, "Row 6");
 
     // Row #6
     set_3d_identity_block(jacobian_f, STATE_DIMS, 15, 15);
     
-    sirin_log("Multiply covariance by Jacobian of state pt. 1");
+    sirin_log(LOGLVL_DEBUG, "Multiply covariance by Jacobian of state pt. 1");
 
     arm_matrix_instance_f32 cov_mat = {
         .numCols = 18,
@@ -700,7 +771,7 @@ void update_with_imu(
 
     arm_mat_mult_f32(&jacobian_f_mat, &cov_mat, &cov_mat_copy);
 
-    sirin_log("Multiply covariance by Jacobian of state pt. 2");
+    sirin_log(LOGLVL_DEBUG, "Multiply covariance by Jacobian of state pt. 2");
     
     float32_t jacobian_f_trans_data[STATE_MAT_SIZE];
     arm_matrix_instance_f32 jacobian_f_trans = {
@@ -709,15 +780,15 @@ void update_with_imu(
         .pData = jacobian_f_trans_data
     };
 
-    sirin_log("Jacobian transpose");
+    sirin_log(LOGLVL_DEBUG, "Jacobian transpose");
 
     arm_mat_trans_f32(&jacobian_f_mat, &jacobian_f_trans);
 
-    sirin_log("Multiply by Jacobian transpose");
+    sirin_log(LOGLVL_DEBUG, "Multiply by Jacobian transpose");
 
     arm_mat_mult_f32(&cov_mat_copy, &jacobian_f_trans, &cov_mat);
 
-    sirin_log("Add covariance from uncertainty");
+    sirin_log(LOGLVL_DEBUG, "Add covariance from uncertainty");
 
     float32_t FQFt_data[STATE_MAT_SIZE];
     memset(FQFt_data, 0, sizeof(FQFt_data));

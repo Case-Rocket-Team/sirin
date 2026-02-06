@@ -1,18 +1,34 @@
 #![no_std]
 #![doc = include_str!("../README.md")]
 
-use core::ffi::CStr;
+use core::{ffi::CStr, ptr::slice_from_raw_parts};
 
 use defmt::Debug2Format;
 use sirin_shared::state::{Accel, AngularVel, CovarianceMatrixP, ErrorState, NominalState};
 use uunit::{Hectopascals, Meters, MetersPerSecond2, Seconds};
 
 #[no_mangle]
-pub extern "C" fn sirin_log(str: *const core::ffi::c_char) {
+pub extern "C" fn sirin_log(lvl: u32, str: *const core::ffi::c_char) {
     let c_str = unsafe {
         CStr::from_ptr(str)
     };
-    // defmt::info!("sirin-c: {}", Debug2Format(&c_str))
+
+    match lvl {
+        1 => defmt::debug!("sirin-c: {}", Debug2Format(&c_str)),
+        2 => defmt::info!("sirin-c: {}", Debug2Format(&c_str)),
+        3 => defmt::warn!("sirin-c: {}", Debug2Format(&c_str)),
+        _ => defmt::panic!("sirin-c: {}", Debug2Format(&c_str)),
+    }
+    
+}
+
+#[no_mangle]
+pub extern "C" fn sirin_log_f32_array(ptr: *const f32, len: usize) {
+    let slice = unsafe {
+        &*slice_from_raw_parts(ptr, len)
+    };
+
+    defmt::info!("sirin-c log f32 array: {}", slice);
 }
 
 extern "C" {
@@ -29,7 +45,8 @@ extern "C" {
         nominal: &mut NominalState,
         error: &mut ErrorState,
         accel_measurement: *const f32,
-        angular_vel_measurement: *const f32
+        angular_vel_measurement: *const f32,
+        magnetometer: *const f32
     );
 
     pub fn correct_from_gps(
