@@ -13,10 +13,11 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
 # Regex to extract quaternion
 quat_re = re.compile(
-    r"Quaternion\s*\{\s*r:\s*([-\d\.eE]+),\s*x:\s*([-\d\.eE]+),\s*y:\s*([-\d\.eE]+),\s*z:\s*([-\d\.eE]+)"
+    r"rot_quaternion:\s*\[\s*([-\d\.eE]+)\s*,\s*([-\d\.eE]+)\s*,\s*([-\d\.eE]+)\s*,\s*([-\d\.eE]+)\s*\]"
 )
+
 accel_re = re.compile(
-    r"accel:\s*Accel\s*\{\s*x:\s*([-\d\.eE]+),\s*y:\s*([-\d\.eE]+),\s*z:\s*([-\d\.eE]+)\s*\}"
+    r"accel:\s*\[\[\s*([-\d\.eE]+)\s*,\s*([-\d\.eE]+)\s*,\s*([-\d\.eE]+)\s*\]\]"
 )
 
 # Regex to extract magnetometer
