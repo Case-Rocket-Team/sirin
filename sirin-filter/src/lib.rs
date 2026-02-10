@@ -16,9 +16,10 @@ const ANGLES_NOISE: f32 = 1.0;
 const ACCEL_NOISE: f32 = 1.0;
 const ANGULAR_VEL_NOISE: f32 = 1.0;
 
-// Error codes
-const OK: u32 = 0;
-const ERR_INIT_NO_ACCEL: u32 = 1;
+
+pub enum FilterError {
+    InitNoAccel
+}
 
 /// Nominal state structure
 #[derive(Debug, Clone)]
@@ -80,12 +81,6 @@ pub fn pressure_altitude(pressure_hpa: f64) -> f64 {
 pub fn gravity_at_altitude(altitude_m: f32) -> f32 {
     let term = 6371008.77 / (6371008.77 + altitude_m);
     GRAVITY * term * term
-}
-
-/// Cross product of two 3D vectors
-#[inline]
-pub fn cross_product(a: &Vector3<f32>, b: &Vector3<f32>) -> Vector3<f32> {
-    a.cross(b)
 }
 
 /// Create skew-symmetric matrix from vector (eq. 20)
@@ -176,11 +171,11 @@ pub fn init_with_imu(
     accel_measurement: &Vector3<f32>,
     angular_vel_measurement: &Vector3<f32>,
     magnetometer_measurement: &Vector3<f32>,
-) -> u32 {
+) -> Result<(), FilterError> {
     let (accel_mag, accel_unit) = decompose_vec(accel_measurement);
     
     if accel_mag < 1e-3 {
-        return ERR_INIT_NO_ACCEL;
+        return Err(FilterError::InitNoAccel);
     }
     
     // Project magnetometer onto gravity vector
@@ -192,7 +187,7 @@ pub fn init_with_imu(
     let (_, north_unit) = decompose_vec(&north_unnorm);
     
     // East is cross product of down (gravity) and north
-    let east = cross_product(&accel_unit, &north_unit);
+    let east = accel_unit.cross(&north_unit);
     
     #[cfg(debug_assertions)]
     if DEBUG {
@@ -212,7 +207,7 @@ pub fn init_with_imu(
     nominal.rot_quaternion = UnitQuaternion::from_rotation_matrix(&Rotation3::from_matrix_unchecked(rot_mat));
     nominal.pos = Vector3::new(EARTH_RADIUS, 0.0, 0.0);
     
-    OK
+    Ok(())
 }
 
 /// Update state with IMU measurements

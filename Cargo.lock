@@ -1770,6 +1770,7 @@ dependencies = [
  "defmt",
  "libm",
  "nalgebra",
+ "sirin-shared",
 ]
 
 [[package]]
