@@ -2,7 +2,10 @@ use core::ops::{Add, Sub};
 use num_traits::{One, Zero};
 use sirin_macros::{SongSize, ToSong, FromSong};
 use uunit::{Meters, MetersPerSecond, MetersPerSecond2, RadiansPerSecond, WithUnits};
-use crate::{packet::Vec3, song::*};
+use crate::song::*;
+
+#[cfg(feature = "serde")]
+use serde::{Serialize, Deserialize};
 
 macro_rules! impl_vec {
     ($ident:ident : $($field: ident),*) => {
@@ -40,6 +43,7 @@ macro_rules! impl_vec {
 /// ECEF Position
 /// https://en.wikipedia.org/wiki/Earth-centered,_Earth-fixed_coordinate_system
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(C)]
 pub struct Pos {
     pub x: Meters<f32>,
@@ -50,6 +54,7 @@ pub struct Pos {
 impl_vec!(Pos: x, y, z);
 
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(C)]
 pub struct Vel {
     pub x: MetersPerSecond<f32>,
@@ -60,6 +65,7 @@ pub struct Vel {
 impl_vec!(Vel: x, y, z);
 
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(C)]
 pub struct Accel {
     pub x: MetersPerSecond2<f32>,
@@ -70,6 +76,7 @@ pub struct Accel {
 impl_vec!(Accel: x, y, z);
 
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(C)]
 pub struct AngularVel {
     pub x_pitch: RadiansPerSecond<f32>,
@@ -83,6 +90,7 @@ impl_vec!(AngularVel: x_pitch, y_roll, z_yaw);
 // SongSize, ToSong, FromSong if T satisfies those bounds, but there isn't
 // a way to do that with the macro right now.
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(C)]
 pub struct Quaternion<T: SongSize + ToSong + FromSong> {
     pub r: T,
@@ -103,32 +111,9 @@ impl <T: SongSize + ToSong + FromSong> Quaternion<T> {
     }
 }
 
-#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
-#[repr(C)]
-pub struct CovarianceMatrixP {
-    pub data: [f32; 324]
-}
-
-impl CovarianceMatrixP {
-    pub fn accel_uncertainty(&self) -> Vec3<f32> {
-        Vec3 { 
-            x: self.data[6 + 6 * 18],
-            y: self.data[7 + 7 * 18],
-            z: self.data[8 + 8 * 18]
-        }
-    }
-}
-
-impl Default for CovarianceMatrixP {
-    fn default() -> Self {
-        CovarianceMatrixP {
-            data: [0.0; 324]
-        }
-    }
-}
-
 // MUST correspond to NominalState in sirin-c.c
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(C)]
 pub struct NominalState {
     pub pos: Pos,
@@ -160,6 +145,7 @@ impl Default for NominalState {
 
 // MUST correspond to ErrorState in sirin-c.c
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(C)]
 pub struct ErrorState {
     pub pos: Pos,
