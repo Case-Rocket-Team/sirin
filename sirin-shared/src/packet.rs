@@ -74,12 +74,13 @@ impl <const SIZE: usize> ByteArrayStr for [u8; SIZE] {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 #[song(discriminant(OutPacketType = u8))]
 pub enum OutPacket {
     Null,
     Ok,
-    Error(PacketError),
+    //Error(PacketError),
     Config(SirinConfig),
     Mode(SirinMode),
     FlightStart(u8),
@@ -90,6 +91,7 @@ pub enum OutPacket {
     DeployedMainAt(u32)
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, FromSong, ToSong)]
 pub struct SirinState {
     pub mode: SirinMode,
@@ -121,6 +123,7 @@ impl Default for SirinState {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, FromSong, ToSong)]
 pub struct Vec3<T: SongSize + FromSong + ToSong> {
     pub x: T,
@@ -133,6 +136,7 @@ pub type CentimetersPerSecond<T> = Quantity<T, <UnitCentimeters as Div<UnitSecon
 pub type EcefPos = Vec3<Centimeters<i32>>;
 pub type EcefVel = Vec3<CentimetersPerSecond<i32>>;
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SongSize, FromSong, ToSong)]
 #[repr(u8)]
 pub enum GpsFixType {
@@ -144,6 +148,7 @@ pub enum GpsFixType {
     TimeOnlyFix
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, FromSong, ToSong)]
 pub struct GpsFix {
     pub itow: u32,
@@ -179,6 +184,7 @@ impl Default for GpsFix {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, FromSong, ToSong)]
 pub struct GpsDop {
     pub time_of_week_millis: Milliseconds<u32>,
@@ -206,6 +212,7 @@ impl Default for GpsDop {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, FromSong, ToSong)]
 pub struct Page<T: SongSize + ToSong + FromSong> {
     pub index: u16,
@@ -221,6 +228,8 @@ impl <T: SongSize + ToSong + FromSong> Page<T> {
     }
 }
 
+///#[cfg(feature = "serde")]
+//#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Debug, Display, Clone, PartialEq, Eq, SongSize, ToSong, FromSong)]
 #[song(discriminant(PacketErrorType = u8))]
 pub enum PacketError {
@@ -231,13 +240,17 @@ pub enum PacketError {
     FlightNotFound(u16),
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
-
 pub struct FlashPageDump {
     addr: u32,
+    #[cfg(feature = "serde")]
+    #[serde(with = "serde_big_array::BigArray")]
     data: [u8; 256]
 }
 
+//#[cfg(feature = "serde")]
+//#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 #[song(discriminant(InPacketType = u8))]
 pub enum InPacket {
@@ -257,6 +270,7 @@ pub enum InPacket {
     DeployApo,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 pub struct LogEntry {
     pub time: Milliseconds<u32>,
@@ -272,6 +286,7 @@ impl LogEntry {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 #[song(discriminant(LogDataType = u8))]
 pub enum Log {
@@ -279,9 +294,10 @@ pub enum Log {
     State(SirinState),
     Data(SirinData),
     BarometricAltitude(Meters<f64>),
-    GpsNmea([u8; 200])
+    //GpsNmea([u8; 200])
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 pub struct SirinData {
     pub time: Milliseconds<u32>,
@@ -309,6 +325,7 @@ impl Measurement for SirinData {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, ToSong, FromSong, Measurement)]
 #[allow(dead_code)]
 pub struct BaroData {
@@ -317,12 +334,15 @@ pub struct BaroData {
 }
 
 type MicrodegreesPerSecond<T> = Quantity<T, <UnitMicrodegrees as Div<UnitSeconds>>::Output>;
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, ToSong, FromSong, Measurement)]
 pub struct ImuData {
     pub accel: Result<Vec3<MicroGs<i32>>, SubsystemError>,
     pub angular_vel: Result<Vec3<MicrodegreesPerSecond<i64>>, SubsystemError>
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, ToSong, FromSong, Measurement)]
 #[allow(dead_code)]
 pub struct HighGImuData {
@@ -330,6 +350,7 @@ pub struct HighGImuData {
     pub accel: Result<Vec3<i32>, SubsystemError>
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, ToSong, FromSong, Measurement)]
 #[allow(dead_code)]
 pub struct MagnetometerData {
@@ -338,6 +359,7 @@ pub struct MagnetometerData {
 }
 
 // TODO: maybe change to `derive_more` crate and remove snafu
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, Snafu, SongSize, ToSong, FromSong)]
 #[repr(u8)]
 pub enum SubsystemError {
@@ -362,6 +384,7 @@ impl From<SpiErrorKind> for SubsystemError {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SongSize, ToSong, FromSong)]
 #[repr(u8)]
 pub enum IoChannel {
@@ -372,6 +395,7 @@ pub enum IoChannel {
     Flash,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IoPacket<P: SongSize + ToSong + FromSong> {
     pub channel: IoChannel,
@@ -393,6 +417,7 @@ impl <P: SongSize + ToSong + FromSong> IoPacket<P> {
 }
 impl core::error::Error for SubsystemError {}
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 pub struct RadioPacket<P: SongSize + ToSong + FromSong> {
     pub id: SirinId,
@@ -402,7 +427,11 @@ pub struct RadioPacket<P: SongSize + ToSong + FromSong> {
 
 impl <P: SongSize + ToSong + FromSong> RadioPacket<P> {
     pub fn new(config: &SirinConfig, packet: P) -> Self {
-        let callsign = config.callsign.clone();
+        //let callsign = config.callsign.clone();
+
+        //hardcode my callsign
+        let mut callsign: CallsignBuf = [0; _];
+        callsign[0..6].copy_from_slice(b"KF8BAA");
 
         Self {
             id: config.id,
@@ -412,6 +441,7 @@ impl <P: SongSize + ToSong + FromSong> RadioPacket<P> {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, SongSize, ToSong, FromSong)]
 pub struct FlightHeader {
     /// Tracking byte -- when this flight is overwritten in the cyclic flash, this byte is zeroed out.
@@ -445,6 +475,7 @@ impl FlightHeader {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, Debug, SongSize, ToSong, FromSong, PartialEq, Eq)]
 #[repr(u8)]
 pub enum FlightHeaderStatus {

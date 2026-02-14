@@ -8,7 +8,7 @@ pub type NicknameBuf = [u8; 32];
 pub type CallsignBuf = [u8; 8];
 pub type SirinId = u16;
 
-
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 pub struct SirinConfig {
     /// Nickname for this device. Pad end with null bytes.

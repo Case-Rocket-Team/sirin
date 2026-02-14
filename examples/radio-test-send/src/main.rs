@@ -82,13 +82,17 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         ).await;
 
         OUT_CHANNEL.publish_immediate(IoPacket::new(
-        IoChannel::ToLoRa, OutPacket::LogEntry(LogEntry::new(
+            IoChannel::ToLoRa, OutPacket::LogEntry(LogEntry::new(
                 sirin.data.time,
                 Log::Data(sirin.data.clone())
             ))
         ));
+        //sirin.radio.transmit(b"KF8BAA").await?;
+
         info!("Transmitting!");
         sirin.led.set_high();
         Timer::after_millis(100).await; 
+        sirin.led.set_low();
+        Timer::after_millis(900).await;
     }
 }

@@ -2,6 +2,7 @@ use core::ops::{Deref, DerefMut};
 
 use super::*;
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
 #[repr(transparent)]
 pub struct MaybeUnwrittenMaxBytes<T: ConstSongSize>(pub Option<T>);
