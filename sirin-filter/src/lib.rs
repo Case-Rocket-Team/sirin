@@ -30,6 +30,7 @@ pub struct NominalState {
     pub rot_quaternion: UnitQuaternion<f32>,
     pub accel_bias: Vector3<f32>,
     pub angular_vel_bias: Vector3<f32>,
+    // pub gravity: Vector3<f32>,
 }
 
 impl Default for NominalState {
@@ -41,6 +42,7 @@ impl Default for NominalState {
             rot_quaternion: UnitQuaternion::identity(),
             accel_bias: Vector3::zeros(),
             angular_vel_bias: Vector3::zeros(),
+            // gravity: Vector3::zeros(),
         }
     }
 }
@@ -177,7 +179,6 @@ pub fn init_with_imu(
     if accel_mag < 1e-3 {
         return Err(FilterError::InitNoAccel);
     }
-    
     // Project magnetometer onto gravity vector
     let dot = accel_unit.dot(magnetometer_measurement);
     let proj = accel_unit * dot;
@@ -187,15 +188,8 @@ pub fn init_with_imu(
     let (_, north_unit) = decompose_vec(&north_unnorm);
     
     // East is cross product of down (gravity) and north
-    let east = accel_unit.cross(&north_unit);
     
-    #[cfg(debug_assertions)]
-    if DEBUG {
-        let east_mag = east.norm();
-        if fabsf(east_mag - 1.0) > 0.01 {
-            defmt::error!("East vector should be a unit vector because it is the cross product of two orthogonal unit vectors, but it is not a unit vector!");
-        }
-    }
+    let east = accel_unit.cross(&north_unit);
     
     // Build rotation matrix: columns are [-g, east, north]
     let rot_mat = Matrix3::from_columns(&[
@@ -237,7 +231,7 @@ pub fn update_with_imu(
     let mut accel_world = rot_mat * accel_term;
     
     // Add gravity (pointing toward Earth center)
-    let (pos_mag, pos_unit) = decompose_vec(&nominal.pos);
+    let (_pos_mag, pos_unit) = decompose_vec(&nominal.pos);
     let gravity = -pos_unit * GRAVITY;
     accel_world += gravity;
     nominal.accel = accel_world;
@@ -272,7 +266,7 @@ pub fn update_with_imu(
     let mut vel_deterministic = accel_skew_world * error.angles_vector;
     vel_deterministic += rot_mat * error.accel_bias;
     vel_deterministic *= dt;
-    error.vel -= vel_deterministic;
+    error.vel -= vel_deterministic; 
     
     // Prepare angular velocity matrix for Jacobian
     let angular_vel_term = (angular_vel_measurement - nominal.angular_vel_bias) * dt;

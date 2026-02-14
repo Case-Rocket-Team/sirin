@@ -15,7 +15,8 @@ my_bottom_percentile = 0.025 # Percentage of outliers to remove from the bottom 
 save_plots_to_file = True   # Set to True to save the plots to a file
 plot_sampling_percentage = 1 # Adjust if need to plot faster, 1.0 = 100% of the data, 0.5 = 50% of the data, 0.1 = 10% of the data, etc.
 figure_size = (10, 10) # Adjust the size of all the plots, (width, height)  
-file_name = "mag_out3.csv" 
+file_name = "mag_out_D_free.csv" 
+do_soft_iron = False
 
 def apply_calibration(df, b, A_1):
     """
@@ -78,6 +79,39 @@ def calibrate(df):
     print("\nSoft iron transformation matrix:")
     print(A_1)
     return b, A_1
+
+def calibrate_magnetometer_offset(df):
+    """
+    Perform magnetometer calibration using simple offset correction (hard iron only).
+    
+    Args:
+        df: pandas DataFrame with 'x', 'y', 'z' columns containing magnetometer data
+    
+    Returns:
+        b: Hard iron bias vector (3x1 numpy array)
+    """
+    # Convert dataframe to numpy array
+    data = df[['x', 'y', 'z']].values
+    
+    print(f"Calibrating with {len(data)} data points...")
+    
+    # Calculate hard iron bias as the mean of min and max values for each axis
+    # This assumes the magnetometer was rotated through all orientations
+    b = np.zeros([3, 1])
+    
+    for i, axis in enumerate(['X', 'Y', 'Z']):
+        min_val = np.min(data[:, i])
+        max_val = np.max(data[:, i])
+        b[i, 0] = (max_val + min_val) / 2.0
+        print(f"{axis}-axis: min={min_val:.2f}, max={max_val:.2f}, offset={b[i,0]:.2f}")
+    
+    print("\nCalibration completed!")
+    print("Hard iron bias (offset in microTesla):")
+    print(f"  X: {b[0,0]:.6f}")
+    print(f"  Y: {b[1,0]:.6f}")
+    print(f"  Z: {b[2,0]:.6f}")
+    
+    return b
 
 def _ellipsoid_fit(s):
     ''' Estimate ellipsoid parameters from a set of points.
@@ -223,10 +257,14 @@ def main():
     print(f"Total samples:  {len(original_df)}\t\toutliers filtered: {len(original_df) - len(filtered_df)}/{my_top_percentile + my_bottom_percentile}%")
     
     # Step 3: Apply correction and plot the data
-    b, A_1 = calibrate(filtered_df)
+    if do_soft_iron:
+        b, A_1 = calibrate(filtered_df)
+    else:
+        b = calibrate_magnetometer_offset(filtered_df)
+        A_1 = np.eye(3)
+
     filtered_corrected_df = apply_calibration(filtered_df, b, A_1)
     print_rust_code(b, A_1)
-
     # Step 5: Plot some information about the original data
     # Tip: Sampling the data with outliers is not a good idea, as the outliers may are likely to be removed and not plotted, for the other plots, sampling is fine but not required
     plot_data(original_df, title="Figure 1 - Data with outliers", xlabel="XY", ylabel="YZ", save_img=save_plots_to_file)

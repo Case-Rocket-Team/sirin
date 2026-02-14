@@ -83,7 +83,7 @@ ax.legend()
 for line in sys.stdin:
     dirty = False
     am = accel_re.search(line)
-    if am:
+    if False:
         ax_, ay_, az_ = map(float, am.groups())
         accel = normalize(np.array([ax_, ay_, az_], dtype=float))
 
@@ -95,7 +95,7 @@ for line in sys.stdin:
     # Quaternion update
     qm = quat_re.search(line)
     if qm:
-        r, x, y, z = map(float, qm.groups())
+        x, y, z, r = map(float, qm.groups())
         print(f"Received quaternion: r={r}, x={x}, y={y}, z={z}")
         R = quat_to_matrix(r, x, y, z)
 
@@ -115,7 +115,7 @@ for line in sys.stdin:
 
     # Magnetometer update
     mm = mag_re.search(line)
-    if False:
+    if mm:
         mx, my, mz = map(float, mm.groups())
         print(f"Received mag: x={mx}, y={my}, z={mz}")
         mag_body = np.array([mx, my, mz], dtype=float)

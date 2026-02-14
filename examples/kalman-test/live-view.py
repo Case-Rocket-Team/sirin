@@ -114,7 +114,7 @@ for line in sys.stdin:
 
     # Magnetometer update
     mm = mag_re.search(line)
-    if False:
+    if mm:
         mx, my, mz = map(float, mm.groups())
         print(f"Received mag: x={mx}, y={my}, z={mz}")
         mag_body = np.array([mx, my, mz], dtype=float)

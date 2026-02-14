@@ -892,9 +892,9 @@ impl <S: SpiHandle> Lsm6dso<S> {
           //xyz are corrected so that
           //x -> cable direction
           //yz follow from right hand rule, x as index finger
-          let accel_x: i32 = -scalar * (raw_x as i32);
+          let accel_x: i32 = scalar * (raw_x as i32);
           let accel_y: i32 = scalar * (raw_y as i32);
-          let accel_z: i32 = -scalar * (raw_z as i32);
+          let accel_z: i32 = scalar * (raw_z as i32);
 
           Ok(Accel {
                x: accel_x.with_units(),
@@ -908,9 +908,9 @@ impl <S: SpiHandle> Lsm6dso<S> {
           //sensitivity mode TODO: read from chip
           let fs = self.gyro_sensitivity().await?;
           let scalar: i64 = 4375 * (fs as i64)/125;
-          let gyro_pitch: i64 = -scalar * (raw_pitch as i64);
+          let gyro_pitch: i64 = scalar * (raw_pitch as i64);
           let gyro_roll: i64 = scalar * (raw_roll as i64);
-          let gyro_yaw: i64 = -scalar * (raw_yaw as i64);
+          let gyro_yaw: i64 = scalar * (raw_yaw as i64);
 
           Ok(AngularVel {
                x_pitch: gyro_pitch.with_units(),

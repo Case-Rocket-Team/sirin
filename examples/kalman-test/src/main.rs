@@ -57,18 +57,10 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut cov = CovarianceMatrixP::default();
 
 
-    // calibration data for a sirin not in ebay
-    // let free_hard_iron_bias_x = -47.573810;
-    // let free_hard_iron_bias_y = 44.599533;
-    // let free_hard_iron_bias_z = -169.833372;
-
-    // let free_scale_x = 0.976603;
-    // let free_scale_y = 1.056380;
-    // let free_scale_z = 0.971427;
-
-    let free_hard_iron_bias_x = -48.811444;
-    let free_hard_iron_bias_y = 47.348813;
-    let free_hard_iron_bias_z = -170.457916;
+    // Sirin D offset calibration
+    let hard_iron_bias_x = -18.269513;
+    let hard_iron_bias_y = 17.129495;
+    let hard_iron_bias_z = -42.261032;
 
     let free_soft_iron_bias_xx = 18.728720;
     let free_soft_iron_bias_xy = 1.581941;
@@ -91,19 +83,19 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         let dt = curr_reading.duration_since(prev_reading);
 
         let accel = sirin.imu.accel().await?;
-        // Flip X and Z axes for consistent reference frame
+        
         let accel = [
-            (accel.x.value as f32) / 1e6 *  9.81 * -1.0,
+            (accel.x.value as f32) / 1e6 *  9.81,
             (accel.y.value as f32) / 1e6 *  9.81,
-            (accel.z.value as f32) / 1e6 *  9.81 * -1.0,
+            (accel.z.value as f32) / 1e6 *  9.81,
         ];
 
         let angular = sirin.imu.angular_vel().await?;
 
         let angular = [
-            (angular.x_pitch.value as f32) * PI / 180.0 / 1e6,
+            (angular.x_pitch.value as f32) * PI / 180.0 / 1e6 * -1.0,
             (angular.y_roll.value as f32) * PI / 180.0 / 1e6,
-            (angular.z_yaw.value as f32) * PI / 180.0 / 1e6,
+            (angular.z_yaw.value as f32) * PI / 180.0 / 1e6 * -1.0,
         ];
 
         if is_first_reading {
@@ -111,9 +103,9 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
             let magn = sirin.magnetometer.magnetic().await?;
             let magn = [
-                (magn.0 as f32),
-                (magn.1 as f32),
-                (magn.2 as f32),
+                (magn.0 as f32) - hard_iron_bias_x,
+                (magn.1 as f32) - hard_iron_bias_y,
+                (magn.2 as f32) - hard_iron_bias_z,
             ];
 
             unsafe {
@@ -147,24 +139,21 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         ];
 
         let mag_offset = [
-            mag_reading[0] - free_hard_iron_bias_x,
-            mag_reading[1] - free_hard_iron_bias_y,
-            mag_reading[2] - free_hard_iron_bias_z,
+            mag_reading[0] - hard_iron_bias_x,
+            mag_reading[1] - hard_iron_bias_y,
+            mag_reading[2] - hard_iron_bias_z,
         ];
 
-        let mag_calibrated = [
-            mag_offset[0] * free_soft_iron_bias_xx + mag_offset[1] * free_soft_iron_bias_yx + mag_offset[2] * free_soft_iron_bias_zx,
-            mag_offset[0] * free_soft_iron_bias_xy + mag_offset[1] * free_soft_iron_bias_yy + mag_offset[2] * free_soft_iron_bias_zy,
-            mag_offset[0] * free_soft_iron_bias_xz + mag_offset[1] * free_soft_iron_bias_yz + mag_offset[2] * free_soft_iron_bias_zz,
-            // mag_offset[0] * free_scale_x,
-            // mag_offset[1] * free_scale_y,
-            // mag_offset[2] * free_scale_z,
-        ];
+        // let mag_calibrated = [
+        //     mag_offset[0] * free_soft_iron_bias_xx + mag_offset[1] * free_soft_iron_bias_yx + mag_offset[2] * free_soft_iron_bias_zx,
+        //     mag_offset[0] * free_soft_iron_bias_xy + mag_offset[1] * free_soft_iron_bias_yy + mag_offset[2] * free_soft_iron_bias_zy,
+        //     mag_offset[0] * free_soft_iron_bias_xz + mag_offset[1] * free_soft_iron_bias_yz + mag_offset[2] * free_soft_iron_bias_zz,
+        // ];
 
         if i % 200 == 0 {
             info!("Nominal: {}", Debug2Format(&nominal));   
             // info!("Accelerometer: {:?}", accel);
-            // info!("Magnetometer: {:?}", mag_calibrated);
+            info!("Magnetometer: {:?}", mag_offset);
         }
         
 
