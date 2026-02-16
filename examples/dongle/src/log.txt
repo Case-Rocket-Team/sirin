@@ -1,8 +1,0 @@
-150.643737 INFO  79
-└─ rfm9::{impl#1}::recieve::{async_fn#0} @ /exp/projects/sirin/rfm9/src/lib.rs:507 
-150.644683 INFO  Received: [0, 0, 4b, 46, 38, 42, 41, 41, 0, 0, 6, 9d, 4, 31, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20, 12, 2, 30, 2a, e8, 2, 88, 6b, fe, ff, 98, c8, c4, 6a, 3d, e3, 29, 7e, 44, 52, 2c, 58, d9, 8c, fc, f0, 23, eb, ce, 84, bd, 71, e6, e9, 4e, 61, a8, e0, 1, 0, 0, 23, 82, a2, 28, 0, 0]
-└─ dongle::main_task::{async_fn#0} @ src/main.rs:71  
-150.644866 INFO  Note: this will hang if no one is connected to USB.
-└─ dongle::main_task::{async_fn#0} @ src/main.rs:72  
-150.644927 INFO  Radio packet: RadioPacket { id: 0, callsign: [75, 70, 56, 66, 65, 65, 0, 0], packet: LogEntry(LogEntry { time: 3212445, log: State(SirinState { mode: Flight, gps: GpsFix { time: 0, satellites: 0, almanac: 0, ephemerides: 0, healthy_satellites: 0, fix_type: NoFix, pos: Vec3 { x: 1.082585797463734e-298, y: NaN, z: 5.4177433821819906e299 }, vel: Vec3 { x: 757877300000000.0, y: -6.2528397e29, z: -4.8646306e-36 } }, altitude: -4.1841131167582374e157, apogee: Some(2.20740789268764e-310) }) }) }
-└─ dongle::main_task::{async_fn#0} @ src/main.rs:77 
