@@ -35,7 +35,7 @@ pub struct SirinUsb {
     pub write_ep: WriteEp,
 }
 
-/// SAFETY: function may only be called once
+/// Function may only be called once
 #[allow(static_mut_refs)]
 pub unsafe fn setup_usb(
     spawner: &Spawner,

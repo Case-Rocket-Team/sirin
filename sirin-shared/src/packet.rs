@@ -4,6 +4,8 @@ use derive_more::Display;
 use sirin_macros::*;
 use embedded_hal::spi::ErrorKind as SpiErrorKind;
 
+pub type Time = u64;
+
 #[allow(dead_code)]
 #[allow(unused_variables)]
 pub const MAX_OUT_PACKET_SIZE: usize = 256;
@@ -24,6 +26,8 @@ macro_rules! byte_array_str {
 pub use byte_array_str;
 use snafu::Snafu;
 use uunit::{Celsius, Centimeters, Meters, MetersPerSecond, MicroGs, Millimeters, Milliseconds, Pascals, Quantity, UnitCentimeters, UnitMicrodegrees, UnitSeconds, WithUnits};
+
+pub type PacketId = u8;
 
 #[derive(Debug)]
 pub enum ByteArrayStrError {
@@ -76,19 +80,22 @@ impl <const SIZE: usize> ByteArrayStr for [u8; SIZE] {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
-#[song(discriminant(OutPacketType = u8))]
-pub enum OutPacket {
+#[song(discriminant(LogType = u8))]
+pub enum Log {
     Null,
-    Ok,
     //Error(PacketError),
-    Config(SirinConfig),
     Mode(SirinMode),
     FlightStart(u8),
-    LogEntry(LogEntry),
-    FlightHeader(Page<FlightHeader>),
     State(SirinState),
-    DeployedApoAt(u32),
-    DeployedMainAt(u32)
+    DeployedApo,
+    DeployedMain,
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
+pub struct LogPacket {
+    pub time: Time,
+    pub log: Log
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -102,6 +109,7 @@ pub struct SirinState {
 
     pub nominal: NominalState,
     pub error: ErrorState,
+
     /// true if the coordinates given are earth-centered, earth fixed
     /// https://en.wikipedia.org/wiki/Earth-centered,_Earth-fixed_coordinate_system
     pub is_ecef: bool,
@@ -228,14 +236,15 @@ impl <T: SongSize + ToSong + FromSong> Page<T> {
     }
 }
 
-///#[cfg(feature = "serde")]
-//#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Display, Clone, PartialEq, Eq, SongSize, ToSong, FromSong)]
 #[song(discriminant(PacketErrorType = u8))]
-pub enum PacketError {
-    #[display("The packet type {_1:?} is not supported over {_0:?}.")]
-    PacketNotSupportedOverChannel(IoChannel, InPacketType),
-
+pub enum SirinError {
+    //#[display("The packet type {_1:?} is not supported over {_0:?}.")]
+    //PacketNotSupportedOverChannel(IoChannel, RequestPacketDataType),
+    SanityCheckFailed,
+    SpiError,
+    NotYetMeasured,
     #[display("Flight #{_0} could not be found.")]
     FlightNotFound(u16),
 }
@@ -244,57 +253,60 @@ pub enum PacketError {
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 pub struct FlashPageDump {
     addr: u32,
-    #[cfg(feature = "serde")]
-    #[serde(with = "serde_big_array::BigArray")]
+    #[cfg_attr(feature = "serde", serde(with = "serde_big_array::BigArray"))]
     data: [u8; 256]
 }
 
-//#[cfg(feature = "serde")]
-//#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
-#[song(discriminant(InPacketType = u8))]
-pub enum InPacket {
+#[song(discriminant(RequestType = u8))]
+pub enum Request {
     Null,
     Ping,
     SetTime(AbsoluteTimeReference),
     Reboot,
     QueryConfig,
     SetConfig(SirinConfig),
-    QueryMode,
     SetMode(SirinMode),
-    QueryFlights,
+    /*QueryFlights,
     ReadFlight(u16),
     Tail(bool),
-    EraseFlash(MagicU8<0xA8>),
+    EraseFlash(MagicU8<0xA8>),*/
     DeployMain,
     DeployApo,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
-pub struct LogEntry {
-    pub time: Milliseconds<u32>,
-    pub log: Log
-}
-
-impl LogEntry {
-    pub fn new(time: Milliseconds<u32>, log: Log) -> Self {
-        Self {
-            time,
-            log
-        }
-    }
+pub struct RequestPacket {
+    pub packet_id: PacketId,
+    pub request: Request
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
-#[song(discriminant(LogDataType = u8))]
-pub enum Log {
-    //State(NominalState),
-    State(SirinState),
-    Data(SirinData),
-    BarometricAltitude(Meters<f64>),
-    //GpsNmea([u8; 200])
+#[song(discriminant(ResponseType = u8))]
+pub enum Response {
+    Null,
+    Ok,
+    Error(SirinError),
+    Config(SirinConfig),
+    FlightHeader(Page<FlightHeader>),
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
+pub struct ResponsePacket {
+    pub responding_to: PacketId,
+    pub response: Response
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
+#[song(discriminant(OutPacketType = u8))]
+pub enum OutPacket {
+    Log(LogPacket),
+    Response(ResponsePacket)
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -390,31 +402,10 @@ impl From<SpiErrorKind> for SubsystemError {
 pub enum IoChannel {
     Broadcast = 0,
     Usb,
-    ToLoRa,
-    FromLoRa,
+    Radio,
     Flash,
 }
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IoPacket<P: SongSize + ToSong + FromSong> {
-    pub channel: IoChannel,
-    pub packet: P
-}
-
-impl <P: SongSize + ToSong + FromSong> IoPacket<P> {
-    pub fn new(channel: IoChannel, packet: P) -> Self {
-        Self {
-            channel,
-            packet
-        }
-    }
-
-    /// TODO: implement full request-response with packet ids
-    pub fn reply<R: SongSize + ToSong + FromSong>(&self, packet: R) -> IoPacket<R> {
-        IoPacket::new(self.channel, packet)
-    }
-}
 impl core::error::Error for SubsystemError {}
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

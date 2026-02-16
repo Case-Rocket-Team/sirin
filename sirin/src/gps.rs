@@ -5,7 +5,6 @@ use core::fmt::Debug;
 
 use crate::{
     error::SirinError,
-    io::{broadcast, broadcast_log},
     usb,
 };
 use defmt::{error, info, println, warn, Debug2Format};
@@ -20,7 +19,7 @@ use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal}
 use embassy_time::{Instant, Timer};
 use serde::de;
 use sirin_shared::{
-    packet::{self, EcefPos, GpsDop, GpsFix, GpsFixType, Log, OutPacket, Vec3},
+    packet::{self, EcefPos, GpsDop, GpsFix, GpsFixType, Log, Vec3},
     song::FromSong,
 };
 use ublox::{

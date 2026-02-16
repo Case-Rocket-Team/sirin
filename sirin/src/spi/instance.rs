@@ -1,3 +1,5 @@
+use core::marker::PhantomPinned;
+
 use embassy_stm32::{gpio::Output, mode::Async, spi::{ self as em_spi, Instance as EmSpiInstance, MisoPin, MosiPin, RxDma, SckPin, Spi as EmSpi, TxDma }};
 use spi_handle::SpiHandle;
 
@@ -52,12 +54,13 @@ impl <
 
 //#[derive(SpiError)]
 pub struct SpiInstance {
-    spi_mutex: Mutex<Spi>
+    spi_mutex: Mutex<Spi>,
+    phantom_pinned: PhantomPinned
 }
 
 impl SpiInstance {
-    /// SAFETY: the caller must insure the returned value is never moved.
-    pub unsafe fn new<T: EmSpiInstance>(config: SpiConfigStruct<
+    /// The caller must insure the returned value is never moved.
+    pub fn new<T: EmSpiInstance>(config: SpiConfigStruct<
         T,
         impl SckPin<T> + 'static,
         impl MosiPin<T> + 'static,
@@ -74,7 +77,8 @@ impl SpiInstance {
                 config.dma_tx,
                 config.dma_rx,
                 em_spi::Config::default()
-            ))
+            )),
+            phantom_pinned: PhantomPinned
         }
     }
 

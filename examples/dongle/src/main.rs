@@ -16,7 +16,7 @@ use rfm9::{ReadRfm9, Rfm9};
 use sirin_c::update_with_imu;
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::gps_task, io::{IN_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{GpsFix, InPacket, IoChannel, IoPacket, Log, LogEntry, MAX_OUT_PACKET_SIZE, OutPacket, PacketError, Page, RadioPacket}, song::{FromSong, SongSize, ToSong}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, MetersPerSecond2, WithUnits}};
+use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::gps_task, io::{REQUEST_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{GpsFix, Request, IoChannel, IoPacket, Log, LogEntry, MAX_OUT_PACKET_SIZE, Log, SirinError, Page, RadioPacket}, song::{FromSong, SongSize, ToSong}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, MetersPerSecond2, WithUnits}};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{Publisher, Subscriber}};
 use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
@@ -42,7 +42,7 @@ unsafe fn main() -> ! {
 async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
     debug!("Begin Sirin init");
 
-    let sirin = Sirin::init(sirin, spawner).await;
+    let sirin = Sirin::new(sirin, spawner).await;
 
     debug!("End Sirin init");
 
@@ -72,7 +72,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         info!("Received: {:x}", buf[..len]);
         info!("Note: this will hang if no one is connected to USB.");
 
-        let radio_packet = RadioPacket::<OutPacket>::from_song(&buf[..len]);
+        let radio_packet = RadioPacket::<Log>::from_song(&buf[..len]);
         let radio_packet = match radio_packet {
             Ok(p) => {
                 info!("Radio packet: {}", Debug2Format(&p));

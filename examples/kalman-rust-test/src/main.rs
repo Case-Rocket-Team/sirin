@@ -38,7 +38,7 @@ unsafe fn main() -> ! {
 async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
     debug!("Begin Sirin init");
 
-    let sirin = Sirin::init(sirin, spawner).await;
+    let sirin = Sirin::new(sirin, spawner).await;
 
     debug!("End Sirin init");
 

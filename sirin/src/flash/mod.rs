@@ -5,7 +5,7 @@ use core::{future::{poll_fn, Future, PollFn}, mem::MaybeUninit, ops::{Add, Neg, 
 use cyclic::{AppendResult, CyclicFlashSection};
 use defmt::{error, info, println, trace, Debug2Format, Display2Format};
 use embassy_time::{Instant, Timer};
-use sirin_shared::{packet::{FlightHeader, FlightHeaderStatus, LogEntry, OutPacket, MAX_OUT_PACKET_SIZE}, song::{maybe_unwritten_max_bytes::MaybeUnwrittenMaxBytes, FromSong, SongSize, ToSong}, time::AbsoluteTimeReference};
+use sirin_shared::{packet::{FlightHeader, FlightHeaderStatus, LogPacket, MAX_OUT_PACKET_SIZE}, song::{FromSong, SongSize, ToSong, maybe_unwritten_max_bytes::MaybeUnwrittenMaxBytes}, time::AbsoluteTimeReference};
 use sirin_shared::song::ConstSongSize;
 use static_assertions::const_assert;
 use w25qx::W25Q;
@@ -195,7 +195,7 @@ impl Flash {
         Ok(())
     }
 
-    pub async fn log(&mut self, packet: &OutPacket) -> Result<(), SirinError> {
+    pub async fn log(&mut self, packet: &LogPacket) -> Result<(), SirinError> {
         let mut data = [0u8; MAX_OUT_PACKET_SIZE];
         packet.to_song(&mut data)?;
         let result = self.flight_data.append(&mut self.w25q, &data[0..packet.song_size()]).await?;
@@ -275,7 +275,7 @@ pub struct FlashFlightPacketsIterator<'a> {
 }
 
 impl <'a> FlashFlightPacketsIterator<'a> {
-    pub async fn next(&mut self) -> Option<Result<OutPacket, SirinError>> {
+    pub async fn next(&mut self) -> Option<Result<LogPacket, SirinError>> {
         let size = self.flash.flight_data.data_subregion_size;
         let offset = self.flash.flight_data.region_start;
 
@@ -309,7 +309,7 @@ impl <'a> FlashFlightPacketsIterator<'a> {
                 panic!("Couldn't read flight data, addr: {}", addr)
             }
 
-            let log = match OutPacket::from_song(&buf) {
+            let log = match LogPacket::from_song(&buf) {
                 Ok(p) => p,
                 Err(e) => {
                     self.is_done = true;

@@ -14,7 +14,7 @@ use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task}, io::{FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{RadioPacket, GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, MAX_OUT_PACKET_SIZE, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
+use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task}, io::{FLASH_LOGGING_ENABLED, REQUEST_CHANNEL, RESPONSE_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{RadioPacket, GpsFixType, Request, IoChannel, IoPacket, Log, LogEntry, MAX_OUT_PACKET_SIZE, Log, SirinError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, Publisher, Subscriber}};
 use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
@@ -38,7 +38,7 @@ unsafe fn main() -> ! {
 async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
     debug!("Begin Sirin init");
 
-    let sirin = Sirin::init(sirin, spawner).await;
+    let sirin = Sirin::new(sirin, spawner).await;
 
     debug!("End Sirin init");
 
@@ -59,14 +59,14 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     loop{
         match sirin.radio.recieve(&mut buf).await{
             Ok(len) => {
-                let packet: RadioPacket<InPacket> = RadioPacket::from_song(&buf[0..(len as usize)])?;
+                let packet: RadioPacket<Request> = RadioPacket::from_song(&buf[0..(len as usize)])?;
                 match packet.packet {
-                InPacket::DeployApo => {
+                Request::DeployApo => {
                     Sirin::deploy_chute_apo(&mut sirin.parachute_apo); 
                     info!("Apo deployed!");
                     sirin.led.set_high();
                 },
-                InPacket::DeployMain => {
+                Request::DeployMain => {
                     Sirin::deploy_chute_main(&mut sirin.parachute_main); 
                     info!("Main deployed!");
                     sirin.led.set_high();
