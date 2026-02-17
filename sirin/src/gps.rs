@@ -4,7 +4,6 @@
 use core::fmt::Debug;
 
 use crate::{
-    error::SirinError,
     usb,
 };
 use defmt::{error, info, println, warn, Debug2Format};

@@ -41,7 +41,7 @@ pub fn derive_measurement(item: TokenStream) -> TokenStream {
         impl #impl_generics crate::packet::Measurement for #name #ty_generics #where_clause {
             fn unmeasured() -> Self {
                 Self {
-                    #(#fields: Err(crate::packet::SubsystemError::NotYetMeasured)),*
+                    #(#fields: Err(crate::error::SirinError::NotYetMeasured)),*
                 }
             }
         }

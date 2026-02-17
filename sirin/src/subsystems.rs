@@ -11,7 +11,7 @@ use lsm6dso_spi::{Accel, AngularVel, Lsm6dso};
 use paste::paste;
 use rfm9::Rfm9;
 use sirin_macros::Measurement;
-use sirin_shared::{packet::{BaroData, HighGImuData, ImuData, MagnetometerData, Measurement, SirinData, SubsystemError, Vec3}, physics::approx_pressure_altitude};
+use sirin_shared::{error::SirinError, packet::{BaroData, HighGImuData, ImuData, MagnetometerData, Measurement, SirinData, Vec3}, physics::approx_pressure_altitude};
 use snafu::prelude::*;
 use uunit::{Celsius, Milliseconds, Pascals, WithUnits};
 use w25qx::W25Q;
@@ -23,7 +23,7 @@ pub trait Subsystem {
     const NAME: &str;
     const PART: &str;
 
-    fn selfcheck(&mut self) -> impl Future<Output = Result<(), SubsystemError>>;
+    fn selfcheck(&mut self) -> impl Future<Output = Result<(), SirinError>>;
 }
 
 pub trait Instrument: Subsystem {
@@ -89,7 +89,7 @@ impl Subsystem for Bmp3<SpiDev> {
     const NAME: &str = "Barometer";
     const PART: &str = "BMP388";
 
-    async fn selfcheck(&mut self) -> Result<(), SubsystemError> {
+    async fn selfcheck(&mut self) -> Result<(), SirinError> {
         Ok(())
     }
 }
@@ -121,7 +121,7 @@ impl Subsystem for W25Q<SpiDev> {
     const NAME: &str = "Flash";
     const PART: &str = "W25Q32";
 
-    async fn selfcheck(&mut self) -> Result<(), SubsystemError> {
+    async fn selfcheck(&mut self) -> Result<(), SirinError> {
         let device_id = self.read_device_id().await?;
 
         sanity_check!(device_id => 21)?;
@@ -133,7 +133,7 @@ impl Subsystem for Lsm6dso<SpiDev> {
     const NAME: &str = "IMU";
     const PART: &str = "LSM6DSO32";
 
-    async fn selfcheck(&mut self) -> Result<(), SubsystemError> {
+    async fn selfcheck(&mut self) -> Result<(), SirinError> {
         let manufacturer_id = self.read_manufacturer_id().await?;
 
         sanity_check!(manufacturer_id => 108)?;
@@ -156,7 +156,7 @@ impl Subsystem for H3lis<SpiDev> {
     const NAME: &str = "High G IMU";
     const PART: &str = "H3LIS";
 
-    async fn selfcheck(&mut self) -> Result<(), SubsystemError> {
+    async fn selfcheck(&mut self) -> Result<(), SirinError> {
         let manufacturer_id = self.manufacturer_id().await?;
 
         sanity_check!(manufacturer_id => 50)?;
@@ -192,7 +192,7 @@ impl Subsystem for Lis3mdl<SpiDev> {
     const NAME: &str = "Magnetometer";
     const PART: &str = "LIS3MDL";
 
-    async fn selfcheck(&mut self) -> Result<(), SubsystemError> {
+    async fn selfcheck(&mut self) -> Result<(), SirinError> {
         let manufacturer_id = self.manufacturer_id().await?;
 
         sanity_check!(manufacturer_id => 50)?;
@@ -216,7 +216,7 @@ impl Subsystem for Rfm9<SpiDev> {
     const NAME: &str = "LoRa Radio";
     const PART: &str = "Rfm9";
 
-    async fn selfcheck(&mut self) -> Result<(), SubsystemError> {
+    async fn selfcheck(&mut self) -> Result<(), SirinError> {
         let radio_version = self.read_version().await.unwrap();
 
         sanity_check!(radio_version => 18)?;

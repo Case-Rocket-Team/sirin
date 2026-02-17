@@ -1,8 +1,8 @@
 use core::ops::Div;
 use crate::{config::{CallsignBuf, SirinConfig, SirinId}, mode::SirinMode, song::{magic::MagicU8, maybe_unwritten_max_bytes::MaybeUnwrittenMaxBytes, *}, state::{ErrorState, NominalState}, time::AbsoluteTimeReference};
-use derive_more::Display;
 use sirin_macros::*;
 use embedded_hal::spi::ErrorKind as SpiErrorKind;
+use crate::error::SirinError;
 
 pub type Time = u64;
 
@@ -237,19 +237,6 @@ impl <T: SongSize + ToSong + FromSong> Page<T> {
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Display, Clone, PartialEq, Eq, SongSize, ToSong, FromSong)]
-#[song(discriminant(PacketErrorType = u8))]
-pub enum SirinError {
-    //#[display("The packet type {_1:?} is not supported over {_0:?}.")]
-    //PacketNotSupportedOverChannel(IoChannel, RequestPacketDataType),
-    SanityCheckFailed,
-    SpiError,
-    NotYetMeasured,
-    #[display("Flight #{_0} could not be found.")]
-    FlightNotFound(u16),
-}
-
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 pub struct FlashPageDump {
     addr: u32,
@@ -341,8 +328,8 @@ impl Measurement for SirinData {
 #[derive(Debug, Clone, SongSize, ToSong, FromSong, Measurement)]
 #[allow(dead_code)]
 pub struct BaroData {
-    pub pressure: Result<Pascals<f64>, SubsystemError>,
-    pub temperature: Result<Celsius<f64>, SubsystemError>
+    pub pressure: Result<Pascals<f64>, SirinError>,
+    pub temperature: Result<Celsius<f64>, SirinError>
 }
 
 type MicrodegreesPerSecond<T> = Quantity<T, <UnitMicrodegrees as Div<UnitSeconds>>::Output>;
@@ -350,8 +337,8 @@ type MicrodegreesPerSecond<T> = Quantity<T, <UnitMicrodegrees as Div<UnitSeconds
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, ToSong, FromSong, Measurement)]
 pub struct ImuData {
-    pub accel: Result<Vec3<MicroGs<i32>>, SubsystemError>,
-    pub angular_vel: Result<Vec3<MicrodegreesPerSecond<i64>>, SubsystemError>
+    pub accel: Result<Vec3<MicroGs<i32>>, SirinError>,
+    pub angular_vel: Result<Vec3<MicrodegreesPerSecond<i64>>, SirinError>
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -359,41 +346,15 @@ pub struct ImuData {
 #[allow(dead_code)]
 pub struct HighGImuData {
     // TODO: Put units on this!
-    pub accel: Result<Vec3<i32>, SubsystemError>
+    pub accel: Result<Vec3<i32>, SirinError>
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, ToSong, FromSong, Measurement)]
 #[allow(dead_code)]
 pub struct MagnetometerData {
-    pub mag: Result<Vec3<i16>, SubsystemError>,
-    pub temp: Result<i16, SubsystemError>
-}
-
-// TODO: maybe change to `derive_more` crate and remove snafu
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone, Copy, Snafu, SongSize, ToSong, FromSong)]
-#[repr(u8)]
-pub enum SubsystemError {
-    #[snafu(display("Sanity check failed"))]
-    SanityCheckFailed/*{
-        error_msg: &'static str,
-        // lazy but w/e -- just convert all numeric types into f64
-        // making a different type for each numeric/making the entire error enum
-        // generic is too much of a pita.
-        value: Option<f64>
-    }*/,
-    #[snafu(display("Error in SPI bus"))]
-    SpiError,
-    #[snafu(display("Not measured -- call .measure()"))]
-    NotYetMeasured
-}
-
-#[allow(unused_variables)]
-impl From<SpiErrorKind> for SubsystemError {
-    fn from(value: SpiErrorKind) -> Self {
-        SubsystemError::SpiError
-    }
+    pub mag: Result<Vec3<i16>, SirinError>,
+    pub temp: Result<i16, SirinError>
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -406,7 +367,7 @@ pub enum IoChannel {
     Flash,
 }
 
-impl core::error::Error for SubsystemError {}
+impl core::error::Error for SirinError {}
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]

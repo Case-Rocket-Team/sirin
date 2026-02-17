@@ -35,14 +35,19 @@ use embassy_usb::Builder as UsbBuilder;
 use flash::Flash;
 use gpio::GpioPins;
 use h3lis::H3lis;
+pub use h3lis;
 use lis3mdl::Lis3mdl;
+pub use lis3mdl;
 use lsm6dso_spi::Lsm6dso;
+pub use lsm6dso_spi;
+pub use rfm9;
 use rfm9::{ReadRfm9, Rfm9};
 use sirin_macros::{FromSong, SongSize, ToSong};
+use sirin_shared::error::SirinError;
 use sirin_shared::{
     config::SirinConfig,
     mode::SirinMode,
-    packet::{Measurement, SirinData, SirinState, SubsystemError},
+    packet::{Measurement, SirinData, SirinState},
     song::{FromSong, FromSongError, SongSize, ToSong, ToSongError},
 };
 use snafu::{ensure, Snafu};
@@ -70,9 +75,10 @@ use usb::{setup_usb, ReadEp, SirinUsb, UsbSerialClass, WriteEp};
 use uunit::{Celsius, Pascals};
 use w25qx::W25Q;
 
+pub use sirin_shared::*;
+
 pub mod delay;
 pub mod deque;
-pub mod error;
 pub mod flash;
 pub mod gpio;
 pub mod gps;
@@ -115,12 +121,12 @@ static STATICS: UnsafeSync<UnsafeCell<MaybeUninit<SirinStatics>>> =
 
 #[derive(Debug, Clone)]
 pub struct SirinHealth {
-    pub flash: Result<(), SubsystemError>,
-    pub radio: Result<(), SubsystemError>,
-    pub baro: Result<(), SubsystemError>,
-    pub imu: Result<(), SubsystemError>,
-    pub high_g_imu: Result<(), SubsystemError>,
-    pub magnetometer: Result<(), SubsystemError>,
+    pub flash: Result<(), SirinError>,
+    pub radio: Result<(), SirinError>,
+    pub baro: Result<(), SirinError>,
+    pub imu: Result<(), SirinError>,
+    pub high_g_imu: Result<(), SirinError>,
+    pub magnetometer: Result<(), SirinError>,
 }
 
 pub struct Sirin {
@@ -138,7 +144,6 @@ pub struct Sirin {
     pub parachute_apo: Output<'static>,
     pub apo_power: Output<'static>,
     */
-
     // Instrument subsytems
     pub baro: Bmp3<SpiDev>,
     pub imu: Lsm6dso<SpiDev>,
@@ -152,7 +157,7 @@ pub struct Sirin {
     pub mode: SirinMode,
     pub data: SirinData,
     pub health: SirinHealth,
-    pub config: &'static SirinConfig
+    pub config: &'static SirinConfig,
 }
 
 bind_interrupts!(struct Irqs {
@@ -200,9 +205,7 @@ impl Sirin {
         let gps_buf: &mut [u8; 512];
         let config: &SirinConfig;
 
-        let statics = unsafe {
-            &mut *STATICS.0.get()
-        };
+        let statics = unsafe { &mut *STATICS.0.get() };
 
         macro_rules! ptr {
             (statics . $field: ident) => {
@@ -271,9 +274,7 @@ impl Sirin {
         let flash_cs = Output::new(p.PD2, Level::High, Speed::High);
         let mut flash_dev = W25Q::new((*spi2).handle(flash_cs));
         let flash_selfcheck = flash_dev.selfcheck().await;
-        let mut flash = unsafe {
-            Flash::new(flash_dev)
-        };
+        let mut flash = unsafe { Flash::new(flash_dev) };
 
         config = unsafe {
             let config = flash.init().await.unwrap();
@@ -281,20 +282,9 @@ impl Sirin {
             &*ptr!(statics.config)
         };
 
-        let usb = unsafe {
-            setup_usb(&spawner, p.USB_OTG_FS, p.PA12, p.PA11)
-        };
+        let usb = unsafe { setup_usb(&spawner, p.USB_OTG_FS, p.PA12, p.PA11) };
 
-        let io = unsafe {
-            Io::new(
-                config,
-                spawner,
-                radio,
-                flash,
-                usb.write_ep,
-                usb.read_ep,
-            )
-        };
+        let io = unsafe { Io::new(config, spawner, radio, flash, usb.write_ep, usb.read_ep) };
 
         // Instruments
         let baro_cs = Output::new(p.PA2, Level::High, Speed::High);
@@ -438,7 +428,8 @@ impl Sirin {
                 imu.selfcheck(),
                 high_g_imu.selfcheck(),
                 magnetometer.selfcheck(),
-            ).await;
+            )
+            .await;
 
             SirinHealth {
                 flash: flash_selfcheck,
@@ -465,7 +456,7 @@ impl Sirin {
             mode,
             data,
             health,
-            config
+            config,
         };
 
         unsafe {

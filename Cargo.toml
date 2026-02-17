@@ -14,18 +14,6 @@ members = [
     "sirin-c",
     "sam-m10q",
     "examples/main",
-    "examples/imu-test",
-    "examples/bare",
-    "examples/h3lis-test",
-    "examples/nosecone-ebay",
-    "examples/dongle",
-    "examples/kalman-test",
-    "examples/kalman-rust-test",
-    "examples/radio-test-send",
-    "examples/gps-test",
-    "examples/radio-test-receive",
-    "examples/any-test",
-    "examples/mag-calibrate"
 ]
 resolver = "2"
 

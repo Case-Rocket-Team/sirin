@@ -1,6 +1,8 @@
 
 use core::mem::MaybeUninit;
 
+use derive_more::Display;
+use sirin_macros::{FromSong, SongSize, ToSong};
 use uunit::{Dimension, Quantity};
 
 pub mod option;
@@ -79,14 +81,17 @@ where T::Size: ConstSongSizeImpl {
 
 // Fill out as needed.
 #[non_exhaustive]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Display, SongSize, ToSong, FromSong)]
+#[song(discriminant(ToSongErrorType = u8))]
 pub enum ToSongError {
     BufferOverflow,
     NotImplemented,
     StringTooLong
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq, Eq, Display, SongSize, ToSong, FromSong)]
+#[song(discriminant(FromSongErrorType = u8))]
 pub enum FromSongError {
     BufferOverflow,
     NotImplemented,
