@@ -174,3 +174,27 @@ impl Default for ErrorState {
         }
     }
 }
+
+#[derive(Debug, Clone, SongSize, ToSong, FromSong)]
+#[repr(C)]
+pub struct CovarianceMatrixP {
+    pub data: [f32; 324]
+}
+
+impl CovarianceMatrixP {
+    pub fn accel_uncertainty(&self) -> Vec3<f32> {
+        Vec3 { 
+            x: self.data[6 + 6 * 18],
+            y: self.data[7 + 7 * 18],
+            z: self.data[8 + 8 * 18]
+        }
+    }
+}
+
+impl Default for CovarianceMatrixP {
+    fn default() -> Self {
+        CovarianceMatrixP {
+            data: [0.0; 324]
+        }
+    }
+}
