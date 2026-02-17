@@ -26,8 +26,7 @@ use h3lis::H3lis;
 use spi::{Spi, SpiConfig, SpiConfigStruct, SpiDev, SpiInstance, WithSpiHandle};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State as UsbState};
 use embassy_usb::Builder as UsbBuilder;
-use ublox::{FixedBuffer, UbxPacketMeta, UbxProtocol, cfg_inf::{CfgInf, CfgInfBuilder, CfgInfMask}, cfg_msg::CfgMsgSinglePortBuilder, cfg_nav5::CfgNav5Builder, cfg_prt::{CfgPrtUartBuilder, DataBits, InProtoMask, OutProtoMask, Parity, StopBits, UartMode, UartPortId}, cfg_rate::{CfgRate, CfgRateBuilder}, mon_rf::MonRf, nav_dop::NavDop, nav_pvt::proto27_31::{NavPvt, NavPvtRef}, nav_sat::NavSat, proto31::*, rxm_rawx::RxmRawx};
-use ublox::{Parser,UbxPacket,proto31::*,GnssFixType,Position,Velocity};
+use gps::gps_init;
 
 pub use uunit;
 pub mod spi;
@@ -235,71 +234,8 @@ impl Sirin {
                 gps_config
             ).unwrap();
 
-            //Construct GPS config packets
-            //UART config for GPS
-            let port_config_packet = CfgPrtUartBuilder {
-                portid: UartPortId::Uart1,
-                reserved0: 0,
-                tx_ready: 0,
-                mode: UartMode::new(DataBits::Eight, Parity::None, StopBits::One),
-                baud_rate: 9600,
-                in_proto_mask: InProtoMask::UBLOX,
-                out_proto_mask: OutProtoMask::UBLOX,
-                flags: 0,
-                reserved5: 0,
-            };
-            //Navigation Mode config
-            let mut nav_mode_config = CfgNav5Builder::default();
-            nav_mode_config.dyn_model = ublox::cfg_nav5::NavDynamicModel::AirborneWithLess4gAcceleration;
-            nav_mode_config.fix_mode = ublox::cfg_nav5::NavFixMode::Auto2D3D;
-            //GPS measurement and calculation rate
-            let gps_update_config = CfgRateBuilder{
-                measure_rate_ms: 100,
-                nav_rate: 1,
-                time_ref: ublox::cfg_rate::AlignmentToReferenceTime::Utc 
-            };
-            //Navigation message config (Position/Velocity/Time) 
-            let nav_msg_config = CfgMsgSinglePortBuilder{
-                msg_class: NavPvt::CLASS,
-                msg_id: NavPvt::ID,
-                rate: 1
-            };
-            //DOP message config (Dilution of precession) 
-            let nav_dop_config = CfgMsgSinglePortBuilder{
-                msg_class: NavDop::CLASS,
-                msg_id: NavDop::ID,
-                rate: 1
-            };
-            //RF message config ()
-            let rf_msg_config = CfgMsgSinglePortBuilder{
-                msg_class: MonRf::CLASS,
-                msg_id: MonRf::ID,
-                rate: 5
-            };
-            //Satelite message config ()
-            let satelite_msg_config = CfgMsgSinglePortBuilder{
-                msg_class: NavSat::CLASS,
-                msg_id: NavSat::ID,
-                rate: 5
-            };
-
-            //Send GPS config packets
-            let gps_config_delay = 50u64;
-            gps_uart.write(&port_config_packet.into_packet_bytes()).await.unwrap();
-            Timer::after_millis(gps_config_delay).await;
-            gps_uart.write(&nav_mode_config.into_packet_bytes()).await.unwrap();
-            Timer::after_millis(gps_config_delay).await;
-            gps_uart.write(&gps_update_config.into_packet_bytes()).await.unwrap();
-            Timer::after_millis(gps_config_delay).await;
-            gps_uart.write(&nav_msg_config.into_packet_bytes()).await.unwrap();
-            Timer::after_millis(gps_config_delay).await;
-            gps_uart.write(&nav_dop_config.into_packet_bytes()).await.unwrap();
-            Timer::after_millis(gps_config_delay).await;
-            gps_uart.write(&rf_msg_config.into_packet_bytes()).await.unwrap();
-            Timer::after_millis(gps_config_delay).await;
-            gps_uart.write(&satelite_msg_config.into_packet_bytes()).await.unwrap();
-            Timer::after_millis(gps_config_delay).await;
-            
+            // Initialize GPS module
+            gps_init(&mut gps_uart);
 
             let (tx,rx) = gps_uart.split();
 

@@ -14,7 +14,7 @@ use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{error::SirinError, flash::Flash, gps::{gps_task, GPS_FIX, GPS_DOP}, io::{broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL}, packet::{GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}, Radio, Sirin};
+use sirin::{error::SirinError, flash::Flash, gps::{gps_task, GPS_FIX}, io::{broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task, FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL}, packet::{GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}, Radio, Sirin};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, Publisher, Subscriber}};
 use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
@@ -70,18 +70,6 @@ async fn main_task(sirin: &'static mut Sirin) {
             info!("No GPS fix available");
         }
         println!("GPS fix: {:?}", Debug2Format(&state.gps_fix));
-
-
-        info!("Try get GPS DOP data");
-        if let Some(dop_data) = GPS_DOP.try_take() {
-            //if fix.fix_type != GpsFixType::NoFix {
-            info!("Got GPS DOP data");
-            state.gps_dop = dop_data;
-            //}
-        }else{
-            info!("No GPS DOP available");
-        }
-        println!("GPS DOP: {:?}", Debug2Format(&state.gps_dop));
 
         ticker.next().await;
         /*
