@@ -3,6 +3,7 @@ use num_traits::{One, Zero};
 use sirin_macros::{SongSize, ToSong, FromSong};
 use uunit::{Meters, MetersPerSecond, MetersPerSecond2, RadiansPerSecond, WithUnits};
 use crate::song::*;
+use crate::{packet::Vec3, song::*};
 
 #[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
