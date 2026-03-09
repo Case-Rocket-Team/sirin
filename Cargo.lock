@@ -1358,11 +1358,13 @@ dependencies = [
  "futures",
  "heapless 0.8.0",
  "micromath",
+ "nalgebra",
  "panic-probe",
  "postcard",
  "rand_core",
  "rfm9",
  "sirin",
+ "sirin-filter",
  "sirin-shared",
  "static_cell",
  "stm32-fmc",
@@ -1790,6 +1792,7 @@ dependencies = [
  "libm",
  "nalgebra",
  "sirin-shared",
+ "uunit",
 ]
 
 [[package]]

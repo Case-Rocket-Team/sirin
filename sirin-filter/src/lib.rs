@@ -4,6 +4,7 @@ use nalgebra as na;
 use na::{Matrix3, Matrix6, Vector3, UnitQuaternion, Rotation3};
 use libm::{cosf, sinf, sqrtf, fabsf, powf};
 use defmt;
+use uunit::WithUnits;
 
 // Constants
 const DEBUG: bool = true;
@@ -43,6 +44,44 @@ impl Default for NominalState {
             accel_bias: Vector3::zeros(),
             angular_vel_bias: Vector3::zeros(),
             // gravity: Vector3::zeros(),
+        }
+    }
+}
+
+impl From<&crate::NominalState> for sirin_shared::state::NominalState {
+    fn from(f: &crate::NominalState) -> Self {
+        sirin_shared::state::NominalState {
+            pos: sirin_shared::state::Pos {
+                x: f.pos.x.with_units(),
+                y: f.pos.y.with_units(),
+                z: f.pos.z.with_units(),
+            },
+            vel: sirin_shared::state::Vel {
+                x: f.vel.x.with_units(),
+                y: f.vel.y.with_units(),
+                z: f.vel.z.with_units(),
+            },
+            accel: sirin_shared::state::Accel {
+                x: f.accel.x.with_units(),
+                y: f.accel.y.with_units(),
+                z: f.accel.z.with_units(),
+            },
+            rot_quaternion: sirin_shared::state::Quaternion::new(
+                f.rot_quaternion.w,  // nalgebra UnitQuaternion uses .w not .r
+                f.rot_quaternion.i,  // and .i, .j, .k not .x, .y, .z
+                f.rot_quaternion.j,
+                f.rot_quaternion.k,
+            ),
+            accel_bias: sirin_shared::state::Accel {
+                x: f.accel_bias.x.with_units(),
+                y: f.accel_bias.y.with_units(),
+                z: f.accel_bias.z.with_units(),
+            },
+            angular_vel_bias: sirin_shared::state::AngularVel {
+                x_pitch: f.angular_vel_bias.x.with_units(),
+                y_roll:  f.angular_vel_bias.y.with_units(),
+                z_yaw:   f.angular_vel_bias.z.with_units(),
+            },
         }
     }
 }
