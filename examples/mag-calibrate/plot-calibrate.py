@@ -15,7 +15,7 @@ my_bottom_percentile = 0.025 # Percentage of outliers to remove from the bottom 
 save_plots_to_file = True   # Set to True to save the plots to a file
 plot_sampling_percentage = 1 # Adjust if need to plot faster, 1.0 = 100% of the data, 0.5 = 50% of the data, 0.1 = 10% of the data, etc.
 figure_size = (10, 10) # Adjust the size of all the plots, (width, height)  
-file_name = "mag_out_D_free.csv" 
+file_name = "mag_out_D_free4.csv" 
 do_soft_iron = False
 
 def apply_calibration(df, b, A_1):

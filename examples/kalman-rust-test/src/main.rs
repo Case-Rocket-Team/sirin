@@ -12,6 +12,7 @@ use embassy_time::{Instant, Timer};
 use rfm9::ReadRfm9;
 use nalgebra as na;
 use na::{Matrix3, Matrix6, Vector3, UnitQuaternion, Rotation3};
+use sirin_filter::converge_states;
 
 use {defmt_rtt as _, panic_probe as _};
 use sirin::{Sirin, error::SirinError, packet::SirinState, uunit::WithUnits};
@@ -91,19 +92,22 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut is_first_reading = true;
 
     let mut angular_test = Vector3::new(0.0 as f32, 0.0 as f32, 0.0 as f32);
-
+    let mut angular_sum = Vector3::new(0.0 as f32,0.0 as f32,0.0 as f32);
+    let mut vel_naive = Vector3::new(0.0 as f32,0.0 as f32,0.0 as f32);
+    let mut pos_naive = Vector3::new(0.0 as f32,0.0 as f32,0.0 as f32);
+    let mut g_naive = Vector3::new(0.0 as f32,0.0 as f32,0.0 as f32);
     loop {
         // info!("Running loop");
 
         let curr_reading = Instant::now();
         let dt = curr_reading.duration_since(prev_reading);
 
-        let accel = sirin.imu.accel().await?;
+        let accel = sirin.imu.accel_autoscale().await?;
         
         let accel = Vector3::new(
-            (accel.x.value as f32) / 1e6 *  9.81,
-            (accel.y.value as f32) / 1e6 *  9.81,
-            (accel.z.value as f32) / 1e6 *  9.81,
+            (accel.x.value as f32) / 1e6 *  9.80665,
+            -(accel.y.value as f32) / 1e6 *  9.80665,
+            (accel.z.value as f32) / 1e6 *  9.80665,
         );
 
         let angular = sirin.imu.angular_vel().await?;
@@ -114,8 +118,24 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             (angular.z_yaw.value as f32) * PI / 180.0 / 1e6 * -1.0,
         );
 
+        let (x_raw, y_raw, z_raw) = sirin.magnetometer.magnetic().await?;
+        // divide by 6842 for Gauss, mult by 100 for micro Teslas (uT)
+        let mag_reading = [
+            (x_raw as f32) / 6842.0 * 100.0,
+            (y_raw as f32) / 6842.0 * 100.0,
+            (z_raw as f32) / 6842.0 * 100.0,
+        ];
+
+        let mag_offset = Vector3::new(
+            mag_reading[0] - hard_iron_bias_x,
+            mag_reading[1] - hard_iron_bias_y,
+            mag_reading[2] - hard_iron_bias_z,
+        );
+
+
         if is_first_reading {
             is_first_reading = false;
+            g_naive = accel;
 
             let magn = sirin.magnetometer.magnetic().await?;
             let magn = Vector3::new(
@@ -142,34 +162,32 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 &accel,
                 &angular
             );
+            if i%10==0 {
+                sirin_filter::fuse_magnetometer(&mut nominal, &mut error, &mut cov, &mag_offset);
+            }
         }
 
-        let (x_raw, y_raw, z_raw) = sirin.magnetometer.magnetic().await?;
-        // divide by 6842 for Gauss, mult by 100 for micro Teslas (uT)
-        let mag_reading = [
-            (x_raw as f32) / 6842.0 * 100.0,
-            (y_raw as f32) / 6842.0 * 100.0,
-            (z_raw as f32) / 6842.0 * 100.0,
-        ];
+        angular_sum += angular * dt.as_micros() as f32 * 10e-6;
+        vel_naive += (accel - g_naive) * dt.as_micros() as f32 * 10e-6;
+        pos_naive += vel_naive * dt.as_micros() as f32 * 10e-6;
 
-        let mag_offset = [
-            mag_reading[0] - hard_iron_bias_x,
-            mag_reading[1] - hard_iron_bias_y,
-            mag_reading[2] - hard_iron_bias_z,
-        ];
+        // let mag_calibrated = [
+        //     mag_offset[0] * free_soft_iron_bias_xx + mag_offset[1] * free_soft_iron_bias_yx + mag_offset[2] * free_soft_iron_bias_zx,
+        //     mag_offset[0] * free_soft_iron_bias_xy + mag_offset[1] * free_soft_iron_bias_yy + mag_offset[2] * free_soft_iron_bias_zy,
+        //     mag_offset[0] * free_soft_iron_bias_xz + mag_offset[1] * free_soft_iron_bias_yz + mag_offset[2] * free_soft_iron_bias_zz,
+        // ];
 
-        let mag_calibrated = [
-            mag_offset[0] * free_soft_iron_bias_xx + mag_offset[1] * free_soft_iron_bias_yx + mag_offset[2] * free_soft_iron_bias_zx,
-            mag_offset[0] * free_soft_iron_bias_xy + mag_offset[1] * free_soft_iron_bias_yy + mag_offset[2] * free_soft_iron_bias_zy,
-            mag_offset[0] * free_soft_iron_bias_xz + mag_offset[1] * free_soft_iron_bias_yz + mag_offset[2] * free_soft_iron_bias_zz,
-        ];
-        angular_test = angular_test + angular * dt.as_micros() as f32;
         if i % 100 == 0 {
-            info!("Nominal: {}", Debug2Format(&nominal));   
-            // info!("Accelerometer: {:?}", accel);
-            info!("Magnetometer: {:?}", mag_offset);
-            info!("Rotation: ({}, {}, {})", angular.x, angular.y, angular.z);
-            info!("Rotation: ({}, {}, {})", angular_test.x, angular_test.y, angular_test.z);
+            info!("Nominal: {}", Debug2Format(&nominal));
+            // info!("Error: {}", Debug2Format(&error));
+            info!("Magnetometer: ({}, {}, {})", mag_offset.x, mag_offset.y,mag_offset.z);
+            // info!("Rotation: ({}, {}, {})", angular.x, angular.y, angular.z);
+            // info!("Rot sum: ({}, {}, {})", angular_sum.x, angular_sum.y, angular_sum.z);
+            // info!("pos naive: ({}, {}, {})", pos_naive.x, pos_naive.y, pos_naive.z);
+            // info!("accel: ({}, {}, {})", accel.x, accel.y, accel.z);
+            // info!("sens: {:?}", sirin.imu.accel_sensitivity().await?);
+            info!("dt: {}, Hz: {}", dt.as_micros(), 1.0/((dt.as_micros() as f32)*1e-6));
+            // converge_states(&mut nominal, &mut error, &mut cov);
         }
         
 

@@ -790,11 +790,16 @@ impl <S: SpiHandle> Lsm6dso<S> {
     pub async fn setup(
         &mut self
     ) -> Result<(),<S::Bus as ErrorType>::Error> {
-          //TODO: Use this function to perform initial setup of the IMU. Example: opening register access,
-          // let accel_mode = self.read_reg(RegCtrl1Xl).await?;
-          self.write_reg(RegCtrl1Xl, 0b1010_11_0_0 as u8).await?;
-          // let gyro_mode = self.read_reg(RegCtrl2G).await?;
-          self.write_reg(RegCtrl2G, 0b1010_11_0_0).await?;
+          //Use this function to perform initial setup of the IMU.
+
+          // 1010: 6.66kHz ODR
+          // 01: +-32g FS
+          // 0: output from first stage digital filtering selected
+          self.write_reg(RegCtrl1Xl, 0b1010_01_0_0 as u8).await?;
+          // 1010: 6.66kHz ODR
+          // 00: +-250dps FS
+          // 0: not +-125dps
+          self.write_reg(RegCtrl2G, 0b1010_00_0_0).await?;
           Ok(())    
     }
 
@@ -886,9 +891,9 @@ impl <S: SpiHandle> Lsm6dso<S> {
      /// returns a tuple with units of ug (10^-6)
      pub async fn accel(&mut self) -> Result<Accel, <S::Bus as ErrorType>::Error> {
           let (raw_x, raw_y, raw_z) = self.raw_accel().await?;
-          //sensitivity mode TODO: read from chip
+          //sensitivity mode
           let fs = self.accel_sensitivity().await?;
-          let scalar: i32 = 122 * fs/4;//* fs/4;
+          let scalar: i32 = 122 * fs/4;
           //xyz are corrected so that
           //x -> cable direction
           //yz follow from right hand rule, x as index finger
@@ -933,11 +938,11 @@ impl <S: SpiHandle> Lsm6dso<S> {
           //xyz are corrected so that
           //x -> cable direction
           //yz follow from right hand rule, x as index finger
-          let accel_x: i32 = -scalar * (raw_x as i32);
+          let accel_x: i32 = scalar * (raw_x as i32);
           let accel_y: i32 = scalar * (raw_y as i32);
-          let accel_z: i32 = -scalar * (raw_z as i32);
+          let accel_z: i32 = scalar * (raw_z as i32);
 
-          let max_accel = accel_x.max(accel_y).max(accel_z);
+          let max_accel = accel_x.abs().max(accel_y.abs()).max(accel_z.abs());
           let sensitivity = match max_accel{
                0..=3500000 => 0,
                3500001..=7000000 => 1,

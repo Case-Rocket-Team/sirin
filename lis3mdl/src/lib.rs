@@ -8,6 +8,13 @@ dev_csr!{
     dev Lis3mdl {
         regs {
             /// Should be 32h
+            0x05 OFFSET_X_L rw,
+            0x06 OFFSET_X_H rw,
+            0x07 OFFSET_Y_L rw,
+            0x08 OFFSET_Y_H rw,
+            0x09 OFFSET_Z_L rw,
+            0x0A OFFSET_Z_H rw,
+
             0x0F WHO_AM_I r who_am_i,
             0x20 CTRL_REG1 rw {
                 /// Default 0
@@ -212,11 +219,26 @@ impl <S: SpiHandle> Lis3mdl<S> {
         // self.write_reg(reg, value as u8).await?;
         // self.write_reg(CTRL_REG1, 0b1011_0000 as u8).await?;
 
-        self.write_reg(RegCtrlReg1, 0b1_10_100_0_0 as u8).await?;
-        self.write_reg(RegCtrlReg3, 0b00000000 as u8).await?;
-        self.write_reg(RegCtrlReg4, 0b0000_10_00 as u8).await?;
-        //self.write_reg().await?;
-        Ok(())    
+
+        // 0: temperature sensor disabled   
+        // 11: ultrahigh performance mode
+        // 100: 10Hz
+        self.write_reg(RegCtrlReg1, 0b0_11_100_0_0 as u8).await?;
+        // 00: +- 4gauss range
+        self.write_reg(RegCtrlReg2, 0b0_00_00000 as u8).await?;
+        // 00: continuous-conversion mode
+        self.write_reg(RegCtrlReg3, 0b000000_00 as u8).await?;
+        // 11: Z axis ultrahigh performance
+        self.write_reg(RegCtrlReg4, 0b0000_11_00 as u8).await?;
+        self.write_reg(RegCtrlReg5, 0b00000000 as u8).await?;
+
+        self.write_reg(RegOffsetXL, 0x00).await?;
+        self.write_reg(RegOffsetXH, 0x00).await?;
+        self.write_reg(RegOffsetYL, 0x00).await?;
+        self.write_reg(RegOffsetYH, 0x00).await?;
+        self.write_reg(RegOffsetZL, 0x00).await?;
+        self.write_reg(RegOffsetZH, 0x00).await?;
+        Ok(())
     }
     /// LSB/Gauss: 6842, so divide data by 6842 for the value in Gauss
     pub async fn magnetic(&mut self) -> Result<(i16,i16,i16), <S::Bus as ErrorType>::Error> {

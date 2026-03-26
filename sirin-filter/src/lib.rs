@@ -1,6 +1,8 @@
 #![no_std]
 
-use nalgebra as na;
+use core::convert::identity;
+
+use nalgebra::{self as na, MatrixMN};
 use na::{Matrix3, Matrix6, Vector3, UnitQuaternion, Rotation3};
 use libm::{cosf, sinf, sqrtf, fabsf, powf};
 use defmt;
@@ -11,12 +13,16 @@ const DEBUG: bool = true;
 const GRAVITY: f32 = 9.80665;
 const STATE_DIMS: usize = 18;
 const EARTH_RADIUS: f32 = 6378137.0;
+// -8.1919 degrees to radians, this is for cleveland
+const DECLINATION: f32 = -0.142975627;
 
-const VEL_NOISE: f32 = 1.0;
-const ANGLES_NOISE: f32 = 1.0;
-const ACCEL_NOISE: f32 = 1.0;
-const ANGULAR_VEL_NOISE: f32 = 1.0;
-
+// 220 mg = 2.158 *10^-3 m/s^2
+const ACCEL_WHITE_NOISE: f32 = 0.002158;
+// 3.8 mdps = 6.632 *10^-5 rad/s
+const GYRO_WHITE_NOISE: f32 = 0.00006632;
+// placeholders until allan variance
+const ACCEL_RANDOM_WALK: f32 = 6.20e-6;
+const GYRO_RANDOM_WALK: f32 = 2.76e-7;
 
 pub enum FilterError {
     InitNoAccel
@@ -27,11 +33,12 @@ pub enum FilterError {
 pub struct NominalState {
     pub pos: Vector3<f32>,
     pub vel: Vector3<f32>,
-    pub accel: Vector3<f32>,
     pub rot_quaternion: UnitQuaternion<f32>,
     pub accel_bias: Vector3<f32>,
     pub angular_vel_bias: Vector3<f32>,
-    // pub gravity: Vector3<f32>,
+    pub accel: Vector3<f32>,
+    pub gravity: Vector3<f32>,
+    pub debug: Vector3<f32>,
 }
 
 impl Default for NominalState {
@@ -39,11 +46,12 @@ impl Default for NominalState {
         Self {
             pos: Vector3::new(EARTH_RADIUS, 0.0, 0.0),
             vel: Vector3::zeros(),
-            accel: Vector3::zeros(),
             rot_quaternion: UnitQuaternion::identity(),
             accel_bias: Vector3::zeros(),
             angular_vel_bias: Vector3::zeros(),
-            // gravity: Vector3::zeros(),
+            accel: Vector3::zeros(),
+            gravity: Vector3::zeros(),
+            debug: Vector3::zeros(),
         }
     }
 }
@@ -91,10 +99,9 @@ impl From<&crate::NominalState> for sirin_shared::state::NominalState {
 pub struct ErrorState {
     pub pos: Vector3<f32>,
     pub vel: Vector3<f32>,
-    pub accel: Vector3<f32>,
+    pub angles_vector: Vector3<f32>,
     pub accel_bias: Vector3<f32>,
     pub angular_vel_bias: Vector3<f32>,
-    pub angles_vector: Vector3<f32>,
 }
 
 /// Covariance matrix P (18x18)
@@ -272,6 +279,7 @@ pub fn update_with_imu(
     // Add gravity (pointing toward Earth center)
     let (_pos_mag, pos_unit) = decompose_vec(&nominal.pos);
     let gravity = -pos_unit * GRAVITY;
+    nominal.gravity = gravity;
     accel_world += gravity;
     nominal.accel = accel_world;
     
@@ -291,110 +299,107 @@ pub fn update_with_imu(
     defmt::debug!("Error updates");
     
     // Error state updates (eq. 260)
-    
+    // ----- NOT NECESSARY TO INCLUDE: ERROR IS ALWAYS ZERO IN IMU UPDATE ------
+    // so they have been commented out, except for the part which helps calculate F_x
+
     // Update position error (eq. 260a)
-    error.pos += error.vel * dt;
+    // error.pos += error.vel * dt;
     
-    // Prepare acceleration skew matrix for Jacobian
+    // [a_m - a_b]_times
     let accel_body = accel_measurement - nominal.accel_bias;
     let accel_skew_body = skew_mat(&accel_body);
-    let accel_skew_world = rot_mat.matrix() * accel_skew_body;
-    let accel_mat_for_jacobian = -accel_skew_world * dt;
+    // -R [a_m - a_b]_times
+    let accel_skew_world = -rot_mat.matrix() * accel_skew_body;
+    // Prepare acceleration skew matrix for Jacobian
+    let accel_mat_for_jacobian = accel_skew_world * dt;
     
     // Update velocity error (eq. 260b)
-    let mut vel_deterministic = accel_skew_world * error.angles_vector;
-    vel_deterministic += rot_mat * error.accel_bias;
-    vel_deterministic *= dt;
-    error.vel -= vel_deterministic; 
+    // let mut vel_deterministic = accel_skew_world * error.angles_vector;
+    // vel_deterministic -= rot_mat * error.accel_bias;
+    // vel_deterministic *= dt;
+    // error.vel += -vel_deterministic; 
     
-    // Prepare angular velocity matrix for Jacobian
+    // R^T{(omega_m-omega_b)*delta t}
     let angular_vel_term = (angular_vel_measurement - nominal.angular_vel_bias) * dt;
     let angles_rot_mat = vec2rot_matrix(&angular_vel_term);
-    let angular_mat_for_jacobian = angles_rot_mat.transpose();
+    // Prepare angular velocity matrix for Jacobian
+    let angular_mat_for_jacobian = rot_mat.matrix().transpose() * angles_rot_mat;
     
     // Update angles error (eq. 260c)
-    error.angles_vector = angles_rot_mat * error.angles_vector;
-    error.angles_vector -= error.angular_vel_bias * dt;
+    // error.angles_vector = angular_mat_for_jacobian * error.angles_vector;
+    // error.angles_vector -= error.angular_vel_bias * dt;
     
     defmt::debug!("Covariance matrix update");
     defmt::debug!("Set up Jacobian");
     
     // Update covariance matrix P (eq. 268)
-    let mut jacobian_f = na::SMatrix::<f32, STATE_DIMS, STATE_DIMS>::zeros();
+    let mut jacobian_f_x = na::SMatrix::<f32, STATE_DIMS, STATE_DIMS>::zeros();
     
     defmt::debug!("Row 1");
     
     // Row 1: position
-    jacobian_f.fixed_view_mut::<3, 3>(0, 0).copy_from(&Matrix3::identity());
-    jacobian_f.fixed_view_mut::<3, 3>(0, 3).copy_from(&(Matrix3::identity() * dt));
+    jacobian_f_x.fixed_view_mut::<3, 3>(0, 0).copy_from(&Matrix3::identity());
+    jacobian_f_x.fixed_view_mut::<3, 3>(0, 3).copy_from(&(Matrix3::identity() * dt));
     
     defmt::debug!("Row 2");
     
     // Row 2: velocity
-    jacobian_f.fixed_view_mut::<3, 3>(3, 3).copy_from(&Matrix3::identity());
-    jacobian_f.fixed_view_mut::<3, 3>(3, 6).copy_from(&accel_mat_for_jacobian);
-    jacobian_f.fixed_view_mut::<3, 3>(3, 15).copy_from(&(Matrix3::identity() * dt));
+    jacobian_f_x.fixed_view_mut::<3, 3>(3, 3).copy_from(&Matrix3::identity());
+    jacobian_f_x.fixed_view_mut::<3, 3>(3, 6).copy_from(&accel_mat_for_jacobian);
+    jacobian_f_x.fixed_view_mut::<3, 3>(3, 9).copy_from(&(-rot_mat.matrix() * Matrix3::identity()));
+    jacobian_f_x.fixed_view_mut::<3, 3>(3, 15).copy_from(&(Matrix3::identity() * dt));
     
     defmt::debug!("Row 3");
     
     // Row 3: angles
-    jacobian_f.fixed_view_mut::<3, 3>(6, 6).copy_from(&angular_mat_for_jacobian);
-    jacobian_f.fixed_view_mut::<3, 3>(6, 12).copy_from(&(Matrix3::identity() * -dt));
+    jacobian_f_x.fixed_view_mut::<3, 3>(6, 6).copy_from(&angular_mat_for_jacobian);
+    jacobian_f_x.fixed_view_mut::<3, 3>(6, 12).copy_from(&(Matrix3::identity() * -dt));
     
     defmt::debug!("Row 4");
     
     // Row 4: accel bias
-    jacobian_f.fixed_view_mut::<3, 3>(9, 9).copy_from(&Matrix3::identity());
+    jacobian_f_x.fixed_view_mut::<3, 3>(9, 9).copy_from(&Matrix3::identity());
     
     defmt::debug!("Row 5");
     
     // Row 5: angular vel bias
-    jacobian_f.fixed_view_mut::<3, 3>(12, 12).copy_from(&Matrix3::identity());
+    jacobian_f_x.fixed_view_mut::<3, 3>(12, 12).copy_from(&Matrix3::identity());
     
     defmt::debug!("Row 6");
     
     // Row 6: (reserved/unused in this implementation)
-    jacobian_f.fixed_view_mut::<3, 3>(15, 15).copy_from(&Matrix3::identity());
+    jacobian_f_x.fixed_view_mut::<3, 3>(15, 15).copy_from(&Matrix3::identity());
     
     defmt::debug!("Multiply covariance by Jacobian of state pt. 1");
     
     // P = F * P * F^T
-    let cov_copy = &jacobian_f * &cov.data;
-    
-    defmt::debug!("Multiply covariance by Jacobian of state pt. 2");
-    defmt::debug!("Jacobian transpose");
-    
-    let jacobian_f_trans = jacobian_f.transpose();
-    
-    defmt::debug!("Multiply by Jacobian transpose");
-    
-    cov.data = cov_copy * jacobian_f_trans;
+    cov.data = jacobian_f_x * cov.data * jacobian_f_x.transpose();
     
     defmt::debug!("Add covariance from uncertainty");
     
     // Add process noise Q
     let mut process_noise = na::SMatrix::<f32, STATE_DIMS, STATE_DIMS>::zeros();
     
-    // Velocity noise
+    // Velocity noise, eqn. 261
     for i in 0..3 {
-        process_noise[(3 + i, 3 + i)] = VEL_NOISE;
+        process_noise[(3 + i, 3 + i)] = ACCEL_WHITE_NOISE * dt * dt;
     }
     
-    // Angles noise
+    // Angles noise, eqn. 262
     for i in 0..3 {
-        process_noise[(6 + i, 6 + i)] = ANGLES_NOISE;
+        process_noise[(6 + i, 6 + i)] = GYRO_WHITE_NOISE * dt * dt;
     }
     
-    // Accel bias noise
+    // Accel bias noise, eqn. 263
     for i in 0..3 {
-        process_noise[(9 + i, 9 + i)] = ACCEL_NOISE;
+        process_noise[(9 + i, 9 + i)] = ACCEL_RANDOM_WALK * dt;
     }
     
-    // Angular vel bias noise
+    // Angular vel bias noise, eqn 264
     for i in 0..3 {
-        process_noise[(12 + i, 12 + i)] = ANGULAR_VEL_NOISE;
+        process_noise[(12 + i, 12 + i)] = GYRO_RANDOM_WALK * dt;
     }
-    
+
     cov.data += process_noise;
 }
 
@@ -465,8 +470,64 @@ pub fn correct_from_gps(
     
     cov.data = temp + kvkt;
     
-    // Note: Actual state correction would go here
-    // (innovation calculation and state update)
+    converge_states(nominal, error, cov);
+}
+
+pub fn fuse_magnetometer(
+    nominal: &mut NominalState,
+    error: &mut ErrorState,
+    cov: &mut CovarianceMatrixP,
+    mag_reading: &Vector3<f32>,
+){
+    let rot_mat = nominal.rot_quaternion.to_rotation_matrix();
+    
+    let mag_world = rot_mat * mag_reading;
+    let up = Vector3::new(1 as f32,0 as f32,0 as f32);
+    let mag_heading = mag_world - mag_world.dot(&up) * up;
+
+    let c = cosf(DECLINATION);
+    let s = sinf(DECLINATION);
+
+    let mag_true = Vector3::new(
+        c * mag_heading.x - s*mag_heading.y,
+        s * mag_heading.x + c*mag_heading.y,
+        0.0
+    );
+
+    nominal.debug = mag_true;
+    converge_states(nominal, error, cov);
+}
+
+pub fn converge_states(
+    nominal: &mut NominalState,
+    error: &mut ErrorState,
+    cov: &mut CovarianceMatrixP,
+){
+    // Equations 282
+    nominal.pos = nominal.pos + error.pos;
+    nominal.vel = nominal.vel + error.vel;
+    // nominal.accel = nominal.accel + error.accel;
+    nominal.accel_bias = nominal.accel_bias + error.accel_bias;
+    nominal.angular_vel_bias = nominal.angular_vel_bias + error.angular_vel_bias;
+    nominal.rot_quaternion = nominal.rot_quaternion * vec2quaternion(&error.angles_vector);
+
+    // equation 285
+    // let mut g = na::SMatrix::<f32, STATE_DIMS, STATE_DIMS>::identity();
+    // let angles_vector_skew = skew_mat(&error.angles_vector);
+    // let g_theta = Matrix3::identity() - 0.5 * angles_vector_skew;
+
+    // g.fixed_view_mut::<3, 3>(6, 6).copy_from(&g_theta);
+    // // reset covariance
+    // cov.data = g * cov.data * g.transpose();
+
+    // equation 284
+    error.pos = Vector3::zeros();
+    error.vel = Vector3::zeros();
+    // error.accel = Vector3::zeros();
+    error.accel_bias = Vector3::zeros();
+    error.angular_vel_bias = Vector3::zeros();
+    error.angles_vector = Vector3::zeros();
+
 }
 
 #[cfg(test)]

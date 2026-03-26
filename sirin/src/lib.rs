@@ -202,7 +202,7 @@ impl Sirin {
             flash_ptr.write(Flash::new(flash_dev));
 
             let config = ptr!(sirin.config);
-            //(*flash_ptr).w25q.chip_erase().await.unwrap();
+            // (*flash_ptr).w25q.chip_erase().await.unwrap();
             config.write((*flash_ptr).init().await.unwrap());
             info!("{}", Display2Format(&*config));
 

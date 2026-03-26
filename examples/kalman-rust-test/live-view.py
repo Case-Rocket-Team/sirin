@@ -22,7 +22,11 @@ accel_re = re.compile(
 
 # Regex to extract magnetometer
 mag_re = re.compile(
-    r"Magnetometer:\s*\[\s*([-+\d\.eE]+)\s*,\s*([-+\d\.eE]+)\s*,\s*([-+\d\.eE]+)\s*\]"
+    r"Magnetometer:\s*\(\s*([-+]?\d*\.?\d+),\s*([-+]?\d*\.?\d+),\s*([-+]?\d*\.?\d+)\s*\)"
+)
+
+grav_re = re.compile(
+    r"gravity:\s*\[\[(-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?),\s*(-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?),\s*(-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\]\]"
 )
 
 def quat_to_matrix(r, x, y, z):
@@ -74,6 +78,10 @@ line_accel, = ax.plot(
     [0, 0], [0, 0], [0, 0],
     color="cyan", linewidth=3, label="Acceleration"
 )
+line_grav, = ax.plot(
+    [0, 0], [0, 0], [0, 0],
+    color="purple", linewidth=3, label="Gravity"
+)
 # Magnetic field line
 line_mag, = ax.plot([0, 0], [0, 0], [0, 0],
                     color="gold", linewidth=2, linestyle="--", label="Mag Field")
@@ -83,7 +91,7 @@ ax.legend()
 for line in sys.stdin:
     dirty = False
     am = accel_re.search(line)
-    if False:
+    if am:
         ax_, ay_, az_ = map(float, am.groups())
         accel = normalize(np.array([ax_, ay_, az_], dtype=float))
 
@@ -91,6 +99,16 @@ for line in sys.stdin:
 
         line_accel.set_data([0, accel[0]], [0, accel[1]])
         line_accel.set_3d_properties([0, accel[2]])
+        dirty = True
+    gm = grav_re.search(line)
+    if gm:
+        ax_, ay_, az_ = map(float, gm.groups())
+        grav = normalize(np.array([ax_, ay_, az_], dtype=float))
+
+        print(f"Received grav: x={ax_}, y={ay_}, z={az_}")
+
+        line_grav.set_data([0, grav[0]], [0, grav[1]])
+        line_grav.set_3d_properties([0, grav[2]])
         dirty = True
     # Quaternion update
     qm = quat_re.search(line)

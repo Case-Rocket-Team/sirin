@@ -25,7 +25,8 @@ members = [
     "examples/gps-test",
     "examples/radio-test-receive",
     "examples/any-test",
-    "examples/mag-calibrate"
+    "examples/mag-calibrate",
+    "examples/allan-variance"
 ]
 resolver = "2"
 

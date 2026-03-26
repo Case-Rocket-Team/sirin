@@ -1,90 +1,90 @@
-#!/usr/bin/env -S uv run
-
-# live view of acceleration + raw magnetometer (no rotation)
-
-# uv: numpy
-# uv: matplotlib
-
-import sys
 import re
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+from matplotlib.animation import FuncAnimation
+from scipy.spatial.transform import Rotation as R
+import sys
 
-# Regex patterns
+# --- regex patterns ---
+quat_pattern = r'rot_quaternion:\s*\[([^\]]+)\]'
+accel_pattern = r'accel:\s*\[\[([^\]]+)\]\]'
+mag_pattern = r'debug:\s*\[\[([^\]]+)\]\]'
 
-quat_re = re.compile(
-    r"Quaternion\s*\{\s*r:\s*([-\d\.eE]+),\s*x:\s*([-\d\.eE]+),\s*y:\s*([-\d\.eE]+),\s*z:\s*([-\d\.eE]+)"
-)
-accel_re = re.compile(
-    r"accel:\s*Accel\s*\{\s*x:\s*([-\d\.eE]+),\s*y:\s*([-\d\.eE]+),\s*z:\s*([-\d\.eE]+)\s*\}"
-)
+# --- storage ---
+latest_quat = None
+latest_accel = None
+latest_mag = None
 
-mag_re = re.compile(
-    r"Magnetometer:\s*\[\s*([-+\d\.eE]+)\s*,\s*([-+\d\.eE]+)\s*,\s*([-+\d\.eE]+)\s*\]"
-)
+# --- parsing function ---
+def parse_line(line):
+    global latest_quat, latest_accel, latest_mag
 
-def normalize(v):
-    n = np.linalg.norm(v)
-    if n > 1e-6:
-        return v / n
-    return v
+    q_match = re.search(quat_pattern, line)
+    a_match = re.search(accel_pattern, line)
+    m_match = re.search(mag_pattern, line)
 
-# Matplotlib interactive plot
-plt.ion()
+    if q_match:
+        latest_quat = np.fromstring(q_match.group(1), sep=',')
+        print("recieved quaternion")
+
+    if a_match:
+        latest_accel = np.fromstring(a_match.group(1), sep=',')
+
+    if m_match:
+        latest_mag = np.fromstring(m_match.group(1), sep=',')
+
+# --- setup plot ---
 fig = plt.figure()
-ax = fig.add_subplot(111, projection="3d")
-ax.set_proj_type("persp")
-ax.set_box_aspect((1, 1, 1))
+ax = fig.add_subplot(111, projection='3d')
 
-ax.set_xlim([-1, 1])
-ax.set_ylim([-1, 1])
-ax.set_zlim([-1, 1])
+def update(frame):
+    ax.clear()
 
-ax.set_xlabel("X")
-ax.set_ylabel("Y")
-ax.set_zlabel("Z")
-ax.set_title("Live Acceleration & Raw Magnetometer")
+    # read one line from stdin (non-blocking-ish)
+    line = sys.stdin.readline()
+    if line:
+        parse_line(line)
 
-# Acceleration vector
-line_accel, = ax.plot(
-    [0, 0], [0, 0], [0, 0],
-    color="cyan", linewidth=3, label="Acceleration"
-)
+    # base axes
+    origin = np.array([0, 0, 0])
 
-# Magnetometer vector (raw, unrotated)
-line_mag, = ax.plot(
-    [0, 0], [0, 0], [0, 0],
-    color="gold", linewidth=2, linestyle="--", label="Magnetometer"
-)
+    # plot rotated frame if quaternion exists
+    if latest_quat is not None:
+        try:
+            # scipy uses [x, y, z, w]
+            r = R.from_quat(latest_quat)
 
-ax.legend()
+            axes = np.eye(3)  # unit x,y,z
+            rotated_axes = r.apply(axes)
 
-for line in sys.stdin:
-    # Accelerometer update
-    dirty = False
-    am = accel_re.search(line)
-    if am:
-        ax_, ay_, az_ = map(float, am.groups())
-        accel = normalize(np.array([ax_, ay_, az_], dtype=float))
+            colors = ['r', 'g', 'b']
+            labels = ['X', 'Y', 'Z']
 
-        print(f"Received accel: x={ax_}, y={ay_}, z={az_}")
+            for i in range(3):
+                ax.quiver(*origin, *rotated_axes[i], color=colors[i], length=1.0)
 
-        line_accel.set_data([0, accel[0]], [0, accel[1]])
-        line_accel.set_3d_properties([0, accel[2]])
-        dirty = True
+        except Exception as e:
+            pass
 
-    # Magnetometer update (NO rotation)
-    mm = mag_re.search(line)
-    if mm:
-        mx, my, mz = map(float, mm.groups())
-        mag = normalize(np.array([mx, my, mz], dtype=float))
+    # plot accel
+    if latest_accel is not None:
+        ax.quiver(*origin, *latest_accel, color='black', label='Accel')
 
-        print(f"Received mag: x={mx}, y={my}, z={mz}")
+    # plot magnetic field
+    if latest_mag is not None:
+        ax.quiver(*origin, *latest_mag, color='purple', label='Mag')
 
-        line_mag.set_data([0, mag[0]], [0, mag[1]])
-        line_mag.set_3d_properties([0, mag[2]])
-        dirty = True
-    
-    if dirty:
-        plt.pause(0.01)
+    # formatting
+    ax.set_xlim([-15, 15])
+    ax.set_ylim([-15, 15])
+    ax.set_zlim([-15, 15])
+
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+
+    ax.set_title("IMU Visualization")
+
+# animate
+ani = FuncAnimation(fig, update, interval=100)
+plt.show()
