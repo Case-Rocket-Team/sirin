@@ -29,6 +29,10 @@ grav_re = re.compile(
     r"gravity:\s*\[\[(-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?),\s*(-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?),\s*(-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\]\]"
 )
 
+debug_re = re.compile(
+    r"debug:\s*\[\[(-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?),\s*(-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?),\s*(-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\]\]"
+)
+
 def quat_to_matrix(r, x, y, z):
     q = np.array([r, x, y, z], dtype=float)
     q /= np.linalg.norm(q)
@@ -78,9 +82,9 @@ line_accel, = ax.plot(
     [0, 0], [0, 0], [0, 0],
     color="cyan", linewidth=3, label="Acceleration"
 )
-line_grav, = ax.plot(
+line_debug, = ax.plot(
     [0, 0], [0, 0], [0, 0],
-    color="purple", linewidth=3, label="Gravity"
+    color="purple", linewidth=3, label="Debug"
 )
 # Magnetic field line
 line_mag, = ax.plot([0, 0], [0, 0], [0, 0],
@@ -100,15 +104,15 @@ for line in sys.stdin:
         line_accel.set_data([0, accel[0]], [0, accel[1]])
         line_accel.set_3d_properties([0, accel[2]])
         dirty = True
-    gm = grav_re.search(line)
-    if gm:
-        ax_, ay_, az_ = map(float, gm.groups())
-        grav = normalize(np.array([ax_, ay_, az_], dtype=float))
+    dm = debug_re.search(line)
+    if dm:
+        ax_, ay_, az_ = map(float, dm.groups())
+        debug = normalize(np.array([ax_, ay_, az_], dtype=float))
 
         print(f"Received grav: x={ax_}, y={ay_}, z={az_}")
 
-        line_grav.set_data([0, grav[0]], [0, grav[1]])
-        line_grav.set_3d_properties([0, grav[2]])
+        line_debug.set_data([0, debug[0]], [0, debug[1]])
+        line_debug.set_3d_properties([0, debug[2]])
         dirty = True
     # Quaternion update
     qm = quat_re.search(line)

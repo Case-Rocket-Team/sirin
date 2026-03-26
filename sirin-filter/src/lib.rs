@@ -482,9 +482,10 @@ pub fn fuse_magnetometer(
     let rot_mat = nominal.rot_quaternion.to_rotation_matrix();
     
     let mag_world = rot_mat * mag_reading;
-    let up = Vector3::new(1 as f32,0 as f32,0 as f32);
-    let mag_heading = mag_world - mag_world.dot(&up) * up;
-
+    let up = Vector3::new(0 as f32,0 as f32,1 as f32);
+    let mut mag_heading = mag_world - mag_world.dot(&up) * up;
+    mag_heading = mag_heading / mag_heading.norm();
+    
     let c = cosf(DECLINATION);
     let s = sinf(DECLINATION);
 
