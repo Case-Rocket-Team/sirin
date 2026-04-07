@@ -71,9 +71,9 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let accel_threshold: Gs<f64> = (10.0 * 10.0).with_units(); //In Gs squared
     let altitude_threshold = 10.0; //In meters
     let main_deployment_altitude= 1500.0; //In meters
-    let flight_duration = 1200; //In seconds
+    let flight_duration = 30; //In seconds
     let apogee_error = 0.0; //In meters
-    let timeout = 30; //In seconds
+    let timeout = 0; //In seconds
 
     let mut apo_deployed = false;
     let mut main_deployed = false;
@@ -154,9 +154,11 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut is_first_reading = true;
 
     let mut angular_test = Vector3::new(0.0 as f32, 0.0 as f32, 0.0 as f32);
-
+    let mut i = 0;
 
     loop {
+        i += 1;
+        Timer::after_millis(100).await;
         //info!("Handle input packets");
         while let Ok(io_packet) = try_receive_packet() {
             info!("Received packet: {:?}", Debug2Format(&io_packet));
@@ -298,6 +300,29 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             (angular.z_yaw.value as f32) * PI / 180.0 / 1e6 * -1.0,
         );
 
+        let (x_raw, y_raw, z_raw) = sirin.magnetometer.magnetic().await?;
+        // divide by 6842 for Gauss, mult by 100 for micro Teslas (uT)
+        let mag_reading = [
+            (x_raw as f32) / 6842.0 * 100.0,
+            (y_raw as f32) / 6842.0 * 100.0,
+            (z_raw as f32) / 6842.0 * 100.0,
+        ];
+
+        let mag_offset = Vector3::new(
+            mag_reading[0] - hard_iron_bias_x,
+            mag_reading[1] - hard_iron_bias_y,
+            mag_reading[2] - hard_iron_bias_z,
+        );
+
+        let mag_calibrated = [
+            mag_offset[0] * free_soft_iron_bias_xx + mag_offset[1] * free_soft_iron_bias_yx + mag_offset[2] * free_soft_iron_bias_zx,
+            mag_offset[0] * free_soft_iron_bias_xy + mag_offset[1] * free_soft_iron_bias_yy + mag_offset[2] * free_soft_iron_bias_zy,
+            mag_offset[0] * free_soft_iron_bias_xz + mag_offset[1] * free_soft_iron_bias_yz + mag_offset[2] * free_soft_iron_bias_zz,
+        ];
+        angular_test = angular_test + angular * dt.as_micros() as f32; 
+        prev_reading = curr_reading;
+
+
         if is_first_reading {
             is_first_reading = false;
 
@@ -326,29 +351,10 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 &accel,
                 &angular
             );
+            if true {
+                sirin_filter::fuse_magnetometer(&mut nominal, &mut error, &mut cov, &mag_offset);
+            }
         }
-
-        let (x_raw, y_raw, z_raw) = sirin.magnetometer.magnetic().await?;
-        // divide by 6842 for Gauss, mult by 100 for micro Teslas (uT)
-        let mag_reading = [
-            (x_raw as f32) / 6842.0 * 100.0,
-            (y_raw as f32) / 6842.0 * 100.0,
-            (z_raw as f32) / 6842.0 * 100.0,
-        ];
-
-        let mag_offset = [
-            mag_reading[0] - hard_iron_bias_x,
-            mag_reading[1] - hard_iron_bias_y,
-            mag_reading[2] - hard_iron_bias_z,
-        ];
-
-        let mag_calibrated = [
-            mag_offset[0] * free_soft_iron_bias_xx + mag_offset[1] * free_soft_iron_bias_yx + mag_offset[2] * free_soft_iron_bias_zx,
-            mag_offset[0] * free_soft_iron_bias_xy + mag_offset[1] * free_soft_iron_bias_yy + mag_offset[2] * free_soft_iron_bias_zy,
-            mag_offset[0] * free_soft_iron_bias_xz + mag_offset[1] * free_soft_iron_bias_yz + mag_offset[2] * free_soft_iron_bias_zz,
-        ];
-        angular_test = angular_test + angular * dt.as_micros() as f32; 
-        prev_reading = curr_reading;
 
         state.nominal = sirin_shared::state::NominalState::from(&nominal);
 
@@ -395,6 +401,18 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                         )
                     )
                 ));
+
+                //For debugging
+                OUT_CHANNEL.publish_immediate(IoPacket::new(
+                    IoChannel::Flash, OutPacket::LogEntry(
+                        LogEntry::new(
+                            sirin.data.time,
+                            Log::State(state.clone())
+                        )
+                    )
+                ));
+
+                println!("State sent in flight!");
 
                 //Check apogee, deploy apo parachute
                 if let None = state.apogee {
@@ -469,13 +487,23 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
         //info!("Transmit data");
         
-        if i % 10 == 0 {
+        if /*i % 10 == 0*/ true {
             OUT_CHANNEL.publish_immediate(IoPacket::new(
                 IoChannel::ToLoRa, OutPacket::LogEntry(LogEntry::new(
                     sirin.data.time,
                     Log::State(state.clone())
                 ))
             ));
+
+            println!("State broadcasted!");
+
+            OUT_CHANNEL.publish_immediate(IoPacket::new(
+                IoChannel::ToLoRa, OutPacket::LogEntry(LogEntry::new(
+                    sirin.data.time,
+                    Log::Data(sirin.data.clone())
+                ))
+            ));
+            println!("Data broadcasted!");
         }
         //info!("Final state altitude: {}", state.altitude.value);
         //info!("Done with GPS");

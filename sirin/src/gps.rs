@@ -99,7 +99,7 @@ pub async fn gps_task(
 
     //Task loop
     loop {
-        info!("New gps loop iteration");
+        //info!("New gps loop iteration");
         match gps_impl(gps_rx, gps_tx, &mut packet_parser, &mut buf, &mut fix).await {
             Err(err) => error!("GPS Error: {}", Debug2Format(&err)),
             Ok(_) => {}
@@ -136,7 +136,9 @@ pub async fn gps_impl(
     let mut iterator = packet_parser.consume_ubx(buf);
 
     //Attempt to construct packets from whatever bytes the parser has
+    //println!("Attempting to run gps loop...");
     while let Some(packet) = iterator.next() {
+        println!("Packet received from gps!!! not broken!!!");
         match packet {
             Ok(UbxPacket::Proto31(packet)) => {
                 match packet {
