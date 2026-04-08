@@ -235,7 +235,7 @@ impl Sirin {
             ).unwrap();
 
             // Initialize GPS module
-            gps_init(&mut gps_uart);
+            gps_init(&mut gps_uart).await;
 
             let (tx,rx) = gps_uart.split();
 
