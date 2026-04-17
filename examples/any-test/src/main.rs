@@ -65,22 +65,17 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         transmute_into_static(&mut flash)
     })).unwrap();
 
+    let mut i = 15;
     loop{
-        sirin.data = measure_sirin(
-            &mut sirin.baro, 
-            &mut sirin.imu, 
-            &mut sirin.high_g_imu, 
-            &mut sirin.magnetometer
-        ).await;
-
-        OUT_CHANNEL.publish_immediate(IoPacket::new(
-        IoChannel::Flash, OutPacket::LogEntry(
-                LogEntry::new(
-                    sirin.data.time,
-                    Log::Data(sirin.data.clone())
-                )
-            )
-        ));
-        Timer::after_millis(10).await;
+        Timer::after_millis(500).await;
+        sirin.led.set_high();
+        Timer::after_millis(500).await;
+        sirin.led.set_low();
+        println!("{}", i);
+        if i <= 0{
+            Sirin::deploy_chute_main(&mut sirin.parachute_main);
+            Sirin::deploy_chute_apo(&mut sirin.parachute_apo);
+        }
+        i = i - 1;
     }
 }

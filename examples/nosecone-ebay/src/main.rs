@@ -55,33 +55,36 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 }
 
 async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
-
     /*
 
     FOR IREC ROCKET - CHECK TO ENSURE THESE VALUES ARE CODED:
     DO NOT PUSH CODE WITH THESE VALUES SIGNIFICANTLY CHANGED
-    accel_threshold = 100G^2
+    accel_threshold = 10G * 10G
     altitude_threshold = 20m
-    main_deployment_altitude = 1500m
+    main_deployment_altitude = 457.2m (1500ft)
     flight_duration = 600s
-    apogee_error = 5m
+    apogee_error = 1m
+    timeout = 25s
 
      */
 
     let accel_threshold: Gs<f64> = (10.0 * 10.0).with_units(); //In Gs squared
-    let altitude_threshold = 10.0; //In meters
-    let main_deployment_altitude= 1500.0; //In meters
-    let flight_duration = 30; //In seconds
-    let apogee_error = 0.0; //In meters
-    let timeout = 0; //In seconds
+    let altitude_threshold = 20.0; //In meters
+    let main_deployment_altitude= 457.2; //In meters
+    let flight_duration = 600; //In seconds
+    let apogee_error = 1.0; //In meters
+    let timeout = 25; //In seconds
 
     let mut apo_deployed = false;
     let mut main_deployed = false;
     
 
     let mut state = SirinState::default();
+
+    //For debugging purposes
     FLASH_LOGGING_ENABLED.store(false, Ordering::Relaxed);
 
+    //Find the true barometric reading (bug causes large negative values upon initialization)
     let mut altitude_array: [f64; 100] = [0.0; 100];
     for i in 0..100 {
         let altitude = approx_pressure_altitude(sirin.baro.read().await?.pressure.convert());
@@ -91,16 +94,13 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     
     altitude_array.sort_unstable_by(|a, b | a.partial_cmp(b).unwrap());
     let initial_altitude = altitude_array[50].with_units();
-   
-
     info!("Initial altitude: {}", initial_altitude.value);
 
+    //Spawn background tasks
     sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
     sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
     sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
-    //sirin.spawner.spawn(gps_task(&mut sirin.gps_rx, &mut sirin.gps_tx)).unwrap();
-
-    let mut i = 0;
+    sirin.spawner.spawn(gps_task(&mut sirin.gps_rx, &mut sirin.gps_tx)).unwrap();
     
     let mut flash = Mutex::new(&mut sirin.flash);
     sirin.spawner.spawn(flash_io_task(unsafe {
@@ -154,10 +154,12 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut is_first_reading = true;
 
     let mut angular_test = Vector3::new(0.0 as f32, 0.0 as f32, 0.0 as f32);
+
     let mut i = 0;
 
     loop {
         i += 1;
+        //Update the loop every 100 milliseconds
         Timer::after_millis(100).await;
         //info!("Handle input packets");
         while let Ok(io_packet) = try_receive_packet() {
@@ -280,7 +282,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             &mut sirin.magnetometer
         ).await;
         
-        //info!("Kalman filter");
+        //info!("Begin Kalman filter");
         let curr_reading = Instant::now();
         let dt = curr_reading.duration_since(prev_reading);
 
@@ -357,6 +359,8 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         }
 
         state.nominal = sirin_shared::state::NominalState::from(&nominal);
+
+        //info!("End Kalman filter");
 
         //info!("Calculate barometric altitude");
         if let Ok(pressure) = sirin.data.baro.pressure {
@@ -442,9 +446,9 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     if state.altitude.value < main_deployment_altitude {
                         if !main_deployed {
                             Sirin::deploy_chute_main(&mut sirin.parachute_main);
-                            /*OUT_CHANNEL.publish_immediate(IoPacket::new(
+                            OUT_CHANNEL.publish_immediate(IoPacket::new(
                     IoChannel::Flash, OutPacket::DeployedMainAt(sirin.data.time.value)
-                            ));*/
+                            ));
                             main_deployed = true;
                         }
                     }
@@ -475,6 +479,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         }
 
         //info!("Broadcast");
+        //TODO: This might be double logging to flash during flight
         broadcast_log(sirin.data.time, Log::Data(sirin.data.clone()));
         broadcast_log(sirin.data.time, Log::State(state.clone()));
 
@@ -486,15 +491,13 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         }
 
         //info!("Transmit data");
-        
-        if /*i % 10 == 0*/ true {
+        if i % 5 == 0  {
             OUT_CHANNEL.publish_immediate(IoPacket::new(
                 IoChannel::ToLoRa, OutPacket::LogEntry(LogEntry::new(
                     sirin.data.time,
                     Log::State(state.clone())
                 ))
             ));
-
             println!("State broadcasted!");
 
             OUT_CHANNEL.publish_immediate(IoPacket::new(
@@ -507,11 +510,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         }
         //info!("Final state altitude: {}", state.altitude.value);
         //info!("Done with GPS");
-
-
-        
-        i += 1;
-
     }
 }
 
