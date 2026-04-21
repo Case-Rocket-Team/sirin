@@ -138,7 +138,7 @@ pub async fn gps_impl(
     //Attempt to construct packets from whatever bytes the parser has
     //println!("Attempting to run gps loop...");
     while let Some(packet) = iterator.next() {
-        println!("Packet received from gps!!! not broken!!!");
+        //println!("Packet received from gps!!! not broken!!!");
         match packet {
             Ok(UbxPacket::Proto31(packet)) => {
                 match packet {

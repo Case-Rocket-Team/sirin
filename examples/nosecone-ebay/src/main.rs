@@ -109,6 +109,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
     info!("Start main");
 
+    //Update the loop every 500 ms
     let mut ticker = Ticker::every(Duration::from_millis(100));
 
     let mut launched_at = None;
@@ -159,8 +160,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
     loop {
         i += 1;
-        //Update the loop every 100 milliseconds
-        Timer::after_millis(100).await;
         //info!("Handle input packets");
         while let Ok(io_packet) = try_receive_packet() {
             info!("Received packet: {:?}", Debug2Format(&io_packet));
@@ -416,8 +415,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     )
                 ));
 
-                println!("State sent in flight!");
-
                 //Check apogee, deploy apo parachute
                 if let None = state.apogee {
                     if max_altitude.value > state.altitude.value + apogee_error{
@@ -480,8 +477,22 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
         //info!("Broadcast");
         //TODO: This might be double logging to flash during flight
-        broadcast_log(sirin.data.time, Log::Data(sirin.data.clone()));
-        broadcast_log(sirin.data.time, Log::State(state.clone()));
+        //broadcast_log(sirin.data.time, Log::Data(sirin.data.clone()));
+        //broadcast_log(sirin.data.time, Log::State(state.clone()));
+
+        OUT_CHANNEL.publish_immediate(IoPacket::new(
+            IoChannel::Usb, OutPacket::LogEntry(LogEntry::new(
+                sirin.data.time,
+                Log::State(state.clone())
+            ))
+        ));
+
+        OUT_CHANNEL.publish_immediate(IoPacket::new(
+            IoChannel::Usb, OutPacket::LogEntry(LogEntry::new(
+                sirin.data.time,
+                Log::Data(sirin.data.clone())
+            ))
+        ));
 
         //info!("Try get GPS fix");
         if let Some(fix) = GPS_FIX.try_take() {
@@ -490,8 +501,10 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             //}
         }
 
+        //Alternates sending State and Data packets every half second
+        //buffer overflow error, this is me trying to mitigate it since there is no time to 
         //info!("Transmit data");
-        if i % 5 == 0  {
+        if (i + 5) % 5 == 0  {
             OUT_CHANNEL.publish_immediate(IoPacket::new(
                 IoChannel::ToLoRa, OutPacket::LogEntry(LogEntry::new(
                     sirin.data.time,
@@ -499,7 +512,8 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 ))
             ));
             println!("State broadcasted!");
-
+        }
+        if i % 5 == 0{
             OUT_CHANNEL.publish_immediate(IoPacket::new(
                 IoChannel::ToLoRa, OutPacket::LogEntry(LogEntry::new(
                     sirin.data.time,

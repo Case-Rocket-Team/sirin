@@ -158,7 +158,8 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 InPacket::ReadFlight(index) => {
                     let mut flash = flash.lock().await;
                     let Some(header) = flash.flight_headers.get(index as usize) else {
-                        send_packet(io_packet.reply(OutPacket::Error(PacketError::FlightNotFound(index))));
+                        //TODO: Uncomment that
+                        //send_packet(io_packet.reply(OutPacket::Error(PacketError::FlightNotFound(index))));
                         continue;
                     };
 

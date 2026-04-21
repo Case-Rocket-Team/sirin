@@ -140,6 +140,7 @@ async fn radio_task_impl(
             &mut out_sub,
             IoChannel::ToLoRa
         ).await;
+        //info!("Message slots left: {}", broadcast_sub.free_capacity());
 
         let radio_packet = RadioPacket::new(config, packet);
 
