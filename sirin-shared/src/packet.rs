@@ -448,7 +448,7 @@ impl <P: SongSize + ToSong + FromSong> RadioPacket<P> {
 
         //hardcode my callsign
         let mut callsign: CallsignBuf = [0; _];
-        callsign[0..6].copy_from_slice(b"KF8BAA");
+        callsign[0..6].copy_from_slice(b"KF8DIB");
 
         Self {
             id: config.id,

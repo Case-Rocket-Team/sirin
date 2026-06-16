@@ -163,7 +163,7 @@ pub async fn gps_impl(
                         GPS_FIX.signal(fix.clone());
                     }
                     PacketRef::NavPvt(p) => {
-                        println!("NavPvt packet found!");
+                        //println!("NavPvt packet found!");
                         fix.itow = p.itow();
                         fix.lon = p.longitude();
                         fix.lat = p.latitude();
