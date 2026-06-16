@@ -400,8 +400,12 @@ impl <S: SpiHandle> Rfm9<S> {
         //6B78a8 for 429.86MHz
         //6c8000 for 434MHz
         // sets frequency to 434 MHz
-        let freq_bytes: [u8; 3] = [0x6B, 0x78, 0xA8];
+        let freq_bytes: [u8; 3] = [0x6b, 0x77, 0x0e];
         self.write_contiguous_regs(RegFrMsb, &freq_bytes).await?;
+
+        //self.set_frf_msb(0x6c).await?;
+        //self.set_frf_mid(0x80).await?;
+        //self.set_frf_lsb(0x00).await?;
 
         Ok(())
     }
