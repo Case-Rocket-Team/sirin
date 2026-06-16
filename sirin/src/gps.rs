@@ -11,7 +11,7 @@ use uunit::{Meters, MetersPerSecond, WithUnits};
 use ublox::{
     nav_pvt::proto27_31::{NavPvt, NavPvtRef}, proto31::*, rxm_rawx::RxmRawx,
     cfg_inf::{CfgInf, CfgInfMask, CfgInfBuilder}, cfg_msg::CfgMsgSinglePortBuilder, cfg_rate::{CfgRate, CfgRateBuilder},
-    cfg_gnss::CfgGnssBuilder, cfg_nav5::CfgNav5Builder, mon_rf::MonRf, nav_dop::NavDop, nav_sat::NavSat,
+    cfg_gnss::CfgGnssBuilder, cfg_nav5::CfgNav5Builder, mon_rf::MonRf, nav_dop::NavDop, nav_sat::NavSat, nav_pos_ecef::NavPosEcef,
     cfg_prt::{CfgPrtUartBuilder, DataBits, InProtoMask, OutProtoMask, Parity, StopBits, UartMode,UartPortId,},
     UbxPacketMeta, UbxProtocol, proto31::Proto31, FixedBuffer, GnssFixType, Parser, Position, UbxPacket, Velocity
 };
@@ -30,6 +30,7 @@ pub async fn gps_init(gps_uart: &mut Uart<'_, Async>) {
         in_proto_mask: InProtoMask::UBLOX,
         out_proto_mask: OutProtoMask::UBLOX,
         flags: 0,
+
         reserved5: 0,
     };
     //Navigation Mode config
@@ -66,6 +67,11 @@ pub async fn gps_init(gps_uart: &mut Uart<'_, Async>) {
         msg_id: NavSat::ID,
         rate: 5,
     };
+    let nav_ecef_config = CfgMsgSinglePortBuilder {
+        msg_class: NavPosEcef::CLASS,
+        msg_id: NavPosEcef::ID,
+        rate: 1,
+    };
 
     //Send GPS config packets
     let gps_config_delay = 50u64;
@@ -82,6 +88,8 @@ pub async fn gps_init(gps_uart: &mut Uart<'_, Async>) {
     gps_uart.write(&rf_msg_config.into_packet_bytes()).await.unwrap();
     Timer::after_millis(gps_config_delay).await;
     gps_uart.write(&satelite_msg_config.into_packet_bytes()).await.unwrap();
+    Timer::after_millis(gps_config_delay).await;
+    gps_uart.write(&nav_ecef_config.into_packet_bytes()).await.unwrap();
     Timer::after_millis(gps_config_delay).await;
 }
 
@@ -141,15 +149,25 @@ pub async fn gps_impl(
         //println!("Packet received from gps!!! not broken!!!");
         match packet {
             Ok(UbxPacket::Proto31(packet)) => {
+                //println!("Packet found!");
+                //println!("{:?}", Debug2Format(&packet));
                 match packet {
                     PacketRef::NavPosEcef(p) => {
+                        //println!("Fix found!");
                         fix.itow = p.itow();
-
                         // Not actually meters, I think.
                         fix.pos.x.value = p.ecef_x_meters_raw();
                         fix.pos.y.value = p.ecef_y_meters_raw();
                         fix.pos.z.value = p.ecef_z_meters_raw();
                         fix.pos_acc.value = p.p_acc_meters_raw();
+                        GPS_FIX.signal(fix.clone());
+                    }
+                    PacketRef::NavPvt(p) => {
+                        println!("NavPvt packet found!");
+                        fix.itow = p.itow();
+                        fix.lon = p.longitude();
+                        fix.lat = p.latitude();
+                        GPS_FIX.signal(fix.clone());
                     }
                     _ => {} /*PacketRef::NavPvt(nav_pvt_packet) => {
                                 //info!("Got version message: nav_pvt");

@@ -2,14 +2,14 @@
 #![allow(unused_imports)]
 #![doc = include_str!("../../README.md")]
 
-use core::{any::Any, ffi::CStr, marker::PhantomPinned, mem::MaybeUninit, pin::{Pin, pin}, ptr::addr_of_mut, task::RawWaker};
+use core::{any::Any, f32::consts::PI, ffi::CStr, fmt::Error, marker::PhantomPinned, mem::MaybeUninit, pin::{Pin, pin}, ptr::addr_of_mut, task::RawWaker};
 use bmp3::Bmp3;
 use defmt::{info, Display2Format};
 use embassy_executor::{Executor, Spawner};
 use embassy_futures::join::{join, join3, join5, join_array};
 use embassy_stm32::{ Config, Peripherals, bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, mode::Async, pac::{self, Interrupt::TIM16}, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, usart::{self, BufferedUartTx, RingBufferedUartRx, Uart, UartTx} };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
-use embassy_time::Timer;
+use embassy_time::{Timer, Instant};
 use flash::Flash;
 use gpio::GpioPins;
 use rfm9::{ReadRfm9, Rfm9};
@@ -27,6 +27,8 @@ use spi::{Spi, SpiConfig, SpiConfigStruct, SpiDev, SpiInstance, WithSpiHandle};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State as UsbState};
 use embassy_usb::Builder as UsbBuilder;
 use gps::gps_init;
+use nalgebra as na;
+use na::{Matrix3, Matrix6, Vector3, UnitQuaternion, Rotation3};
 
 pub use uunit;
 pub mod spi;
@@ -47,7 +49,7 @@ pub use sirin_shared::song;
 pub use sirin_shared::state;
 pub use sirin_shared::packet;
 
-use crate::subsystems::Subsystem;
+use crate::{error::SirinError, subsystems::Subsystem};
 
 pub type Radio = Rfm9<SpiDev>;
 
@@ -325,4 +327,122 @@ impl Sirin {
     pub fn deploy_chute_apo(parachute_apo: &mut Output<'static>){
         parachute_apo.set_high();
     }
+
+    /*
+    pub async fn kalman_filter(
+        &mut self, 
+        &mut prev_reading: &mut Instant,
+        nominal: &mut sirin_filter::NominalState,
+        error: &mut sirin_filter::ErrorState,
+        cov: &mut sirin_filter::CovarianceMatrixP
+    )  -> Result<state::NominalState, SirinError>{
+        // calibration data for a sirin not in ebay
+        // let free_hard_iron_bias_x = -47.573810;
+        // let free_hard_iron_bias_y = 44.599533;
+        // let free_hard_iron_bias_z = -169.833372;
+
+        // let free_scale_x = 0.976603;
+        // let free_scale_y = 1.056380;
+        // let free_scale_z = 0.971427;
+        
+        // Sirin D offset calibration
+        let hard_iron_bias_x = -18.269513;
+        let hard_iron_bias_y = 17.129495;
+        let hard_iron_bias_z = -42.261032;
+
+        let free_soft_iron_bias_xx = 18.728720;
+        let free_soft_iron_bias_xy = 1.581941;
+        let free_soft_iron_bias_xz = 0.091705;
+
+        let free_soft_iron_bias_yx = 1.581941;
+        let free_soft_iron_bias_yy = 16.487833;
+        let free_soft_iron_bias_yz = -0.505229;
+
+        let free_soft_iron_bias_zx = 0.091705;
+        let free_soft_iron_bias_zy = -0.505229;
+        let free_soft_iron_bias_zz = 18.669202;
+
+        let mut is_first_reading = true;
+        let mut angular_test = Vector3::new(0.0 as f32, 0.0 as f32, 0.0 as f32);
+        let curr_reading = Instant::now();
+
+
+
+        let dt = curr_reading.duration_since(prev_reading);
+
+        let accel = self.imu.accel().await?;
+        
+        let accel = Vector3::new(
+            (accel.x.value as f32) / 1e6 *  9.81,
+            (accel.y.value as f32) / 1e6 *  9.81,
+            (accel.z.value as f32) / 1e6 *  9.81,
+        );
+
+        let angular = self.imu.angular_vel().await?;
+
+        let angular = Vector3::new(
+            (angular.x_pitch.value as f32) * PI / 180.0 / 1e6 * -1.0,
+            (angular.y_roll.value as f32) * PI / 180.0 / 1e6,
+            (angular.z_yaw.value as f32) * PI / 180.0 / 1e6 * -1.0,
+        );
+
+        let (x_raw, y_raw, z_raw) = self.magnetometer.magnetic().await?;
+        // divide by 6842 for Gauss, mult by 100 for micro Teslas (uT)
+        let mag_reading = [
+            (x_raw as f32) / 6842.0 * 100.0,
+            (y_raw as f32) / 6842.0 * 100.0,
+            (z_raw as f32) / 6842.0 * 100.0,
+        ];
+
+        let mag_offset = Vector3::new(
+            mag_reading[0] - hard_iron_bias_x,
+            mag_reading[1] - hard_iron_bias_y,
+            mag_reading[2] - hard_iron_bias_z,
+        );
+
+        let mag_calibrated = [
+            mag_offset[0] * free_soft_iron_bias_xx + mag_offset[1] * free_soft_iron_bias_yx + mag_offset[2] * free_soft_iron_bias_zx,
+            mag_offset[0] * free_soft_iron_bias_xy + mag_offset[1] * free_soft_iron_bias_yy + mag_offset[2] * free_soft_iron_bias_zy,
+            mag_offset[0] * free_soft_iron_bias_xz + mag_offset[1] * free_soft_iron_bias_yz + mag_offset[2] * free_soft_iron_bias_zz,
+        ];
+
+        angular_test = angular_test + angular * dt.as_micros() as f32; 
+        prev_reading = curr_reading;
+
+
+        if is_first_reading {
+            is_first_reading = false;
+
+            let magn = self.magnetometer.magnetic().await?;
+            let magn = Vector3::new(
+                magn.0 as f32,
+                magn.1 as f32,
+                magn.2 as f32,
+                // (magn.0 as f32) - hard_iron_bias_x,
+                // (magn.1 as f32) - hard_iron_bias_y,
+                // (magn.2 as f32) - hard_iron_bias_z,
+            );
+
+            let _ = sirin_filter::init_with_imu(
+                    &mut nominal,
+                    &accel,
+                    &angular,
+                    &magn,
+            );
+        } else {
+            sirin_filter::update_with_imu(
+                &mut nominal,
+                &mut error,
+                &mut cov,
+                dt.as_micros() as f32 / 1e6,
+                &accel,
+                &angular
+            );
+            if true {
+                sirin_filter::fuse_magnetometer(&mut nominal, &mut error, &mut cov, &mag_offset);
+            }
+        }
+        let state = sirin_shared::state::NominalState::from(&nominal);
+        Ok(state)
+    }*/
 }

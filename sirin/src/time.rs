@@ -8,6 +8,7 @@ use core::cell::UnsafeCell;
 use embassy_time::{Duration, TICK_HZ};
 
 use sirin_shared::time::AbsoluteTimeReference;
+use defmt::info;
 
 // this is safe bc the references to it only live for it during the duration of the function
 // so its impossible for two mut refs to exist simultaneously
@@ -27,7 +28,9 @@ pub fn duration_since_epoch() -> Option<Duration> {
 }
 
 pub fn absolute_time_reference() -> Option<AbsoluteTimeReference> {
+    info!("Shitass code ran");
     let dur = duration_since_epoch()?;
+    info!("Duration since epoch: {}", &dur.as_millis());
     Some(AbsoluteTimeReference {
         ms_since_epoch: dur.as_millis(),
     })

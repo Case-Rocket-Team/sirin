@@ -46,8 +46,10 @@ snafu = { version = "0.8.5", default-features = false }
 paste = "1.0.15"
 heapless = "0.8.0"
 sirin-shared = { version = "0.1.0", path = "../sirin-shared" }
+sirin-filter = { version = "0.1.1", path = "../sirin-filter" }
 derive_more = { version = "2.0.1", features = ["from"], default-features = false }
 static_assertions = "1.1.0"
 cortex-m = "0.7.7"
 ublox = { version = "0.9.0", features = ["ubx_proto31"], default-features = false }
 sequential-storage = "7.1.0"
+nalgebra = { version = "0.34.1", default-features = false, features = ["libm"] }

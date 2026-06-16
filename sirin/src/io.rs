@@ -53,7 +53,7 @@ pub async fn receive_packet() -> IoPacket<InPacket> {
 //Receives only InPackets coming from LoRa
 pub fn try_receive_packet() -> Result<IoPacket<InPacket>, TryReceiveError> {
     let packet = IN_CHANNEL.try_receive();
-    //info!("Packet try_received: {:?}", Debug2Format(&packet));
+    //info!("Packet try_: {:?}", Debug2Format(&packet));
     packet
 }
 
@@ -147,6 +147,7 @@ async fn radio_task_impl(
         radio_packet.to_song(&mut buf)?;
 
         radio.transmit(&buf[0..radio_packet.song_size()]).await?;
+        //println!("OUT_CHANNEL free capacity: {}", OUT_CHANNEL.free_capacity());
         radio.set_mode(rfm9::Mode::Sleep).await?;
         
     }

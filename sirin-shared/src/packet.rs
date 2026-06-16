@@ -1,5 +1,5 @@
 use core::ops::Div;
-use crate::{config::{CallsignBuf, SirinConfig, SirinId}, mode::SirinMode, song::{magic::MagicU8, maybe_unwritten_max_bytes::MaybeUnwrittenMaxBytes, *}, state::{ErrorState, NominalState}, time::AbsoluteTimeReference};
+use crate::{config::{CallsignBuf, SirinConfig, SirinId}, mode::SirinMode, song::{magic::MagicU8, maybe_unwritten_max_bytes::MaybeUnwrittenMaxBytes, *}, state::{ErrorState, NominalState, Pos, Vel, Quaternion}, time::AbsoluteTimeReference};
 use derive_more::Display;
 use sirin_macros::*;
 use embedded_hal::spi::ErrorKind as SpiErrorKind;
@@ -87,6 +87,7 @@ pub enum OutPacket {
     LogEntry(LogEntry),
     FlightHeader(Page<FlightHeader>),
     State(SirinState),
+    DataState(SirinDataState),
     DeployedApoAt(u32),
     DeployedMainAt(u32)
 }
@@ -125,6 +126,17 @@ impl Default for SirinState {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, FromSong, ToSong)]
+pub struct SirinDataState{
+    pub data: SirinData,
+    pub altitude: Meters<f64>,
+    pub apogee: Option<Meters<f64>>,
+    pub gps_fix: GpsFix,
+    pub pos: Pos,
+    pub vel: Vel,
+    pub rot_quaternion: Quaternion<f32>,
+}
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, SongSize, FromSong, ToSong)]
 pub struct Vec3<T: SongSize + FromSong + ToSong> {
     pub x: T,
     pub y: T,
@@ -159,6 +171,8 @@ pub struct GpsFix {
     pub pos_acc: Centimeters<u32>,
     pub vel_acc: Centimeters<u32>,
     pub pos_dop: f64,
+    pub lat: f64,
+    pub lon: f64
 }
 
 impl Default for GpsFix {
@@ -180,6 +194,8 @@ impl Default for GpsFix {
             pos_dop: 0f64,
             pos_acc: 0u32.with_units(),
             vel_acc: 0u32.with_units(),
+            lat: 0.0,
+            lon: 0.0
         }
     }
 }
@@ -293,6 +309,7 @@ pub enum Log {
     //State(NominalState),
     State(SirinState),
     Data(SirinData),
+    DataState(SirinDataState),
     BarometricAltitude(Meters<f64>),
     //GpsNmea([u8; 200])
 }

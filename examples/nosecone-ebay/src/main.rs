@@ -14,7 +14,7 @@ use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task}, io::{FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_flash_logging_enabled, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
+use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task}, io::{FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_flash_logging_enabled, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{SirinDataState, GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, Publisher, Subscriber}};
 use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
@@ -55,6 +55,7 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 }
 
 async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
+    //println!("Time since epoch: {}", duration_since_epoch().unwrap());
     /*
 
     FOR IREC ROCKET - CHECK TO ENSURE THESE VALUES ARE CODED:
@@ -70,9 +71,9 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
     let accel_threshold: Gs<f64> = (10.0 * 10.0).with_units(); //In Gs squared
     let altitude_threshold = 20.0; //In meters
-    let main_deployment_altitude= 457.2; //In meters
+    let main_deployment_altitude= 1500.0; //In meters
     let flight_duration = 600; //In seconds
-    let apogee_error = 1.0; //In meters
+    let apogee_error = 4.0; //In meters
     let timeout = 25; //In seconds
 
     let mut apo_deployed = false;
@@ -117,44 +118,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut max_altitude: Meters<f64> = 0.0.with_units();
 
     let mut desired_mode = None;
-
-    //Kalman filter setup:
-    let mut prev_reading = Instant::now();
-
-    let mut nominal = sirin_filter::NominalState::default();
-    let mut error = sirin_filter::ErrorState::default();
-    let mut cov = sirin_filter::CovarianceMatrixP::default();
-
-
-    // calibration data for a sirin not in ebay
-    // let free_hard_iron_bias_x = -47.573810;
-    // let free_hard_iron_bias_y = 44.599533;
-    // let free_hard_iron_bias_z = -169.833372;
-
-    // let free_scale_x = 0.976603;
-    // let free_scale_y = 1.056380;
-    // let free_scale_z = 0.971427;
-    
-    // Sirin D offset calibration
-    let hard_iron_bias_x = -18.269513;
-    let hard_iron_bias_y = 17.129495;
-    let hard_iron_bias_z = -42.261032;
-
-    let free_soft_iron_bias_xx = 18.728720;
-    let free_soft_iron_bias_xy = 1.581941;
-    let free_soft_iron_bias_xz = 0.091705;
-
-    let free_soft_iron_bias_yx = 1.581941;
-    let free_soft_iron_bias_yy = 16.487833;
-    let free_soft_iron_bias_yz = -0.505229;
-
-    let free_soft_iron_bias_zx = 0.091705;
-    let free_soft_iron_bias_zy = -0.505229;
-    let free_soft_iron_bias_zz = 18.669202;
-
-    let mut is_first_reading = true;
-
-    let mut angular_test = Vector3::new(0.0 as f32, 0.0 as f32, 0.0 as f32);
 
     let mut i = 0;
 
@@ -281,85 +244,19 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             &mut sirin.magnetometer
         ).await;
         
-        //info!("Begin Kalman filter");
-        let curr_reading = Instant::now();
-        let dt = curr_reading.duration_since(prev_reading);
+        //Add a Kalman filter function here
+        //state.nominal = kalman_filter(&mut self, &prev_reading);
 
-        let accel = sirin.imu.accel().await?;
-        
-        let accel = Vector3::new(
-            (accel.x.value as f32) / 1e6 *  9.81,
-            (accel.y.value as f32) / 1e6 *  9.81,
-            (accel.z.value as f32) / 1e6 *  9.81,
-        );
-
-        let angular = sirin.imu.angular_vel().await?;
-
-        let angular = Vector3::new(
-            (angular.x_pitch.value as f32) * PI / 180.0 / 1e6 * -1.0,
-            (angular.y_roll.value as f32) * PI / 180.0 / 1e6,
-            (angular.z_yaw.value as f32) * PI / 180.0 / 1e6 * -1.0,
-        );
-
-        let (x_raw, y_raw, z_raw) = sirin.magnetometer.magnetic().await?;
-        // divide by 6842 for Gauss, mult by 100 for micro Teslas (uT)
-        let mag_reading = [
-            (x_raw as f32) / 6842.0 * 100.0,
-            (y_raw as f32) / 6842.0 * 100.0,
-            (z_raw as f32) / 6842.0 * 100.0,
-        ];
-
-        let mag_offset = Vector3::new(
-            mag_reading[0] - hard_iron_bias_x,
-            mag_reading[1] - hard_iron_bias_y,
-            mag_reading[2] - hard_iron_bias_z,
-        );
-
-        let mag_calibrated = [
-            mag_offset[0] * free_soft_iron_bias_xx + mag_offset[1] * free_soft_iron_bias_yx + mag_offset[2] * free_soft_iron_bias_zx,
-            mag_offset[0] * free_soft_iron_bias_xy + mag_offset[1] * free_soft_iron_bias_yy + mag_offset[2] * free_soft_iron_bias_zy,
-            mag_offset[0] * free_soft_iron_bias_xz + mag_offset[1] * free_soft_iron_bias_yz + mag_offset[2] * free_soft_iron_bias_zz,
-        ];
-        angular_test = angular_test + angular * dt.as_micros() as f32; 
-        prev_reading = curr_reading;
-
-
-        if is_first_reading {
-            is_first_reading = false;
-
-            let magn = sirin.magnetometer.magnetic().await?;
-            let magn = Vector3::new(
-                magn.0 as f32,
-                magn.1 as f32,
-                magn.2 as f32,
-                // (magn.0 as f32) - hard_iron_bias_x,
-                // (magn.1 as f32) - hard_iron_bias_y,
-                // (magn.2 as f32) - hard_iron_bias_z,
-            );
-
-            let _ = sirin_filter::init_with_imu(
-                    &mut nominal,
-                    &accel,
-                    &angular,
-                    &magn,
-            );
-        } else {
-            sirin_filter::update_with_imu(
-                &mut nominal,
-                &mut error,
-                &mut cov,
-                dt.as_micros() as f32 / 1e6,
-                &accel,
-                &angular
-            );
-            if true {
-                sirin_filter::fuse_magnetometer(&mut nominal, &mut error, &mut cov, &mag_offset);
-            }
-        }
-
-        state.nominal = sirin_shared::state::NominalState::from(&nominal);
-
-        //info!("End Kalman filter");
+        //Calculate DataState
+        let datastate = SirinDataState{
+            data: sirin.data.clone(),
+            altitude: state.altitude.clone(),
+            apogee: state.apogee.clone(),
+            gps_fix: state.gps_fix.clone(),
+            pos: state.nominal.pos.clone(),
+            vel: state.nominal.vel.clone(),
+            rot_quaternion: state.nominal.rot_quaternion.clone()
+        };
 
         //info!("Calculate barometric altitude");
         if let Ok(pressure) = sirin.data.baro.pressure {
@@ -391,29 +288,30 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 {
                     sirin.led.set_high();
                     state.mode = SirinMode::Flight;
+                    info!("Entered flight mode...");
                     FLASH_LOGGING_ENABLED.store(true, Ordering::Relaxed);
                     launched_at = Some(Instant::now());
                 }
             },
             SirinMode::Flight => {
+                //Log a DataState packet every 100 milliseconds
                 OUT_CHANNEL.publish_immediate(IoPacket::new(
                     IoChannel::Flash, OutPacket::LogEntry(
                         LogEntry::new(
                             sirin.data.time,
-                            Log::Data(sirin.data.clone())
+                            Log::DataState(datastate.clone())
                         )
                     )
                 ));
 
-                //For debugging
-                OUT_CHANNEL.publish_immediate(IoPacket::new(
+                /*OUT_CHANNEL.publish_immediate(IoPacket::new(
                     IoChannel::Flash, OutPacket::LogEntry(
                         LogEntry::new(
                             sirin.data.time,
                             Log::State(state.clone())
                         )
                     )
-                ));
+                ));*/
 
                 //Check apogee, deploy apo parachute
                 if let None = state.apogee {
@@ -455,7 +353,8 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 if let Some(launched_at) = launched_at {
                     dur = Some(Instant::now() - launched_at);
                     if dur.unwrap() > Duration::from_secs(flight_duration) {
-                        desired_mode = Some(SirinMode::Landed)
+                        desired_mode = Some(SirinMode::Landed);
+                        info!("Exiting flight mode...");
                     }
                 }
 
@@ -480,19 +379,22 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         //broadcast_log(sirin.data.time, Log::Data(sirin.data.clone()));
         //broadcast_log(sirin.data.time, Log::State(state.clone()));
 
-        OUT_CHANNEL.publish_immediate(IoPacket::new(
+        //TODO: Make State now exceed the MAX_OUTPACKET_SIZE
+        /*OUT_CHANNEL.publish_immediate(IoPacket::new(
             IoChannel::Usb, OutPacket::LogEntry(LogEntry::new(
                 sirin.data.time,
                 Log::State(state.clone())
             ))
-        ));
+        ));*/
 
+        /* 
         OUT_CHANNEL.publish_immediate(IoPacket::new(
             IoChannel::Usb, OutPacket::LogEntry(LogEntry::new(
                 sirin.data.time,
                 Log::Data(sirin.data.clone())
             ))
         ));
+        */
 
         //info!("Try get GPS fix");
         if let Some(fix) = GPS_FIX.try_take() {
@@ -504,15 +406,18 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         //Alternates sending State and Data packets every half second
         //buffer overflow error, this is me trying to mitigate it since there is no time to 
         //info!("Transmit data");
-        if (i + 5) % 5 == 0  {
+        if i % 5 == 0  {
             OUT_CHANNEL.publish_immediate(IoPacket::new(
                 IoChannel::ToLoRa, OutPacket::LogEntry(LogEntry::new(
                     sirin.data.time,
-                    Log::State(state.clone())
+                    Log::DataState(datastate)
                 ))
             ));
-            println!("State broadcasted!");
+            //println!("State broadcasted!");
         }
+
+
+        /* Uncomment if you ever want to broadcast raw data over LoRa for whatever reason
         if i % 5 == 0{
             OUT_CHANNEL.publish_immediate(IoPacket::new(
                 IoChannel::ToLoRa, OutPacket::LogEntry(LogEntry::new(
@@ -520,33 +425,12 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     Log::Data(sirin.data.clone())
                 ))
             ));
-            println!("Data broadcasted!");
+            //println!("Data broadcasted!");
         }
+        */
+
+
         //info!("Final state altitude: {}", state.altitude.value);
         //info!("Done with GPS");
     }
 }
-
-// TODO: airbreaks
-/*#[task]
-async fn kalman(
-    mut event_sub: Subscriber<'static, CriticalSectionRawMutex, Event, 100, 4, 4>
-) {
-    loop {
-        let event = event_sub.next_message_pure().await;
-
-        match event {
-            Event::Measurement(measurement) => {
-                match measurement {
-                    Measurement::Baro(bmp3_readout) => todo!(),
-                    Measurement::ImuAccel(accel) => todo!(),
-                    Measurement::ImuAngularVel(angular_vel) => todo!(),
-                }
-            },
-        }
-
-        // Example: call a C function from sirin-c Rust crate
-        // Edit sirin-c crate and c project to add more functions
-        sirin_c::cmsis_dsp_sin(f32::consts::PI / 2.0);
-    }
-}*/
