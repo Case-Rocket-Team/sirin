@@ -135,6 +135,13 @@ pub struct SirinDataState{
     pub vel: Vel,
     pub rot_quaternion: Quaternion<f32>,
 }
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, SongSize, FromSong, ToSong)]
+pub struct TrackMe{
+    pub lat: f64,
+    pub lon: f64
+}
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, SongSize, FromSong, ToSong)]
 pub struct Vec3<T: SongSize + FromSong + ToSong> {
@@ -311,6 +318,7 @@ pub enum Log {
     Data(SirinData),
     DataState(SirinDataState),
     BarometricAltitude(Meters<f64>),
+    TrackMe(TrackMe)
     //GpsNmea([u8; 200])
 }
 

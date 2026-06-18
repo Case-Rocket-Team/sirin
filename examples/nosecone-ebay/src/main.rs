@@ -71,8 +71,8 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
     let accel_threshold: Gs<f64> = (10.0 * 10.0).with_units(); //In Gs squared
     let altitude_threshold = 20.0; //In meters
-    let main_deployment_altitude= 1500.0; //In meters
-    let flight_duration = 600; //In seconds
+    let main_deployment_altitude= 457.2; //In meters
+    let flight_duration = 1000; //In seconds
     let apogee_error = 4.0; //In meters
     let timeout = 25; //In seconds
 

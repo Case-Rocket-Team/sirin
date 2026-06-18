@@ -12,7 +12,7 @@ use embassy_time::{Duration, Instant, Ticker, Timer, TICK_HZ};
 use embedded_hal_1::spi::ErrorKind;
 use rfm9::{ReadRfm9, Rfm9};
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task}, io::{FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_flash_logging_enabled, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
+use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task}, io::{FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_flash_logging_enabled, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState, TrackMe}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, Publisher, Subscriber}};
 use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
@@ -65,17 +65,29 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         transmute_into_static(&mut flash)
     })).unwrap();
 
-    let mut i = 15;
+    sirin.spawner.spawn(gps_task(&mut sirin.gps_rx, &mut sirin.gps_tx)).unwrap();
+
     loop{
-        Timer::after_millis(500).await;
-        sirin.led.set_high();
-        Timer::after_millis(500).await;
-        sirin.led.set_low();
-        println!("{}", i);
-        if i <= 0{
-            Sirin::deploy_chute_main(&mut sirin.parachute_main);
-            Sirin::deploy_chute_apo(&mut sirin.parachute_apo);
+        Timer::after_millis(2000).await;
+
+        let mut state = SirinState::default();
+
+        if let Some(fix) = GPS_FIX.try_take() {
+            //if fix.fix_type != GpsFixType::NoFix {
+                state.gps_fix = fix;
+            //}
         }
-        i = i - 1;
+
+        let track_me: TrackMe = TrackMe{
+            lat: state.gps_fix.lat,
+            lon: state.gps_fix.lon
+        };
+
+        OUT_CHANNEL.publish_immediate(IoPacket::new(
+                IoChannel::ToLoRa, OutPacket::LogEntry(LogEntry::new(
+                    sirin.data.time,
+                    Log::TrackMe(track_me)
+                ))
+            ));
     }
 }
