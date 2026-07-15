@@ -250,6 +250,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         //Calculate DataState
         let datastate = SirinDataState{
             data: sirin.data.clone(),
+            mode: state.mode.clone(),
             altitude: state.altitude.clone(),
             apogee: state.apogee.clone(),
             gps_fix: state.gps_fix.clone(),
@@ -380,12 +381,12 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         //broadcast_log(sirin.data.time, Log::State(state.clone()));
 
         //TODO: Make State now exceed the MAX_OUTPACKET_SIZE
-        /*OUT_CHANNEL.publish_immediate(IoPacket::new(
+        OUT_CHANNEL.publish_immediate(IoPacket::new(
             IoChannel::Usb, OutPacket::LogEntry(LogEntry::new(
                 sirin.data.time,
-                Log::State(state.clone())
+                Log::DataState(datastate.clone())
             ))
-        ));*/
+        ));
 
         /* 
         OUT_CHANNEL.publish_immediate(IoPacket::new(
