@@ -129,17 +129,17 @@ impl Sirin {
                 config.rcc.pll1 = Some(Pll {
                     source: PllSource::HSI,
                     prediv: PllPreDiv::DIV4,
-                    mul: PllMul::MUL50,
-                    divp: Some(PllDiv::DIV2),
-                    divq: Some(PllDiv::DIV8), // used by SPI3. 100Mhz.
+                    mul: PllMul::MUL30,
+                    divp: Some(PllDiv::DIV4),
+                    divq: Some(PllDiv::DIV16), // used by SPI3. 30Mhz.
                     divr: None,
                 });
-                config.rcc.sys = Sysclk::PLL1_P; // 400 Mhz
-                config.rcc.ahb_pre = AHBPrescaler::DIV2; // 200 Mhz
-                config.rcc.apb1_pre = APBPrescaler::DIV2; // 100 Mhz
-                config.rcc.apb2_pre = APBPrescaler::DIV2; // 100 Mhz
-                config.rcc.apb3_pre = APBPrescaler::DIV2; // 100 Mhz
-                config.rcc.apb4_pre = APBPrescaler::DIV2; // 100 Mhz
+                config.rcc.sys = Sysclk::PLL1_P; // 120 Mhz
+                config.rcc.ahb_pre = AHBPrescaler::DIV1; // 120 Mhz
+                config.rcc.apb1_pre = APBPrescaler::DIV2; // 60 Mhz
+                config.rcc.apb2_pre = APBPrescaler::DIV2; // 60 Mhz
+                config.rcc.apb3_pre = APBPrescaler::DIV2; // 60 Mhz
+                config.rcc.apb4_pre = APBPrescaler::DIV2; // 60 Mhz
                 config.rcc.voltage_scale = VoltageScale::Scale1;
                 config.rcc.mux.usbsel = mux::Usbsel::HSI48;
             }
