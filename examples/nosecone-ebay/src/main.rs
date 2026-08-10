@@ -407,6 +407,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         //Alternates sending State and Data packets every half second
         //buffer overflow error, this is me trying to mitigate it since there is no time to 
         //info!("Transmit data");
+        /*
         if i % 5 == 0  {
             OUT_CHANNEL.publish_immediate(IoPacket::new(
                 IoChannel::ToLoRa, OutPacket::LogEntry(LogEntry::new(
@@ -416,7 +417,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             ));
             //println!("State broadcasted!");
         }
-
+        */
 
         /* Uncomment if you ever want to broadcast raw data over LoRa for whatever reason
         if i % 5 == 0{
