@@ -160,13 +160,35 @@ pub async fn gps_impl(
                         fix.pos.y.value = p.ecef_y_meters_raw();
                         fix.pos.z.value = p.ecef_z_meters_raw();
                         fix.pos_acc.value = p.p_acc_meters_raw();
-                        GPS_FIX.signal(fix.clone());
                     }
                     PacketRef::NavPvt(p) => {
-                        //println!("NavPvt packet found!");
+                        fix.fix_type = match p.fix_type() {
+                            GnssFixType::TimeOnlyFix => GpsFixType::TimeOnlyFix,
+                            GnssFixType::GPSPlusDeadReckoning => {
+                                GpsFixType::FixDifferential
+                            }
+                            GnssFixType::NoFix => GpsFixType::NoFix,
+                            GnssFixType::DeadReckoningOnly => {
+                                GpsFixType::FixPrediction
+                            }
+                            GnssFixType::Fix2D => GpsFixType::Fix2d,
+                            GnssFixType::Fix3D => GpsFixType::Fix3d,
+                            _ => GpsFixType::NoFix,
+                        };
                         fix.itow = p.itow();
                         fix.lon = p.longitude();
                         fix.lat = p.latitude();
+                        fix.satellites = p.num_satellites();
+                        fix.vel = Vec3 {
+                            x: ((p.vel_north() * 100.0) as i32).with_units(),
+                            y: ((p.vel_east() * 100.0) as i32).with_units(),
+                            z: ((p.vel_down() * 100.0) as i32).with_units(),
+                        };
+                        fix.vel_acc =
+                            ((p.speed_accuracy() * 100.0) as u32).with_units();
+                        // Signal on PVT only. NAV-POSECEF updates the same
+                        // accumulator, but previously emitted a second,
+                        // partially populated fix with no quality metadata.
                         GPS_FIX.signal(fix.clone());
                     }
                     _ => {} /*PacketRef::NavPvt(nav_pvt_packet) => {
@@ -220,8 +242,8 @@ pub async fn gps_impl(
                                         z: nav_pvt_packet.height_msl().with_units(),
                                     };
                                     fix.vel = Vec3 {
-                                        x: nav_pvt_packet.vel_east().with_units(),
-                                        y: nav_pvt_packet.vel_north().with_units(),
+                                        x: nav_pvt_packet.vel_north().with_units(),
+                                        y: nav_pvt_packet.vel_east().with_units(),
                                         z: nav_pvt_packet.vel_down().with_units()
                                     };
                                     fix.horizontal_accuracy = nav_pvt_packet.horizontal_accuracy().with_units();

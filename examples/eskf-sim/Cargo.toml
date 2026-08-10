@@ -1,0 +1,14 @@
+[package]
+name = "eskf-sim"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sirin-filter = { path = "../../sirin-filter" }
+
+[[bin]]
+name = "eskf-sim"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"

@@ -3,6 +3,8 @@ members = [
     "sirin",
     "sirin-macros",
     "sirin-shared",
+    "sirin-filter",
+    "examples/eskf-sim",
     "bmp3",
     "dev-csr",
     "dev-csr-macro",

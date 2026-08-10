@@ -9,6 +9,5 @@ repository = "https://github.com/Nautki/sirin"
 [dependencies]
 nalgebra = { version = "0.34.1", default-features = false, features = ["libm"] }
 libm = "0.2"
-defmt = "*"
 sirin-shared = { version = "0.1.0", path = "../sirin-shared" }
 uunit = { git = "https://github.com/Nautki/uunit", version = "0.1.0" }

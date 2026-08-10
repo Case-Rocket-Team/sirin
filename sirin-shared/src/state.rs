@@ -41,8 +41,10 @@ macro_rules! impl_vec {
     };
 }
 
-/// ECEF Position
-/// https://en.wikipedia.org/wiki/Earth-centered,_Earth-fixed_coordinate_system
+/// Position in the frame identified by the containing message.
+///
+/// Legacy GPS packets use ECEF. The navigation estimator uses local NED and
+/// must set the containing message's frame indicator accordingly.
 #[derive(Debug, Clone, SongSize, ToSong, FromSong)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(C)]

@@ -23,7 +23,7 @@ macro_rules! byte_array_str {
 
 pub use byte_array_str;
 use snafu::Snafu;
-use uunit::{Celsius, Centimeters, Meters, MetersPerSecond, MicroGs, Millimeters, Milliseconds, Pascals, Quantity, UnitCentimeters, UnitMicrodegrees, UnitSeconds, WithUnits};
+use uunit::{Celsius, Centimeters, Meters, MicroGs, Millimeters, Milliseconds, Pascals, Quantity, UnitCentimeters, UnitMicrodegrees, UnitSeconds, WithUnits};
 
 #[derive(Debug)]
 pub enum ByteArrayStrError {
@@ -151,10 +151,14 @@ pub struct Vec3<T: SongSize + FromSong + ToSong> {
     pub z: T
 }
 
-pub type CentimetersPerSecond<T> = Quantity<T, <UnitCentimeters as Div<UnitSeconds>>::Output>;
+pub type CentimetersPerSecond<T> =
+    Quantity<T, <UnitCentimeters as Div<UnitSeconds>>::Output>;
 
 pub type EcefPos = Vec3<Centimeters<i32>>;
-pub type EcefVel = Vec3<CentimetersPerSecond<i32>>;
+/// GNSS velocity in North-East-Down order and centimeters per second.
+///
+/// The integer wire representation preserves the existing packet size.
+pub type NedVel = Vec3<CentimetersPerSecond<i32>>;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SongSize, FromSong, ToSong)]
@@ -175,9 +179,9 @@ pub struct GpsFix {
     pub satellites: u8,
     pub fix_type: GpsFixType,
     pub pos: EcefPos,
-    pub vel: EcefVel,
+    pub vel: NedVel,
     pub pos_acc: Centimeters<u32>,
-    pub vel_acc: Centimeters<u32>,
+    pub vel_acc: CentimetersPerSecond<u32>,
     pub pos_dop: f64,
     pub lat: f64,
     pub lon: f64
@@ -195,9 +199,9 @@ impl Default for GpsFix {
                 z: 0.with_units()
             },
             vel: Vec3 {
-                x: 0.with_units(),
-                y: 0.with_units(),
-                z: 0.with_units()
+                x: 0i32.with_units(),
+                y: 0i32.with_units(),
+                z: 0i32.with_units()
             },
             pos_dop: 0f64,
             pos_acc: 0u32.with_units(),
