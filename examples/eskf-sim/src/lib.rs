@@ -1,6 +1,7 @@
 use sirin_filter::{
     FixedLagHistory, GpsPositionObservation, GpsVelocityObservation,
-    HistoryProcessResult, ImuSample, Vec3,
+    HistoryProcessResult, ImuSample, MagnetometerObservation,
+    BarometerObservation, Vec3,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -80,6 +81,24 @@ pub fn run_deterministic_simulation() -> SimulationResult {
             if let HistoryProcessResult::Measurement(result) = velocity_result {
                 accepted_gps_updates += if result.accepted { 1 } else { 0 };
             }
+
+            let barometer_result = history.filter.fuse_barometer(
+                &BarometerObservation {
+                    timestamp_us: sample_index as u64 * 10_000,
+                    height_up_m: 0.0,
+                    variance_m2: 0.25,
+                },
+            );
+            assert!(barometer_result.accepted);
+
+            let magnetometer_result = history.filter.fuse_magnetometer(
+                &MagnetometerObservation {
+                    timestamp_us: sample_index as u64 * 10_000,
+                    field_ut_b: Vec3::new(19.0, -2.7, 48.0),
+                    variance_ut2: Vec3::repeat(1.0),
+                },
+            );
+            assert!(magnetometer_result.accepted);
         }
 
         let _ = (true_position, true_velocity);

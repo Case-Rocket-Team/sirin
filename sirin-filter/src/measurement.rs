@@ -266,4 +266,31 @@ mod tests {
         assert!((observation.velocity_ned_mps.z - 0.25).abs() < 1.0e-6);
         assert!((observation.variance_m2ps2.x - 0.02).abs() < 1.0e-6);
     }
+
+    #[test]
+    fn magnetometer_full_vector_update_is_applied() {
+        let mut state = NominalState::default();
+        let mut covariance = CovarianceMatrixP::default();
+        let expected_field_ned = Vec3::new(19.0, -2.7, 48.0);
+        let true_attitude =
+            nalgebra::UnitQuaternion::from_euler_angles(0.0, 0.0, 0.2);
+        let measured_field_b =
+            true_attitude.inverse_transform_vector(&expected_field_ned);
+        let observation = MagnetometerObservation {
+            timestamp_us: 1,
+            field_ut_b: measured_field_b,
+            variance_ut2: Vec3::repeat(0.25),
+        };
+
+        let result = fuse_magnetometer(
+            &mut state,
+            &mut covariance,
+            &observation,
+            &expected_field_ned,
+            14.16,
+        );
+
+        assert!(result.accepted);
+        assert!(result.correction_norm > 0.0);
+    }
 }
