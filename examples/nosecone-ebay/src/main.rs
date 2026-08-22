@@ -14,7 +14,9 @@ use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task}, io::{FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_flash_logging_enabled, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{SirinDataState, GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
+use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task}, io::{FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_flash_logging_enabled, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{SirinDataState, GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
+use sirin::state::NominalState as SirinNominalState;
+use sirin_filter::{Eskf, EskfConfig, InitialUncertainty, ImuNoise, FixedLagHistory, ImuSample, BarometerObservation, Vec3};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, Publisher, Subscriber}};
 use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
@@ -34,6 +36,75 @@ unsafe fn main() -> ! {
     executor.run(|spawner| {
         spawner.must_spawn(setup_task(spawner, sirin))
     })
+}
+
+/// Initialize filter attitude from accelerometer + magnetometer
+/// Falls back to accel-only if magnetometer is weak
+fn initialize_from_sensors(
+    accel_mps2: Vec3,
+    mag_ut: Vec3,
+) -> Result<na::UnitQuaternion<f32>, &'static str> {
+    let accel_norm = accel_mps2.norm();
+    if accel_norm < 1.0 {
+        return Err("Acceleration magnitude too small");
+    }
+    let down = accel_mps2 / accel_norm;
+
+    let mag_norm = mag_ut.norm();
+
+    // Try to use magnetometer if strong enough
+    if mag_norm >= 3000.0 {  // Relaxed threshold from 10000
+        let mag_unit = mag_ut / mag_norm;
+        let down_component = mag_unit.dot(&down);
+        let mag_horizontal = mag_unit - down * down_component;
+        let mag_horizontal_norm = mag_horizontal.norm();
+
+        if mag_horizontal_norm > 0.05 {  // Relaxed from 0.1
+            let north = mag_horizontal / mag_horizontal_norm;
+            let up = -down;
+            let east = north.cross(&up);
+
+            let r_ned_to_body = na::Matrix3::from_columns(&[north, east, down]);
+            let r_body_to_ned = r_ned_to_body.transpose();
+
+            let rot_body_to_ned = na::Rotation3::from_matrix_unchecked(r_body_to_ned);
+            let attitude = UnitQuaternion::from_rotation_matrix(&rot_body_to_ned);
+            return Ok(attitude);
+        }
+    }
+
+    // Fallback: accel-only initialization (level, heading north by default)
+    // down vector defines pitch and roll; we assume heading is north (yaw = 0)
+    let north = Vec3::new(1.0, 0.0, 0.0);  // North in NED frame
+    let up = -down;
+    let east = north.cross(&up);
+
+    let r_ned_to_body = na::Matrix3::from_columns(&[north, east, down]);
+    let r_body_to_ned = r_ned_to_body.transpose();
+
+    let rot_body_to_ned = na::Rotation3::from_matrix_unchecked(r_body_to_ned);
+    let attitude = UnitQuaternion::from_rotation_matrix(&rot_body_to_ned);
+
+    info!("Using accel-only initialization (mag too weak: {} uT)", mag_norm as i32);
+    Ok(attitude)
+}
+
+fn microgs_to_mps2(accel_microgs: Vec3) -> Vec3 {
+    const GRAVITY: f32 = 9.80665;
+    Vec3::new(
+        accel_microgs.x * 1e-6 * GRAVITY,
+        accel_microgs.y * 1e-6 * GRAVITY,
+        accel_microgs.z * 1e-6 * GRAVITY,
+    )
+}
+
+fn microdegps_to_radps(gyro_microdegps: Vec3) -> Vec3 {
+    const DEG_TO_RAD: f32 = PI / 180.0;
+    Vec3::new(
+        gyro_microdegps.x * 1e-6 * DEG_TO_RAD,
+        gyro_microdegps.y * 1e-6 * DEG_TO_RAD,
+        gyro_microdegps.z * 1e-6 * DEG_TO_RAD,
+    )
 }
 
 #[task()]
@@ -97,6 +168,62 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let initial_altitude = altitude_array[50].with_units();
     info!("Initial altitude: {}", initial_altitude.value);
 
+    //========================================================================
+    // Initialize ESKF (Error-State Kalman Filter)
+    //========================================================================
+    let filter_config = EskfConfig {
+        gravity_ned_mps2: Vec3::new(0.0, 0.0, 9.80665),
+        min_imu_dt_s: 1.0e-6,
+        max_imu_dt_s: 2.0,  // 2 seconds max (IMU available ~1s apart)
+        max_measurement_age_us: 5_000_000,
+        future_measurement_tolerance_us: 100_000,
+        initial_uncertainty: InitialUncertainty {
+            position_std_m: Vec3::new(100.0, 100.0, 100.0),
+            velocity_std_mps: Vec3::repeat(20.0),
+            attitude_std_rad: Vec3::repeat(0.1),  // Start more confident in attitude
+            accel_bias_std_mps2: Vec3::repeat(0.5),
+            gyro_bias_std_radps: Vec3::repeat(0.05),  // Higher initial gyro bias uncertainty
+        },
+        imu_noise: ImuNoise {
+            accel_noise_density_mps2_sqrt_hz: Vec3::repeat(0.002158),
+            gyro_noise_density_radps_sqrt_hz: Vec3::repeat(0.00006632),
+            accel_bias_random_walk_mps3_sqrt_hz: Vec3::repeat(6.20e-6),
+            gyro_bias_random_walk_radps2_sqrt_hz: Vec3::repeat(1.0e-6),  // Higher: allows faster bias learning
+        },
+        gps_position_variance_m2: Vec3::repeat(4.0),
+        gps_velocity_variance_m2ps2: Vec3::repeat(0.25),
+        gps_position_gate: 2.0,
+        gps_velocity_gate: 2.0,
+        barometer_gate: 1.5,     // Very tight - baro is very reliable
+        magnetometer_gate: 2.0,  // Tight - mag should constrain yaw strongly
+        magnetic_field_ned_ut: Vec3::new(19000.0, -2700.0, 48000.0),  // Cleveland, OH
+    };
+
+    let mut initial_attitude = UnitQuaternion::identity();
+    let mut filter: Option<Eskf> = None;
+    let mut history: Option<FixedLagHistory::<64>> = None;
+    let mut current_time_us: u64 = 0;
+    let mut filter_initialized = false;
+    let mut last_imu_time_us: u64 = 0;
+    let mut imu_sample_count: u32 = 0;  // Count actual samples sent
+
+    // Bias calibration during first 5 seconds
+    let mut gyro_bias_sum = Vec3::zeros();
+    let mut accel_bias_sum = Vec3::zeros();
+    let mut bias_sample_count: u32 = 0;
+    let mut calibration_done = false;
+
+    // Store measured biases for sensor correction
+    let mut gyro_bias_radps = Vec3::zeros();
+    let mut accel_bias_mps2 = Vec3::zeros();
+
+    // Diagnostic counters
+    let mut baro_count = 0;
+    let mut mag_count = 0;
+    let mut imu_attempted = 0;
+    let mut imu_failed = 0;
+    let mut last_diagnostic_time = 0u64;
+
     //Spawn background tasks
     sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
     sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
@@ -110,8 +237,8 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
     info!("Start main");
 
-    //Update the loop every 500 ms
-    let mut ticker = Ticker::every(Duration::from_millis(100));
+    //Update the loop every 50ms for faster IMU integration (20 Hz)
+    let mut ticker = Ticker::every(Duration::from_millis(50));
 
     let mut launched_at = None;
     let mut dur: Option<Duration> = None;
@@ -243,9 +370,272 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             &mut sirin.high_g_imu,
             &mut sirin.magnetometer
         ).await;
-        
-        //Add a Kalman filter function here
-        //state.nominal = kalman_filter(&mut self, &prev_reading);
+
+        // Initialize filter on first measurement
+        if !filter_initialized {
+            if let (Ok(accel), Ok(mag)) = (&sirin.data.imu.accel, &sirin.data.magnetometer.mag) {
+                initial_attitude = initialize_from_sensors(
+                    microgs_to_mps2(Vec3::new(
+                        accel.x.value as f32,
+                        accel.y.value as f32,
+                        accel.z.value as f32,
+                    )),
+                    Vec3::new(
+                        mag.x as f32,
+                        mag.y as f32,
+                        mag.z as f32,
+                    ),
+                ).unwrap_or_else(|e| {
+                    info!("Attitude init error: {}, using identity", e);
+                    UnitQuaternion::identity()
+                });
+
+                info!("Initial attitude: q=[{}, {}, {}, {}]",
+                    initial_attitude.w, initial_attitude.i, initial_attitude.j, initial_attitude.k);
+
+                // Create initial nominal state for ESKF with correct field names
+                let initial_nominal_state = sirin_filter::NominalState {
+                    pos: Vec3::zeros(),
+                    vel: Vec3::zeros(),
+                    rot_quaternion: initial_attitude.clone(),
+                    accel_bias: Vec3::zeros(),
+                    angular_vel_bias: Vec3::zeros(),
+                    accel: Vec3::zeros(),
+                };
+
+                let initial_covariance = sirin_filter::CovarianceMatrixP::from_initial_uncertainty(
+                    &filter_config.initial_uncertainty
+                );
+
+                filter = Some(Eskf::new(
+                    initial_nominal_state,
+                    initial_covariance,
+                    filter_config.clone(),
+                ));
+
+                history = Some(FixedLagHistory::<64>::new(
+                    filter.as_ref().unwrap().clone()
+                ));
+
+                filter_initialized = true;
+                info!("ESKF initialized");
+
+                // Initialize old state structure with attitude
+                use sirin_shared::state::Quaternion;
+                state.nominal.rot_quaternion = Quaternion::new(
+                    initial_attitude.w,
+                    initial_attitude.i,
+                    initial_attitude.j,
+                    initial_attitude.k,
+                );
+            }
+        }
+
+        //========================================================================
+        // ESKF Propagation with IMU
+        //========================================================================
+        if filter_initialized {
+            if let Some(ref mut f) = filter {
+                // Update timestamp - ensure monotonic and reasonable
+                if let Some(epoch) = duration_since_epoch() {
+                    let epoch_us = epoch.as_millis() as u64 * 1000;
+                    // Only update if it's newer than last time
+                    if epoch_us > current_time_us {
+                        current_time_us = epoch_us;
+                    } else {
+                        current_time_us = current_time_us.saturating_add(100_000);
+                    }
+                } else {
+                    // No real time available - estimate with fixed step
+                    current_time_us = current_time_us.saturating_add(100_000);
+                }
+
+                // Calibration phase: collect IMU biases for first ~5 seconds
+                if !calibration_done {
+                    if let (Ok(accel), Ok(gyro)) = (&sirin.data.imu.accel, &sirin.data.imu.angular_vel) {
+                        // Accumulate raw sensor values
+                        gyro_bias_sum.x += gyro.x.value as f32;
+                        gyro_bias_sum.y += gyro.y.value as f32;
+                        gyro_bias_sum.z += gyro.z.value as f32;
+
+                        accel_bias_sum.x += accel.x.value as f32;
+                        accel_bias_sum.y += accel.y.value as f32;
+                        accel_bias_sum.z += accel.z.value as f32;
+                        bias_sample_count += 1;
+
+                        // Complete calibration after ~50 samples (~5 seconds)
+                        if bias_sample_count >= 50 {
+                            let gyro_bias_raw = gyro_bias_sum / (bias_sample_count as f32);
+                            let accel_bias_raw = accel_bias_sum / (bias_sample_count as f32);
+
+                            gyro_bias_radps = microdegps_to_radps(Vec3::new(
+                                gyro_bias_raw.x,
+                                gyro_bias_raw.y,
+                                gyro_bias_raw.z,
+                            ));
+
+                            accel_bias_mps2 = microgs_to_mps2(Vec3::new(
+                                accel_bias_raw.x,
+                                accel_bias_raw.y,
+                                accel_bias_raw.z,
+                            )) - Vec3::new(0.0, 0.0, 9.80665);  // Remove gravity from Z
+
+                            info!("Calibration complete!");
+                            info!("Gyro bias (rad/s): x={} y={} z={}",
+                                gyro_bias_radps.x, gyro_bias_radps.y, gyro_bias_radps.z);
+                            info!("Accel bias (m/s2): x={} y={} z={}",
+                                accel_bias_mps2.x, accel_bias_mps2.y, accel_bias_mps2.z);
+
+                            calibration_done = true;
+                        }
+                    }
+                    // Continue to next iteration during calibration
+                } else {
+
+                // Check IMU availability
+                let accel_ok = sirin.data.imu.accel.is_ok();
+                let gyro_ok = sirin.data.imu.angular_vel.is_ok();
+
+                // Log diagnostics once per second
+                if i % 10 == 0 {
+                    info!("Quat: w={} x={} y={} z={}",
+                        state.nominal.rot_quaternion.r as i32,
+                        state.nominal.rot_quaternion.x as i32,
+                        state.nominal.rot_quaternion.y as i32,
+                        state.nominal.rot_quaternion.z as i32
+                    );
+                }
+
+                // Process IMU if available
+                if let (Ok(accel), Ok(gyro)) = (&sirin.data.imu.accel, &sirin.data.imu.angular_vel) {
+                    imu_attempted += 1;
+
+                    // Convert sensor readings
+                    let accel_raw = microgs_to_mps2(Vec3::new(
+                        accel.x.value as f32,
+                        accel.y.value as f32,
+                        accel.z.value as f32,
+                    ));
+
+                    // Only correct gyro bias (accel bias mixed with gravity)
+                    let gyro_corrected = microdegps_to_radps(Vec3::new(
+                        gyro.x.value as f32,
+                        gyro.y.value as f32,
+                        gyro.z.value as f32,
+                    )) - gyro_bias_radps;
+
+                    let imu_sample = ImuSample {
+                        timestamp_us: current_time_us,
+                        accel_mps2_b: accel_raw,
+                        gyro_radps_b: gyro_corrected,
+                        temperature_c: None,
+                        accel_saturated: [false; 3],
+                        gyro_saturated: [false; 3],
+                        sequence: imu_sample_count,
+                    };
+
+                    match f.propagate_imu(imu_sample) {
+                        Ok(()) => {
+                            imu_sample_count = imu_sample_count.wrapping_add(1);
+
+                            // IMU propagation succeeded - update state with estimates
+                            let nav_solution = f.navigation_solution();
+
+                            // Log quaternion once per second
+                            if i % 10 == 0 {
+                                info!("Quat: w={} x={} y={} z={}",
+                                    nav_solution.attitude_nb_wxyz[0] as i32,
+                                    nav_solution.attitude_nb_wxyz[1] as i32,
+                                    nav_solution.attitude_nb_wxyz[2] as i32,
+                                    nav_solution.attitude_nb_wxyz[3] as i32
+                                );
+                            }
+
+                            // Update quaternion from filter attitude estimate
+                            use sirin_shared::state::Quaternion;
+                            state.nominal.rot_quaternion = Quaternion::new(
+                                nav_solution.attitude_nb_wxyz[0],  // w
+                                nav_solution.attitude_nb_wxyz[1],  // x (i)
+                                nav_solution.attitude_nb_wxyz[2],  // y (j)
+                                nav_solution.attitude_nb_wxyz[3],  // z (k)
+                            );
+                        },
+                        Err(e) => {
+                            imu_failed += 1;
+                            if i % 10 == 0 {
+                                info!("IMU propagation error (seq={}): {:?}", imu_sample_count, Debug2Format(&e));
+                            }
+                        }
+                    }
+                } else {
+                    if i % 10 == 0 {
+                        info!("IMU data not available");
+                    }
+                }
+            }
+        } else {
+            if i % 10 == 0 {
+                info!("Filter not initialized yet");
+            }
+        }
+
+        //========================================================================
+        // Barometer Altitude Fusion
+        //========================================================================
+        if filter_initialized {
+            if let Some(ref mut f) = filter {
+                if let Ok(pressure) = sirin.data.baro.pressure {
+                    // Convert pressure to height above launch site
+                    let measured_altitude = approx_pressure_altitude(pressure.convert());
+                    let height_up_m = (measured_altitude - initial_altitude).value as f32;
+
+                    let baro_obs = BarometerObservation {
+                        timestamp_us: current_time_us,
+                        height_up_m,
+                        variance_m2: 0.04,  // ~0.2m std dev (tighter)
+                    };
+
+                    let _ = f.fuse_barometer(&baro_obs);
+                    baro_count += 1;
+                    if i % 10 == 0 {
+                        info!("Baro: h={} m", height_up_m as i32);
+                    }
+                }
+
+                //====================================================================
+                // Magnetometer Heading Fusion
+                //====================================================================
+                if let Ok(mag) = &sirin.data.magnetometer.mag {
+                    let mag_obs = sirin_filter::MagnetometerObservation {
+                        timestamp_us: current_time_us,
+                        field_ut_b: Vec3::new(
+                            mag.x as f32,
+                            mag.y as f32,
+                            mag.z as f32,
+                        ),
+                        variance_ut2: Vec3::repeat(25.0),  // ~5 μT std dev per axis (tighter)
+                    };
+
+                    let _ = f.fuse_magnetometer(&mag_obs);
+                    mag_count += 1;
+                    if i % 10 == 0 {
+                        info!("Mag: x={} y={} z={} uT", mag.x, mag.y, mag.z);
+                    }
+                }
+
+                // Diagnostics: Print measurement frequency every ~10 seconds
+                if current_time_us > last_diagnostic_time + 10_000_000 {
+                    info!("Diagnostics: IMU attempted={} success={} failed={}, Baro={} Mag={}",
+                        imu_attempted, imu_sample_count, imu_failed, baro_count, mag_count);
+                    imu_attempted = 0;
+                    imu_failed = 0;
+                    baro_count = 0;
+                    mag_count = 0;
+                    last_diagnostic_time = current_time_us;
+                }
+                }  // End of else (after calibration)
+            }
+        }
 
         //Calculate DataState
         let datastate = SirinDataState{

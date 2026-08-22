@@ -9,6 +9,3 @@ sirin-filter = { path = "../../sirin-filter" }
 [[bin]]
 name = "eskf-sim"
 path = "src/main.rs"
-
-[lib]
-path = "src/lib.rs"

@@ -854,6 +854,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "eskf-sim"
+version = "0.1.0"
+dependencies = [
+ "sirin-filter",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1826,7 +1833,6 @@ dependencies = [
 name = "sirin-filter"
 version = "0.1.1"
 dependencies = [
- "defmt",
  "libm",
  "nalgebra",
  "sirin-shared",
