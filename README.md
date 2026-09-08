@@ -18,9 +18,13 @@ Currently being worked on:
 Planned:
 - [ ] React Dashboard
 
+## Flight phases
+The flight computer moves through `Standby -> Flight -> Descent -> Landed` (`SirinMode`). The detection logic lives in `sirin-shared/src/flight.rs` (`FlightDetector`) and is pure, so the flight binaries in `examples/` only feed it sensor readings and act on what it returns (fire charges, LED, flash logging).
+
 ## Testing without hardware
 These following crates have unit tests that work without hardware:
 - w25qx
+- sirin-shared (flight phase detection, mode wire format)
 
 ```sh
 cargo test --target <your local target>

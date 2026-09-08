@@ -16,7 +16,7 @@ use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
 use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task}, io::{FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_flash_logging_enabled, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{SirinDataState, GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, Publisher, Subscriber}};
-use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
+use sirin_shared::{flight::{FlightDetector, FlightInput, FlightParams}, mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
 use nalgebra as na;
 use na::{Matrix3, Matrix6, Vector3, UnitQuaternion, Rotation3};
@@ -66,19 +66,32 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     flight_duration = 600s
     apogee_error = 1m
     timeout = 25s
+    landed_altitude_band = 4m
+    landed_stable_duration = 30s
 
      */
 
-    let accel_threshold: Gs<f64> = (10.0 * 10.0).with_units(); //In Gs squared
+    let accel_threshold = 10.0 * 10.0; //In Gs squared
     let altitude_threshold = 20.0; //In meters
     let main_deployment_altitude= 457.2; //In meters
     let flight_duration = 1000; //In seconds
     let apogee_error = 4.0; //In meters
     let timeout = 25; //In seconds
+    let landed_altitude_band = 4.0; //In meters
+    let landed_stable_duration = 30; //In seconds
 
-    let mut apo_deployed = false;
-    let mut main_deployed = false;
-    
+    //Standby -> Flight -> Descent -> Landed detection (see sirin_shared::flight)
+    let mut detector = FlightDetector::new(FlightParams {
+        launch_altitude: altitude_threshold,
+        launch_accel_squared: accel_threshold,
+        apogee_error,
+        //Apogee is never declared (and apo never fired) before the timeout
+        apogee_lockout_ms: timeout * 1000,
+        main_deployment_altitude: Some(main_deployment_altitude),
+        landed_altitude_band,
+        landed_stable_ms: landed_stable_duration * 1000,
+        flight_duration_ms: flight_duration * 1000,
+    });
 
     let mut state = SirinState::default();
 
@@ -112,10 +125,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
     //Update the loop every 500 ms
     let mut ticker = Ticker::every(Duration::from_millis(100));
-
-    let mut launched_at = None;
-    let mut dur: Option<Duration> = None;
-    let mut max_altitude: Meters<f64> = 0.0.with_units();
 
     let mut desired_mode = None;
 
@@ -247,6 +256,72 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         //Add a Kalman filter function here
         //state.nominal = kalman_filter(&mut self, &prev_reading);
 
+        //info!("Calculate barometric altitude");
+        let fresh_altitude = if let Ok(pressure) = sirin.data.baro.pressure {
+            let measured_altitude = approx_pressure_altitude(pressure.convert());
+            state.altitude = measured_altitude - initial_altitude;
+            Some(state.altitude)
+        } else {
+            None
+        };
+        //info!("Altitude calculated");
+
+        let accel_mag_squared = if let Ok(accel) = &sirin.data.imu.accel {
+            let x_f64: MicroGs<f64> = (accel.x.value as f64).with_units();
+            let x: Gs<f64> = x_f64.convert();
+            let y_f64: MicroGs<f64> = (accel.y.value as f64).with_units();
+            let y: Gs<f64> = y_f64.convert();
+            let z_f64: MicroGs<f64> = (accel.z.value as f64).with_units();
+            let z: Gs<f64> = z_f64.convert();
+            Some((x * x + y * y + z * z).value)
+        } else {
+            None
+        };
+
+        //Standby -> Flight -> Descent -> Landed
+        let update = detector.update(FlightInput {
+            now_ms: Instant::now().as_millis(),
+            altitude: fresh_altitude,
+            accel_squared: accel_mag_squared,
+            requested_mode: desired_mode.take(),
+        });
+        state.mode = detector.mode();
+        state.apogee = detector.apogee();
+
+        if let Some(mode) = update.new_mode {
+            info!("Entered {} mode", Debug2Format(&mode));
+            match mode {
+                //In the air: LED on, log to flash
+                SirinMode::Flight | SirinMode::Descent => {
+                    sirin.led.set_high();
+                    FLASH_LOGGING_ENABLED.store(true, Ordering::Relaxed);
+                }
+                //On the ground: LED off, stop logging
+                SirinMode::Standby | SirinMode::Landed => {
+                    sirin.led.set_low();
+                    FLASH_LOGGING_ENABLED.store(false, Ordering::Relaxed);
+                }
+            }
+        }
+
+        //Apogee detected (after the timeout): deploy apo parachute
+        if update.deploy_apo {
+            Sirin::deploy_chute_apo(&mut sirin.parachute_apo);
+            OUT_CHANNEL.publish_immediate(IoPacket::new(
+                IoChannel::Flash,
+                OutPacket::DeployedApoAt(sirin.data.time.value)
+            ));
+        }
+
+        //Descending below the main deployment altitude: deploy main parachute
+        if update.deploy_main {
+            Sirin::deploy_chute_main(&mut sirin.parachute_main);
+            OUT_CHANNEL.publish_immediate(IoPacket::new(
+                IoChannel::Flash,
+                OutPacket::DeployedMainAt(sirin.data.time.value)
+            ));
+        }
+
         //Calculate DataState
         let datastate = SirinDataState{
             data: sirin.data.clone(),
@@ -259,120 +334,16 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             rot_quaternion: state.nominal.rot_quaternion.clone()
         };
 
-        //info!("Calculate barometric altitude");
-        if let Ok(pressure) = sirin.data.baro.pressure {
-            let measured_altitude = approx_pressure_altitude(pressure.convert());
-            state.altitude = measured_altitude - initial_altitude;
-            if state.altitude.value > max_altitude.value {
-                max_altitude = state.altitude;
-            }
-        }
-        //info!("Altitude calculated");
-
-        let accel_mag_squared = if let Ok(accel) = &sirin.data.imu.accel {
-            let x_f64: MicroGs<f64> = (accel.x.value as f64).with_units();
-            let x: Gs<f64> = x_f64.convert();
-            let y_f64: MicroGs<f64> = (accel.y.value as f64).with_units();
-            let y: Gs<f64> = y_f64.convert();
-            let z_f64: MicroGs<f64> = (accel.z.value as f64).with_units();
-            let z: Gs<f64> = z_f64.convert();
-            Some(x * x + y * y + z * z)
-        } else {
-            None
-        };
-
-        match state.mode {
-            SirinMode::Standby => {
-                if state.altitude.value > altitude_threshold
-                    || accel_mag_squared.is_some_and(|accel| accel.value > accel_threshold.value)
-                    || desired_mode == Some(SirinMode::Flight)
-                {
-                    sirin.led.set_high();
-                    state.mode = SirinMode::Flight;
-                    info!("Entered flight mode...");
-                    FLASH_LOGGING_ENABLED.store(true, Ordering::Relaxed);
-                    launched_at = Some(Instant::now());
-                }
-            },
-            SirinMode::Flight => {
-                //Log a DataState packet every 100 milliseconds
-                OUT_CHANNEL.publish_immediate(IoPacket::new(
-                    IoChannel::Flash, OutPacket::LogEntry(
-                        LogEntry::new(
-                            sirin.data.time,
-                            Log::DataState(datastate.clone())
-                        )
+        //Log a DataState packet every 100 milliseconds while in the air
+        if state.mode.is_airborne() {
+            OUT_CHANNEL.publish_immediate(IoPacket::new(
+                IoChannel::Flash, OutPacket::LogEntry(
+                    LogEntry::new(
+                        sirin.data.time,
+                        Log::DataState(datastate.clone())
                     )
-                ));
-
-                /*OUT_CHANNEL.publish_immediate(IoPacket::new(
-                    IoChannel::Flash, OutPacket::LogEntry(
-                        LogEntry::new(
-                            sirin.data.time,
-                            Log::State(state.clone())
-                        )
-                    )
-                ));*/
-
-                //Check apogee, deploy apo parachute
-                if let None = state.apogee {
-                    if max_altitude.value > state.altitude.value + apogee_error{
-                        state.apogee = Some(max_altitude);
-                        match dur{
-                            Some(duration) => {
-                                if duration > Duration::from_secs(timeout){
-                                    if !apo_deployed{
-                                        //Timer::after_millis(1000).await;
-                                        Sirin::deploy_chute_apo(&mut sirin.parachute_apo);
-                                        OUT_CHANNEL.publish_immediate(IoPacket::new(
-                                        IoChannel::Flash, 
-                                        OutPacket::DeployedApoAt(sirin.data.time.value)
-                                        ));
-                                        apo_deployed = true;
-                                    }
-                                }
-                            },
-                            None => {}
-                        }
-                    }
-                }
-
-                //Deploy main parachute
-                if state.apogee.is_some() {
-                    if state.altitude.value < main_deployment_altitude {
-                        if !main_deployed {
-                            Sirin::deploy_chute_main(&mut sirin.parachute_main);
-                            OUT_CHANNEL.publish_immediate(IoPacket::new(
-                    IoChannel::Flash, OutPacket::DeployedMainAt(sirin.data.time.value)
-                            ));
-                            main_deployed = true;
-                        }
-                    }
-                }
-
-                //Timeout after designated time
-                if let Some(launched_at) = launched_at {
-                    dur = Some(Instant::now() - launched_at);
-                    if dur.unwrap() > Duration::from_secs(flight_duration) {
-                        desired_mode = Some(SirinMode::Landed);
-                        info!("Exiting flight mode...");
-                    }
-                }
-
-                if desired_mode == Some(SirinMode::Landed) {
-                    sirin.led.set_low();
-                    state.mode = SirinMode::Landed;
-                    FLASH_LOGGING_ENABLED.store(false, Ordering::Relaxed);
-                }
-            },
-            SirinMode::Landed => {
-                
-            }
-        }
-
-        if let Some(mode) = desired_mode {
-            state.mode = mode;
-            desired_mode = None;
+                )
+            ));
         }
 
         //info!("Broadcast");
