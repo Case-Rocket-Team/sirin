@@ -19,9 +19,8 @@ use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Chann
 use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
 use nalgebra as na;
-
-mod config;
 use na::{Matrix3, Matrix6, Vector3, UnitQuaternion, Rotation3};
+mod config;
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
     core::mem::transmute(item)
@@ -58,13 +57,14 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 
 async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     //println!("Time since epoch: {}", duration_since_epoch().unwrap());
+    
     // Flight parameters live in config.rs
-    let accel_threshold: Gs<f64> = config::ACCEL_THRESHOLD_GS_SQUARED.with_units(); //In Gs squared
-    let altitude_threshold = config::ALTITUDE_THRESHOLD_M; //In meters
-    let main_deployment_altitude = config::MAIN_DEPLOYMENT_ALTITUDE_M; //In meters
-    let flight_duration = config::FLIGHT_DURATION_S; //In seconds
-    let apogee_error = config::APOGEE_ERROR_M; //In meters
-    let timeout = config::APOGEE_TIMEOUT_S; //In seconds
+    let accel_threshold: Gs<f64> = config::ACCEL_THRESHOLD_GS_SQUARED.with_units(); 
+    let altitude_threshold = config::ALTITUDE_THRESHOLD_M; 
+    let main_deployment_altitude = config::MAIN_DEPLOYMENT_ALTITUDE_M; 
+    let flight_duration = config::FLIGHT_DURATION_S; 
+    let apogee_error = config::APOGEE_ERROR_M; 
+    let timeout = config::APOGEE_TIMEOUT_S; 
 
     let mut apo_deployed = false;
     let mut main_deployed = false;
