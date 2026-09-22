@@ -9,4 +9,5 @@ pub enum SirinMode {
     Standby,
     Flight,
     Landed,
+    Descent,
 }
