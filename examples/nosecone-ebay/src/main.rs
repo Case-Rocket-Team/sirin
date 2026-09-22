@@ -335,7 +335,52 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                             None => {}
                         }
                     }
+
+                    state.mode=SirinMode::Descent;
+                    info!("Exiting flight mode...");
+                    info!("Entered descent mode...");
                 }
+
+                //Deploy main parachute
+                // if state.apogee.is_some() {
+                //     if state.altitude.value < main_deployment_altitude {
+                //         if !main_deployed {
+                //             Sirin::deploy_chute_main(&mut sirin.parachute_main);
+                //             OUT_CHANNEL.publish_immediate(IoPacket::new(
+                //     IoChannel::Flash, OutPacket::DeployedMainAt(sirin.data.time.value)
+                //             ));
+                //             main_deployed = true;
+                //         }
+                //     }
+                // }
+
+                //Timeout after designated time
+                // if let Some(launched_at) = launched_at {
+                //     dur = Some(Instant::now() - launched_at);
+                //     if dur.unwrap() > Duration::from_secs(flight_duration) {
+                //         desired_mode = Some(SirinMode::Landed);
+                //         info!("Exiting flight mode...");
+                //     }
+                // }
+
+                // if desired_mode == Some(SirinMode::Landed) {
+                //     sirin.led.set_low();
+                //     state.mode = SirinMode::Landed;
+                //     FLASH_LOGGING_ENABLED.store(false, Ordering::Relaxed);
+                // }
+            },
+            SirinMode::Descent => {
+                // Maintain active flight duration update
+                dur = launched_at.map(|t| Instant::now() - t);
+
+                // Log DataState packet during descent
+                OUT_CHANNEL.publish_immediate(IoPacket::new(
+                    IoChannel::Flash,
+                    OutPacket::LogEntry(LogEntry::new(
+                        sirin.data.time,
+                        Log::DataState(datastate.clone()),
+                    )),
+                ));
 
                 //Deploy main parachute
                 if state.apogee.is_some() {
@@ -349,13 +394,12 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                         }
                     }
                 }
-
                 //Timeout after designated time
                 if let Some(launched_at) = launched_at {
                     dur = Some(Instant::now() - launched_at);
                     if dur.unwrap() > Duration::from_secs(flight_duration) {
                         desired_mode = Some(SirinMode::Landed);
-                        info!("Exiting flight mode...");
+                        info!("Exiting descent mode...");
                     }
                 }
 
@@ -364,9 +408,10 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     state.mode = SirinMode::Landed;
                     FLASH_LOGGING_ENABLED.store(false, Ordering::Relaxed);
                 }
+                
             },
             SirinMode::Landed => {
-                
+                info!("In landed mode");
             }
         }
 
