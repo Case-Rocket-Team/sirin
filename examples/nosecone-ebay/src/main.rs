@@ -220,14 +220,16 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     let mut flash = flash.lock().await;
                     info!("Starting chip erase...");
                     flash.w25q.chip_erase().await?;
+                    embassy_time::Timer::after_millis(50).await;
                     info!("Waiting until flash is ready...");
                     flash.w25q.until_ready().await?;
                     info!("Finished chip erase.");
+
                     send_packet(io_packet.reply(OutPacket::Ok));
 
                     Timer::after_millis(500).await;
 
-                    panic!("Reboot");
+                    Sirin::reboot();
                 }
             }
 
@@ -293,6 +295,16 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     FLASH_LOGGING_ENABLED.store(true, Ordering::Relaxed);
                     launched_at = Some(Instant::now());
                 }
+                /*if i % 50 == 0 {
+                    OUT_CHANNEL.publish_immediate(IoPacket::new(
+                        IoChannel::ToLoRa,
+                        OutPacket::LogEntry(LogEntry::new(
+                            sirin.data.time,
+                            Log::Data(sirin.data.clone())
+                        ))
+                    ));
+                }*/
+                
             },
             SirinMode::Flight => {
                 //Log a DataState packet every 100 milliseconds
@@ -304,6 +316,16 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                         )
                     )
                 ));
+               
+                /*if i % 2.5 == 0 {
+                    OUT_CHANNEL.publish_immediate(IoPacket::new(
+                        IoChannel::ToLoRa,
+                        OutPacket::LogEntry(LogEntry::new(
+                            sirin.data.time,
+                            Log::Data(sirin.data.clone())
+                        ))
+                    ));
+                }*/
 
                 /*OUT_CHANNEL.publish_immediate(IoPacket::new(
                     IoChannel::Flash, OutPacket::LogEntry(
@@ -366,7 +388,15 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 }
             },
             SirinMode::Landed => {
-                
+                /*if i % 300 == 0 {
+                    OUT_CHANNEL.publish_immediate(IoPacket::new(
+                        IoChannel::ToLoRa,
+                        OutPacket::LogEntry(LogEntry::new(
+                            sirin.data.time,
+                            Log::Data(sirin.data.clone())
+                        ))
+                    ));
+                }*/
             }
         }
 
