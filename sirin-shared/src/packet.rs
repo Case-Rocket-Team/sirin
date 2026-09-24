@@ -80,7 +80,7 @@ impl <const SIZE: usize> ByteArrayStr for [u8; SIZE] {
 pub enum OutPacket {
     Null,
     Ok,
-    //Error(PacketError),
+    Error(PacketError),
     Config(SirinConfig),
     Mode(SirinMode),
     FlightStart(u8),
@@ -319,8 +319,8 @@ pub enum Log {
     Data(SirinData),
     DataState(SirinDataState),
     BarometricAltitude(Meters<f64>),
-    TrackMe(TrackMe)
-    //GpsNmea([u8; 200])
+    TrackMe(TrackMe),
+    GpsNmea([u8; 200])
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
