@@ -977,7 +977,7 @@ impl <S: SpiHandle> Lsm6dsv32x<S> {
                (accel_x, accel_y, accel_z)
           })
      }
-
+     
      #[allow(unused_unsafe)]
      pub async fn raw_gyro(&mut self) -> Result<(i16, i16, i16), <S::Bus as ErrorType>::Error> {
           Ok(unsafe {
@@ -1020,34 +1020,42 @@ impl <S: SpiHandle> Lsm6dsv32x<S> {
      }
      
      pub async fn gyro_sensitivity(&mut self) -> Result<i32, <S::Bus as ErrorType>::Error> {
-          let mask = 0b0000_11_00;
-          let reg = self.read_reg(RegCtrl2).await?; 
-          let real_val = (reg & mask) >> 2;
+          let mask = 0b0000_1111;
+          let reg = self.read_reg(CTRL6).await?; 
+          let real_val = (reg & mask);
           Ok(
           match real_val {
-               0 => 250,
-               1 => 500,
-               2 => 1000,
-               3 => 2000,
-               _ => unreachable!()
+               0 => 125,
+               1 => 250,
+               2 => 500,
+               3 => 1000,
+               4 => 2000,
+               5 => 4000,
+               _ => 125,
           })
      }
-     /// 0 = 250dps, 1 = 500dps, 2 = 1000dps, 3 = 2000dps
-     pub async fn set_gyro_sensitivity(&mut self, new_fs: u8) -> Result<u8, <S::Bus as ErrorType>::Error> {
-          let gyro_mode = self.read_reg(RegCtrl2G).await?;
-          let mask = 0b1111_00_11;
-
-          let new_bits = match new_fs {
-               0 => 0b0000_00_00,
-               1 => 0b0000_01_00,
-               2 => 0b0000_10_00,
-               3 => 0b0000_11_00,
-               _ => 0b0000_00_00
+     /// 0 = 125dps, 1 = 250dps, 2 = 500dps, 3 = 1000dps, 4 = 2000dps, 5 = 4000dps
+     pub async fn set_gyro_sensitivity(&mut self, dps: i32) -> Result<(), <S::Bus as ErrorType>::Error> {
+          let val: u8 = match dps {
+               125  => 0b0000,
+               250  => 0b0001,
+               500  => 0b0010,
+               1000 => 0b0011,
+               2000 => 0b0100,
+               4000 => 0b0101,
+               _ => return Ok(()), // Or return a custom driver error for invalid input
           };
 
-          self.write_reg(RegCtrl2G, gyro_mode & mask | new_bits as u8).await?;
-          Ok(new_bits >> 2)
+          let mask = 0b1111_0000; // FS_G[3:0] field mask
+          let reg = self.read_reg(RegCtrl6).await?;
+          
+          // Clear the existing FS_G bits, then set the new value
+          let new_reg = (reg & !mask) | (val << 4);
+
+          self.write_reg(RegCtrl6, new_reg).await
      }
+
+     
      pub async fn test_fs(&mut self) -> Result<u8, <S::Bus as ErrorType>::Error> {
           Ok(self.accel_fs().await?)
      }
@@ -1146,7 +1154,7 @@ impl <S: SpiHandle> ReadLsm6dsv32x for Lsm6dsv32x<S> {
     }
 }
 
-impl <S: SpiHandle> WriteLsm6dsv32x for Lsm6dsv32x<S> {
+impl <S: SpiHandle> WriteLsm6dsv32x  for Lsm6dsv32x<S> {
     type Error = <S::Bus as ErrorType>::Error;
 
     async fn write_contiguous_regs(
@@ -1158,7 +1166,7 @@ impl <S: SpiHandle> WriteLsm6dsv32x for Lsm6dsv32x<S> {
 
         let addr: u8 = addr.as_addr() & 0b0111_1111;
 
-        bus.write(&[addr.as_addr()]).await?;
+        bus.write(&[addr]).await?;
         bus.write(values).await?;
 
         Ok(())
