@@ -951,14 +951,19 @@ impl <S: SpiHandle> Lsm6dsv32x<S> {
     ) -> Result<(),<S::Bus as ErrorType>::Error> {
           //Use this function to perform initial setup of the IMU.
 
-          // 1010: 6.66kHz ODR
-          // 01: +-32g FS
-          // 0: output from first stage digital filtering selected
-          self.write_reg(RegCtrl1Xl, 0b1010_01_0_0 as u8).await?;
-          // 1010: 6.66kHz ODR
-          // 00: +-250dps FS
-          // 0: not +-125dps
-          self.write_reg(RegCtrl2G, 0b1010_00_0_0).await?;
+          // Accelerometer setup
+          // 000: high performance mode
+          // 1100: 7.68 kHz ODR
+          self.write_reg(RegCtrl1, 0b0_000_1100 as u8).await?;
+          // 11: +- 32g FS
+          self.write_reg(RegCtrl8, 0b000_0_0_1_11 as u8).await?;
+
+          // Gyroscope setup
+          // 000: high performance mode
+          // 1100: 7.68 kHz ODR
+          self.write_reg(RegCtrl2, 0b0_000_1100 as u8).await?;
+          // 0001: +-250dps FS
+          self.write_reg(RegCtrl6, 0b0_000_0001 as u8).await?;
           Ok(())    
     }
 
@@ -985,9 +990,9 @@ impl <S: SpiHandle> Lsm6dsv32x<S> {
      }
 
      pub async fn accel_sensitivity(&mut self) -> Result<i32, <S::Bus as ErrorType>::Error> {
-          let mask = 0b0000_11_00;
-          let reg = self.read_reg(RegCtrl1Xl).await?; 
-          let real_val = (reg & mask) >> 2;
+          let mask = 0b0000_00_11;
+          let reg = self.read_reg(RegCtrl8).await?; 
+          let real_val = reg & mask;
           Ok(
           match real_val {
                0 => 4,
@@ -999,24 +1004,24 @@ impl <S: SpiHandle> Lsm6dsv32x<S> {
      }
      /// 0 = 4g, 1 = 8g, 2 = 16g, 3 = 32g
      pub async fn set_accel_sensitivity(&mut self, new_fs: u8) -> Result<u8, <S::Bus as ErrorType>::Error> {
-          let accel_mode = self.read_reg(RegCtrl1Xl).await?;
-          let mask = 0b1111_00_11;
+          let accel_mode = self.read_reg(RegCtrl8).await?;
+          let mask = 0b1111_1100;
 
           let new_bits = match new_fs {
                0 => 0b0000_00_00,
-               1 => 0b0000_10_00,
-               2 => 0b0000_11_00,
-               3 => 0b0000_01_00,
+               1 => 0b0000_00_01,
+               2 => 0b0000_00_10,
+               3 => 0b0000_00_11,
                _ => 0b0000_00_00
           };
 
-          self.write_reg(RegCtrl1Xl, accel_mode & mask | new_bits as u8).await?;
+          self.write_reg(RegCtrl8, accel_mode & mask | new_bits as u8).await?;
           Ok(new_bits >> 2)
      }
      
      pub async fn gyro_sensitivity(&mut self) -> Result<i32, <S::Bus as ErrorType>::Error> {
           let mask = 0b0000_11_00;
-          let reg = self.read_reg(RegCtrl2G).await?; 
+          let reg = self.read_reg(RegCtrl2).await?; 
           let real_val = (reg & mask) >> 2;
           Ok(
           match real_val {
@@ -1119,7 +1124,7 @@ impl <S: SpiHandle> Lsm6dsv32x<S> {
 }
 
 
-impl <S: SpiHandle> ReadLsm6dso for Lsm6dso<S> {
+impl <S: SpiHandle> ReadLsm6dsv32x for Lsm6dsv32x<S> {
     type Error = <S::Bus as ErrorType>::Error;
 
     async fn read_contiguous_regs(
@@ -1141,7 +1146,7 @@ impl <S: SpiHandle> ReadLsm6dso for Lsm6dso<S> {
     }
 }
 
-impl <S: SpiHandle> WriteLsm6dso for Lsm6dso<S> {
+impl <S: SpiHandle> WriteLsm6dsv32x for Lsm6dsv32x<S> {
     type Error = <S::Bus as ErrorType>::Error;
 
     async fn write_contiguous_regs(
