@@ -20,6 +20,7 @@ use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::Abs
 use sirin::song::SongDiscriminant;
 use nalgebra as na;
 use na::{Matrix3, Matrix6, Vector3, UnitQuaternion, Rotation3};
+mod config;
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
     core::mem::transmute(item)
@@ -56,25 +57,14 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 
 async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     //println!("Time since epoch: {}", duration_since_epoch().unwrap());
-    /*
-
-    FOR IREC ROCKET - CHECK TO ENSURE THESE VALUES ARE CODED:
-    DO NOT PUSH CODE WITH THESE VALUES SIGNIFICANTLY CHANGED
-    accel_threshold = 10G * 10G
-    altitude_threshold = 20m
-    main_deployment_altitude = 457.2m (1500ft)
-    flight_duration = 600s
-    apogee_error = 1m
-    timeout = 25s
-
-     */
-
-    let accel_threshold: Gs<f64> = (10.0 * 10.0).with_units(); //In Gs squared
-    let altitude_threshold = 20.0; //In meters
-    let main_deployment_altitude= 457.2; //In meters
-    let flight_duration = 1000; //In seconds
-    let apogee_error = 4.0; //In meters
-    let timeout = 25; //In seconds
+    
+    // Flight parameters live in config.rs
+    let accel_threshold: Gs<f64> = config::ACCEL_THRESHOLD_GS_SQUARED.with_units(); 
+    let altitude_threshold = config::ALTITUDE_THRESHOLD_M; 
+    let main_deployment_altitude = config::MAIN_DEPLOYMENT_ALTITUDE_M; 
+    let flight_duration = config::FLIGHT_DURATION_S; 
+    let apogee_error = config::APOGEE_ERROR_M; 
+    let timeout = config::APOGEE_TIMEOUT_S; 
 
     let mut apo_deployed = false;
     let mut main_deployed = false;
@@ -220,14 +210,16 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     let mut flash = flash.lock().await;
                     info!("Starting chip erase...");
                     flash.w25q.chip_erase().await?;
+                    embassy_time::Timer::after_millis(50).await;
                     info!("Waiting until flash is ready...");
                     flash.w25q.until_ready().await?;
                     info!("Finished chip erase.");
+
                     send_packet(io_packet.reply(OutPacket::Ok));
 
                     Timer::after_millis(500).await;
 
-                    panic!("Reboot");
+                    Sirin::reboot();
                 }
             }
 
@@ -293,6 +285,16 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     FLASH_LOGGING_ENABLED.store(true, Ordering::Relaxed);
                     launched_at = Some(Instant::now());
                 }
+                /*if i % 50 == 0 {
+                    OUT_CHANNEL.publish_immediate(IoPacket::new(
+                        IoChannel::ToLoRa,
+                        OutPacket::LogEntry(LogEntry::new(
+                            sirin.data.time,
+                            Log::Data(sirin.data.clone())
+                        ))
+                    ));
+                }*/
+                
             },
             SirinMode::Flight => {
                 //Log a DataState packet every 100 milliseconds
@@ -304,6 +306,16 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                         )
                     )
                 ));
+               
+                /*if i % 2.5 == 0 {
+                    OUT_CHANNEL.publish_immediate(IoPacket::new(
+                        IoChannel::ToLoRa,
+                        OutPacket::LogEntry(LogEntry::new(
+                            sirin.data.time,
+                            Log::Data(sirin.data.clone())
+                        ))
+                    ));
+                }*/
 
                 /*OUT_CHANNEL.publish_immediate(IoPacket::new(
                     IoChannel::Flash, OutPacket::LogEntry(
@@ -412,6 +424,15 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             },
             SirinMode::Landed => {
                 info!("In landed mode");
+                /*if i % 300 == 0 {
+                    OUT_CHANNEL.publish_immediate(IoPacket::new(
+                        IoChannel::ToLoRa,
+                        OutPacket::LogEntry(LogEntry::new(
+                            sirin.data.time,
+                            Log::Data(sirin.data.clone())
+                        ))
+                    ));
+                }*/
             }
         }
 
