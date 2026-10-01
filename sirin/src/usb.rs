@@ -86,8 +86,8 @@ pub unsafe fn setup_usb(
 
     // Data endpoint
     let mut alt = iface.alt_setting(USB_CLASS, USB_SUBCLASS, USB_PROTOCOL, None);
-    let ep_in = alt.endpoint_bulk_in(MAX_OUT_PACKET_SIZE as u16);
-    let ep_out = alt.endpoint_bulk_out(MAX_OUT_PACKET_SIZE as u16);
+    let ep_in = alt.endpoint_bulk_in(64);
+    let ep_out = alt.endpoint_bulk_out(64);
     
     drop(func);
 
