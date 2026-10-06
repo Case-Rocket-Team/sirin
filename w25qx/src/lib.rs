@@ -171,7 +171,15 @@ impl <S: SpiHandle> W25Q<S>{
         Ok(())
     }
 
+    pub async fn clear_protection(&mut self) -> Result<(), ErrorKind> {
+        self.write_enable().await?;
+        let mut spi = self.spi.select().await;
+        spi.write(&[0x01, 0x00]).await?;
+        Ok(())
+    }
+
     pub async fn chip_erase(&mut self) -> Result<(), ErrorKind> {
+        self.clear_protection().await?;
         self.prepare_write().await?;
         
         let mut spi = self.spi.select().await;
@@ -179,6 +187,7 @@ impl <S: SpiHandle> W25Q<S>{
 
         Ok(())
     }
+
 
     pub async fn erase_64kb_block(&mut self, addr:u32) -> Result<(), ErrorKind>{
         let mut spi = self.spi.select().await;
