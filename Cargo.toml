@@ -27,7 +27,7 @@ members = [
     "examples/any-test",
     "examples/mag-calibrate",
     "examples/allan-variance"
-]
+, "extended-kalman"]
 resolver = "2"
 
 [profile.dev]
