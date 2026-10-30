@@ -19,7 +19,7 @@ use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Chann
 use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
 use nalgebra as na;
-use na::{Matrix3, Matrix6, Vector3, UnitQuaternion, Rotation3};
+use na::{Matrix3, Matrix6, Vector3, UnitQuaternion, Rotation3, ComplexField};
 mod config;
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
@@ -82,7 +82,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         altitude_array[i] = altitude.value;
         Timer::after_millis(25).await;
     }
-    
     altitude_array.sort_unstable_by(|a, b | a.partial_cmp(b).unwrap());
     let initial_altitude = altitude_array[50].with_units();
     info!("Initial altitude: {}", initial_altitude.value);
@@ -100,19 +99,16 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
     info!("Start main");
 
-    //Update the loop every 500 ms
-    let mut ticker = Ticker::every(Duration::from_millis(100));
+    let mut ticker = Ticker::every(Duration::from_millis((1000.0 / config::LOOP_RATE_HZ) as u64));
 
     let mut launched_at = None;
     let mut dur: Option<Duration> = None;
     let mut max_altitude: Meters<f64> = 0.0.with_units();
-
     let mut desired_mode = None;
-
-    let mut i = 0;
+    let mut ticks_since_broadcast: u32 = 0;
+    let mut usb_ticks_since_broadcast: u32 = 0;
 
     loop {
-        i += 1;
         //info!("Handle input packets");
         while let Ok(io_packet) = try_receive_packet() {
             info!("Received packet: {:?}", Debug2Format(&io_packet));
@@ -285,16 +281,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     FLASH_LOGGING_ENABLED.store(true, Ordering::Relaxed);
                     launched_at = Some(Instant::now());
                 }
-                /*if i % 50 == 0 {
-                    OUT_CHANNEL.publish_immediate(IoPacket::new(
-                        IoChannel::ToLoRa,
-                        OutPacket::LogEntry(LogEntry::new(
-                            sirin.data.time,
-                            Log::Data(sirin.data.clone())
-                        ))
-                    ));
-                }*/
-                
             },
             SirinMode::Flight => {
                 //Log a DataState packet every 100 milliseconds
@@ -306,25 +292,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                         )
                     )
                 ));
-               
-                /*if i % 2.5 == 0 {
-                    OUT_CHANNEL.publish_immediate(IoPacket::new(
-                        IoChannel::ToLoRa,
-                        OutPacket::LogEntry(LogEntry::new(
-                            sirin.data.time,
-                            Log::Data(sirin.data.clone())
-                        ))
-                    ));
-                }*/
-
-                /*OUT_CHANNEL.publish_immediate(IoPacket::new(
-                    IoChannel::Flash, OutPacket::LogEntry(
-                        LogEntry::new(
-                            sirin.data.time,
-                            Log::State(state.clone())
-                        )
-                    )
-                ));*/
 
                 //Check apogee, deploy apo parachute
                 if let None = state.apogee {
@@ -352,34 +319,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     info!("Exiting flight mode...");
                     info!("Entered descent mode...");
                 }
-
-                //Deploy main parachute
-                // if state.apogee.is_some() {
-                //     if state.altitude.value < main_deployment_altitude {
-                //         if !main_deployed {
-                //             Sirin::deploy_chute_main(&mut sirin.parachute_main);
-                //             OUT_CHANNEL.publish_immediate(IoPacket::new(
-                //     IoChannel::Flash, OutPacket::DeployedMainAt(sirin.data.time.value)
-                //             ));
-                //             main_deployed = true;
-                //         }
-                //     }
-                // }
-
-                //Timeout after designated time
-                // if let Some(launched_at) = launched_at {
-                //     dur = Some(Instant::now() - launched_at);
-                //     if dur.unwrap() > Duration::from_secs(flight_duration) {
-                //         desired_mode = Some(SirinMode::Landed);
-                //         info!("Exiting flight mode...");
-                //     }
-                // }
-
-                // if desired_mode == Some(SirinMode::Landed) {
-                //     sirin.led.set_low();
-                //     state.mode = SirinMode::Landed;
-                //     FLASH_LOGGING_ENABLED.store(false, Ordering::Relaxed);
-                // }
             },
             SirinMode::Descent => {
                 // Maintain active flight duration update
@@ -406,12 +345,20 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                         }
                     }
                 }
-                //Timeout after designated time
+
+                //Timeout once velocity falls below threshold
+                //TODO! MAKE THIS CODE NOT CAUSE A TIMEOUT WHEN VELOCITY CANNOT BE CALCULATED
+                let total_vel: f64 = (state.nominal.vel.x.powf(2.0) + state.nominal.vel.y.value.powf(2.0) + state.nominal.vel.z.powf(2.0)).sqrt() as f64;
+                if total_vel < config::LANDED_VELOCITY_THRESHOLD_M_S {
+                    desired_mode = Some(SirinMode::Landed);
+                    info!("Exiting descent mode...");
+                }
+
                 if let Some(launched_at) = launched_at {
                     dur = Some(Instant::now() - launched_at);
-                    if dur.unwrap() > Duration::from_secs(flight_duration) {
+                    if dur.unwrap() > Duration::from_secs(config::FLIGHT_TIMEOUT_S) {
                         desired_mode = Some(SirinMode::Landed);
-                        info!("Exiting descent mode...");
+                        info!("Flight duration exceeded, exiting descent mode...");
                     }
                 }
 
@@ -424,15 +371,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             },
             SirinMode::Landed => {
                 info!("In landed mode");
-                /*if i % 300 == 0 {
-                    OUT_CHANNEL.publish_immediate(IoPacket::new(
-                        IoChannel::ToLoRa,
-                        OutPacket::LogEntry(LogEntry::new(
-                            sirin.data.time,
-                            Log::Data(sirin.data.clone())
-                        ))
-                    ));
-                }*/
             }
         }
 
@@ -446,22 +384,29 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         //broadcast_log(sirin.data.time, Log::Data(sirin.data.clone()));
         //broadcast_log(sirin.data.time, Log::State(state.clone()));
 
-        //TODO: Make State now exceed the MAX_OUTPACKET_SIZE
-        OUT_CHANNEL.publish_immediate(IoPacket::new(
-            IoChannel::Usb, OutPacket::LogEntry(LogEntry::new(
-                sirin.data.time,
-                Log::DataState(datastate.clone())
-            ))
-        ));
+        //Broadcast over USB at the rate set in config
+        usb_ticks_since_broadcast += 1;
+        if usb_ticks_since_broadcast >= period_ticks(config::USB_BROADCAST_HZ) {
+            usb_ticks_since_broadcast = 0;
+            OUT_CHANNEL.publish_immediate(IoPacket::new(
+                IoChannel::Usb, OutPacket::LogEntry(LogEntry::new(
+                    sirin.data.time,
+                    Log::DataState(datastate.clone())
+                ))
+            ));
+        }
 
-        /* 
-        OUT_CHANNEL.publish_immediate(IoPacket::new(
-            IoChannel::Usb, OutPacket::LogEntry(LogEntry::new(
-                sirin.data.time,
-                Log::Data(sirin.data.clone())
-            ))
-        ));
-        */
+        //Broadcast over LoRa at the rate set for the current mode
+        ticks_since_broadcast += 1;
+        if ticks_since_broadcast >= period_ticks(broadcast_rate_hz(state.mode)) {
+            ticks_since_broadcast = 0;
+            OUT_CHANNEL.publish_immediate(IoPacket::new(
+                IoChannel::ToLoRa, OutPacket::LogEntry(LogEntry::new(
+                    sirin.data.time,
+                    Log::DataState(datastate.clone())
+                ))
+            ));
+        }
 
         //info!("Try get GPS fix");
         if let Some(fix) = GPS_FIX.try_take() {
@@ -469,36 +414,21 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 state.gps_fix = fix;
             //}
         }
-
-        //Alternates sending State and Data packets every half second
-        //buffer overflow error, this is me trying to mitigate it since there is no time to 
-        //info!("Transmit data");
-        /*
-        if i % 5 == 0  {
-            OUT_CHANNEL.publish_immediate(IoPacket::new(
-                IoChannel::ToLoRa, OutPacket::LogEntry(LogEntry::new(
-                    sirin.data.time,
-                    Log::DataState(datastate)
-                ))
-            ));
-            //println!("State broadcasted!");
-        }
-        */
-
-        /* Uncomment if you ever want to broadcast raw data over LoRa for whatever reason
-        if i % 5 == 0{
-            OUT_CHANNEL.publish_immediate(IoPacket::new(
-                IoChannel::ToLoRa, OutPacket::LogEntry(LogEntry::new(
-                    sirin.data.time,
-                    Log::Data(sirin.data.clone())
-                ))
-            ));
-            //println!("Data broadcasted!");
-        }
-        */
-
-
-        //info!("Final state altitude: {}", state.altitude.value);
-        //info!("Done with GPS");
     }
+}
+
+/// Broadcast rate for each flight mode (Hz)
+fn broadcast_rate_hz(mode: SirinMode) -> f64 {
+    match mode {
+        SirinMode::Standby => config::STANDBY_BROADCAST_HZ,
+        SirinMode::Flight => config::FLIGHT_BROADCAST_HZ,
+        SirinMode::Descent => config::DESCENT_BROADCAST_HZ,
+        SirinMode::Landed => config::LANDED_BROADCAST_HZ,
+    }
+}
+
+/// Loop ticks between broadcasts at `rate_hz`. Rates at or above the loop rate broadcast every tick.
+fn period_ticks(rate_hz: f64) -> u32 {
+    let ticks = config::LOOP_RATE_HZ / rate_hz;
+    ((ticks + 0.5) as u32).max(1)
 }
