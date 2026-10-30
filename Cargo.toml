@@ -13,7 +13,6 @@ members = [
     "w25qx",
     "sirin-c",
     "sam-m10q",
-    "examples/main",
     "examples/imu-test",
     "examples/bare",
     "examples/h3lis-test",
