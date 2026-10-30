@@ -51,11 +51,27 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 }
 
 async fn main_task(sirin: &'static mut Sirin)  -> Result<(), SirinError> {
-    let mut ticker = Ticker::every(Duration::from_millis(500));
+    let mut ticker = Ticker::every(Duration::from_millis(1000));
+    println!("Starting countdown:");
+    for i in (1..=5).rev() {
+        println!("{}", i);
+        ticker.next().await;
+    }
+    println!("Go!");
+
+    Sirin::deploy_chute_apo(&mut sirin.parachute_apo);
+    println!("Apo opened!");
+    ticker.next().await;
+    //Sirin::close_chute_main(&mut sirin.parachute_main);
+    //println!("Main closed!");
+    
     loop {
+        
         let voltage = Sirin::read_match_voltage(&mut sirin.adc, &mut sirin.pc4)?;
         println!("Voltage across Pin 2: {}", voltage);
 
         ticker.next().await;
+        
+
     }
 }

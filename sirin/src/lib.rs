@@ -143,8 +143,10 @@ impl Sirin {
                 config.rcc.apb2_pre = APBPrescaler::DIV2; // 60 Mhz
                 config.rcc.apb3_pre = APBPrescaler::DIV2; // 60 Mhz
                 config.rcc.apb4_pre = APBPrescaler::DIV2; // 60 Mhz
-                config.rcc.voltage_scale = VoltageScale::Scale1;
+                config.rcc.voltage_scale = VoltageScale::Scale3;
                 config.rcc.mux.usbsel = mux::Usbsel::HSI48;
+                config.rcc.mux.persel = mux::Persel::HSI;
+                config.rcc.mux.adcsel = mux::Adcsel::PER;
             }
 
             //ptr!(sirin.event_channel).write(PubSubChannel::new());
@@ -330,6 +332,10 @@ impl Sirin {
 
     pub fn deploy_chute_main(parachute_main: &mut Output<'static>){
         parachute_main.set_high();
+    }
+
+    pub fn close_chute_main(parachute_main: &mut Output<'static>){
+        parachute_main.set_low();
     }
     
     pub fn deploy_chute_apo(parachute_apo: &mut Output<'static>){
