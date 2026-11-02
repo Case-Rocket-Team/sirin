@@ -14,6 +14,7 @@ pub const FLIGHT_BROADCAST_HZ: f64 = 5.0; //In Hz
 pub const DESCENT_BROADCAST_HZ: f64 = 5.0; //In Hz
 pub const LANDED_BROADCAST_HZ: f64 = 0.025; //In Hz
 pub const LOOP_RATE_HZ: f64 = 10.0; //Main loop rate (100 ms ticker)
-pub const USB_BROADCAST_HZ: f64 = 1.0; //In Hz
+pub const USB_BROADCAST_HZ: f64 = 4.0; //In Hz
+pub const USB_BROADCASTING_ALLOWED: bool = false;
 
 pub const LANDED_VELOCITY_THRESHOLD_M_S: f64 = 0.5; //In meters per second

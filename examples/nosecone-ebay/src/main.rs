@@ -109,6 +109,9 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut usb_ticks_since_broadcast: u32 = 0;
 
     loop {
+        //True only once velocity is successfully calculated
+        let mut velocity_valid = false;
+
         //info!("Handle input packets");
         while let Ok(io_packet) = try_receive_packet() {
             info!("Received packet: {:?}", Debug2Format(&io_packet));
@@ -234,6 +237,8 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         
         //Add a Kalman filter function here
         //state.nominal = kalman_filter(&mut self, &prev_reading);
+        //TODO: Set velocity_valid here based on whether the Kalman filter successfully computes velocity
+        //Necessary so that flight mode does not detect a landing if the Kalman filter fails during descent
 
         //Calculate DataState
         let datastate = SirinDataState{
@@ -347,9 +352,11 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 }
 
                 //Timeout once velocity falls below threshold
-                //TODO! MAKE THIS CODE NOT CAUSE A TIMEOUT WHEN VELOCITY CANNOT BE CALCULATED
                 let total_vel: f64 = (state.nominal.vel.x.powf(2.0) + state.nominal.vel.y.value.powf(2.0) + state.nominal.vel.z.powf(2.0)).sqrt() as f64;
-                if total_vel < config::LANDED_VELOCITY_THRESHOLD_M_S {
+                if velocity_valid
+                    && total_vel.is_finite()
+                    && total_vel < config::LANDED_VELOCITY_THRESHOLD_M_S
+                {
                     desired_mode = Some(SirinMode::Landed);
                     info!("Exiting descent mode...");
                 }
@@ -385,15 +392,17 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         //broadcast_log(sirin.data.time, Log::State(state.clone()));
 
         //Broadcast over USB at the rate set in config
-        usb_ticks_since_broadcast += 1;
-        if usb_ticks_since_broadcast >= period_ticks(config::USB_BROADCAST_HZ) {
-            usb_ticks_since_broadcast = 0;
-            OUT_CHANNEL.publish_immediate(IoPacket::new(
-                IoChannel::Usb, OutPacket::LogEntry(LogEntry::new(
-                    sirin.data.time,
-                    Log::DataState(datastate.clone())
-                ))
-            ));
+        if config::USB_BROADCASTING_ALLOWED{
+            usb_ticks_since_broadcast += 1;
+            if usb_ticks_since_broadcast >= period_ticks(config::USB_BROADCAST_HZ) {
+                usb_ticks_since_broadcast = 0;
+                OUT_CHANNEL.publish_immediate(IoPacket::new(
+                    IoChannel::Usb, OutPacket::LogEntry(LogEntry::new(
+                        sirin.data.time,
+                        Log::DataState(datastate.clone())
+                    ))
+                ));
+            }
         }
 
         //Broadcast over LoRa at the rate set for the current mode
