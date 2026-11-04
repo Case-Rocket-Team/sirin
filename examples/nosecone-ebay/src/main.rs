@@ -107,6 +107,8 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut desired_mode = None;
     let mut ticks_since_broadcast: u32 = 0;
     let mut usb_ticks_since_broadcast: u32 = 0;
+    let mut apogee_check = ThresholdWindow::<{ config::THRESHOLD_WINDOW }>::new();
+    let mut landed_check = ThresholdWindow::<{ config::THRESHOLD_WINDOW }>::new();
 
     loop {
         //True only once velocity is successfully calculated
@@ -298,29 +300,25 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     )
                 ));
 
-                //Check apogee, deploy apo parachute
-                if let None = state.apogee {
-                    if max_altitude.value > state.altitude.value + apogee_error{
-                        state.apogee = Some(max_altitude);
-                        match dur{
-                            Some(duration) => {
-                                if duration > Duration::from_secs(timeout){
-                                    if !apo_deployed{
-                                        //Timer::after_millis(1000).await;
-                                        Sirin::deploy_chute_apo(&mut sirin.parachute_apo);
-                                        OUT_CHANNEL.publish_immediate(IoPacket::new(
-                                        IoChannel::Flash, 
-                                        OutPacket::DeployedApoAt(sirin.data.time.value)
-                                        ));
-                                        apo_deployed = true;
-                                    }
-                                }
-                            },
-                            None => {}
-                        }
+                dur = launched_at.map(|t| Instant::now() - t);
+
+                //Check apogee: altitude must be below the max by apogee_error
+                //for THRESHOLD_REQUIRED of the last THRESHOLD_WINDOW measurements
+                apogee_check.push(max_altitude.value > state.altitude.value + apogee_error);
+                if state.apogee.is_none() && apogee_check.passes(config::THRESHOLD_REQUIRED) {
+                    state.apogee = Some(max_altitude);
+
+                    //Deploy apo parachute
+                    if !apo_deployed && dur.is_some_and(|d| d > Duration::from_secs(timeout)) {
+                        Sirin::deploy_chute_apo(&mut sirin.parachute_apo);
+                        OUT_CHANNEL.publish_immediate(IoPacket::new(
+                            IoChannel::Flash,
+                            OutPacket::DeployedApoAt(sirin.data.time.value)
+                        ));
+                        apo_deployed = true;
                     }
 
-                    state.mode=SirinMode::Descent;
+                    state.mode = SirinMode::Descent;
                     info!("Exiting flight mode...");
                     info!("Entered descent mode...");
                 }
@@ -351,12 +349,15 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     }
                 }
 
-                //Timeout once velocity falls below threshold
+                //Landed once velocity is below threshold for THRESHOLD_REQUIRED of the
+                //last THRESHOLD_WINDOW measurements. Ticks without a valid velocity count as misses.
                 let total_vel: f64 = (state.nominal.vel.x.powf(2.0) + state.nominal.vel.y.value.powf(2.0) + state.nominal.vel.z.powf(2.0)).sqrt() as f64;
-                if velocity_valid
-                    && total_vel.is_finite()
-                    && total_vel < config::LANDED_VELOCITY_THRESHOLD_M_S
-                {
+                landed_check.push(
+                    velocity_valid
+                        && total_vel.is_finite()
+                        && total_vel < config::LANDED_VELOCITY_THRESHOLD_M_S
+                );
+                if landed_check.passes(config::THRESHOLD_REQUIRED) {
                     desired_mode = Some(SirinMode::Landed);
                     info!("Exiting descent mode...");
                 }
@@ -426,7 +427,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     }
 }
 
-/// Broadcast rate for each flight mode (Hz)
+// Broadcast rate for each flight mode
 fn broadcast_rate_hz(mode: SirinMode) -> f64 {
     match mode {
         SirinMode::Standby => config::STANDBY_BROADCAST_HZ,
@@ -436,8 +437,30 @@ fn broadcast_rate_hz(mode: SirinMode) -> f64 {
     }
 }
 
-/// Loop ticks between broadcasts at `rate_hz`. Rates at or above the loop rate broadcast every tick.
+// Loop ticks between broadcasts at "rate_hz"
 fn period_ticks(rate_hz: f64) -> u32 {
     let ticks = config::LOOP_RATE_HZ / rate_hz;
     ((ticks + 0.5) as u32).max(1)
+}
+// Ring buffer and impl to account for outliers in apogee / landing detection 
+struct ThresholdWindow<const N: usize> {
+    history: [bool; N],
+    next: usize,
+    filled: usize,
+}
+
+impl<const N: usize> ThresholdWindow<N> {
+    const fn new() -> Self {
+        Self { history: [false; N], next: 0, filled: 0 }
+    }
+
+    fn push(&mut self, met: bool) {
+        self.history[self.next] = met;
+        self.next = (self.next + 1) % N;
+        self.filled = (self.filled + 1).min(N);
+    }
+
+    fn passes(&self, required: usize) -> bool {
+        self.filled == N && self.history.iter().filter(|&&met| met).count() >= required
+    }
 }
