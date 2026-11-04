@@ -427,6 +427,8 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     }
 }
 
+//TODO: Move all the code below into a more permanent location
+
 // Broadcast rate for each flight mode
 fn broadcast_rate_hz(mode: SirinMode) -> f64 {
     match mode {

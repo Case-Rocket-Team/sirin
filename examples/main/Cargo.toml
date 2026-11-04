@@ -2,7 +2,7 @@
 
 [package]
 edition = "2021"
-name = "nosecone-ebay"
+name = "main"
 version = "0.1.0"
 
 [package.metadata.release]
@@ -52,7 +52,7 @@ sirin-filter = { version = "0.1.1", path = "../../sirin-filter"}
 #panic-halt = "0.2.0"
 
 [[bin]]
-name = "nosecone-ebay"
+name = "main"
 test = false
 bench = false
 

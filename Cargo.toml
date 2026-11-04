@@ -16,7 +16,7 @@ members = [
     "examples/imu-test",
     "examples/bare",
     "examples/h3lis-test",
-    "examples/nosecone-ebay",
+    "examples/main",
     "examples/dongle",
     "examples/kalman-test",
     "examples/kalman-rust-test",
