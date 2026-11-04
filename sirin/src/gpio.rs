@@ -19,7 +19,6 @@ pub struct GpioPins {
 
 pub struct GpioPins {
     pub p1: PA4,
-    pub p2: PC4,
     pub p3: PC5,
     pub p4: PB0,
     pub p5: PB1,

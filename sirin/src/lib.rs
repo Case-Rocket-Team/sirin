@@ -7,7 +7,7 @@ use bmp3::Bmp3;
 use defmt::{info, Display2Format};
 use embassy_executor::{Executor, Spawner};
 use embassy_futures::join::{join, join3, join5, join_array};
-use embassy_stm32::{ Config, Peripherals, bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, mode::Async, pac::{self, Interrupt::TIM16}, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, usart::{self, BufferedUartTx, RingBufferedUartRx, Uart, UartTx} };
+use embassy_stm32::{ Config, Peripherals, bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, mode::Async, pac::{self, Interrupt::TIM16}, peripherals::USB_OTG_FS, spi as em_spi, time::mhz, usart::{self, BufferedUartTx, RingBufferedUartRx, Uart, UartTx}, adc::{Adc, SampleTime} };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
 use embassy_time::{Timer, Instant};
 use flash::Flash;
@@ -93,6 +93,9 @@ pub struct Sirin {
     pub gps_tx: UartTx<'static, Async>,
     //pub driver: Driver<'static, peripherals::USB_OTG_FS>
 
+    pub adc: Adc<'static, embassy_stm32::peripherals::ADC1>,
+    pub pc4: embassy_stm32::peripherals::PC4,
+
     pub data: SirinData,
     pub health: SirinHealth,
     pub config: SirinConfig,
@@ -140,8 +143,10 @@ impl Sirin {
                 config.rcc.apb2_pre = APBPrescaler::DIV2; // 60 Mhz
                 config.rcc.apb3_pre = APBPrescaler::DIV2; // 60 Mhz
                 config.rcc.apb4_pre = APBPrescaler::DIV2; // 60 Mhz
-                config.rcc.voltage_scale = VoltageScale::Scale1;
+                config.rcc.voltage_scale = VoltageScale::Scale3;
                 config.rcc.mux.usbsel = mux::Usbsel::HSI48;
+                config.rcc.mux.persel = mux::Persel::HSI;
+                config.rcc.mux.adcsel = mux::Adcsel::PER;
             }
 
             //ptr!(sirin.event_channel).write(PubSubChannel::new());
@@ -175,7 +180,6 @@ impl Sirin {
             let gpio: *mut GpioPins = ptr!(sirin.gpio);
             gpio.write(GpioPins {
                 p1: p.PA4,
-                p2: p.PC4,
                 p3: p.PC5,
                 p4: p.PB0,
                 p5: p.PB1,
@@ -189,6 +193,9 @@ impl Sirin {
                 p13: p.PD5,
                 p14: p.PD4
             });
+
+            let pc4_ptr: *mut embassy_stm32::peripherals::PC4 = ptr!(sirin.pc4);
+            pc4_ptr.write(p.PC4);
 
             let baro_ptr: *mut Bmp3<SpiDev> = ptr!(sirin.baro);
             let baro_cs = Output::new(p.PA2, Level::High, Speed::High);
@@ -264,6 +271,9 @@ impl Sirin {
 
             ptr!(sirin.apo_power).write(Output::new(p.PD1, Level::High, Speed::High));
 
+            let adc_ptr: *mut Adc<'static, embassy_stm32::peripherals::ADC1> = ptr!(sirin.adc);
+            adc_ptr.write(Adc::new(p.ADC1));
+
             // TODO: JOIN FUTURES, AWAIT
             baro_ptr.write(baro_future.await.unwrap());
             (*radio_ptr).init().await.unwrap();
@@ -323,9 +333,25 @@ impl Sirin {
     pub fn deploy_chute_main(parachute_main: &mut Output<'static>){
         parachute_main.set_high();
     }
+
+    pub fn close_chute_main(parachute_main: &mut Output<'static>){
+        parachute_main.set_low();
+    }
     
     pub fn deploy_chute_apo(parachute_apo: &mut Output<'static>){
         parachute_apo.set_high();
+    }
+
+    pub fn read_match_voltage(
+        adc: &mut Adc<'static, embassy_stm32::peripherals::ADC1>,
+        pc4: &mut embassy_stm32::peripherals::PC4,
+    ) -> Result<f32, SirinError> {
+        const VREF: f32 = 3.3;
+        const MAX_COUNTS: f32 = 4095.0;
+
+        adc.set_resolution(embassy_stm32::adc::Resolution::BITS12);
+        let raw = adc.blocking_read(pc4);
+        Ok(raw as f32 / MAX_COUNTS * VREF)
     }
 
     /*

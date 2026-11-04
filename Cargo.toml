@@ -13,7 +13,7 @@ members = [
     "w25qx",
     "sirin-c",
     "sam-m10q",
-    "examples/main",
+    "extended-kalman",
     "examples/imu-test",
     "examples/bare",
     "examples/h3lis-test",
@@ -26,8 +26,10 @@ members = [
     "examples/radio-test-receive",
     "examples/any-test",
     "examples/mag-calibrate",
-    "examples/allan-variance"
-, "extended-kalman"]
+    "examples/allan-variance", 
+    "examples/allan-variance",
+    "examples/ematch-test"
+]
 resolver = "2"
 
 [profile.dev]
