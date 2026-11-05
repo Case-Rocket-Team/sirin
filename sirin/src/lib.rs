@@ -143,7 +143,7 @@ impl Sirin {
                 config.rcc.apb2_pre = APBPrescaler::DIV2; // 60 Mhz
                 config.rcc.apb3_pre = APBPrescaler::DIV2; // 60 Mhz
                 config.rcc.apb4_pre = APBPrescaler::DIV2; // 60 Mhz
-                config.rcc.voltage_scale = VoltageScale::Scale3;
+                config.rcc.voltage_scale = VoltageScale::Scale1;
                 config.rcc.mux.usbsel = mux::Usbsel::HSI48;
                 config.rcc.mux.persel = mux::Persel::HSI;
                 config.rcc.mux.adcsel = mux::Adcsel::PER;
