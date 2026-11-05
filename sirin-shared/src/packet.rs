@@ -510,3 +510,10 @@ pub enum FlightHeaderStatus {
     Valid = 0x01,
     Overwritten = 0x00
 }
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Voltage{
+    apo_v: f32,
+    main_v: f32
+}
