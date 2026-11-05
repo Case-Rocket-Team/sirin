@@ -135,6 +135,7 @@ pub struct SirinDataState{
     pub pos: Pos,
     pub vel: Vel,
     pub rot_quaternion: Quaternion<f32>,
+    pub voltage: Voltage,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -512,8 +513,8 @@ pub enum FlightHeaderStatus {
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, SongSize, ToSong, FromSong)]
 pub struct Voltage{
-    apo_v: f32,
-    main_v: f32
+    pub apo_v: f32,
+    pub main_v: f32
 }
