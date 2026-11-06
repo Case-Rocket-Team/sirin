@@ -77,6 +77,7 @@ pub struct Sirin {
     pub radio: Rfm9<SpiDev>,
     pub usb: SirinUsb,
     pub led: Output<'static>,
+    pub led2: Output<'static>,
     pub parachute_main: Output<'static>,
     pub main_power: Output<'static>,
     pub parachute_apo: Output<'static>,
@@ -143,7 +144,7 @@ impl Sirin {
                 config.rcc.apb2_pre = APBPrescaler::DIV2; // 60 Mhz
                 config.rcc.apb3_pre = APBPrescaler::DIV2; // 60 Mhz
                 config.rcc.apb4_pre = APBPrescaler::DIV2; // 60 Mhz
-                config.rcc.voltage_scale = VoltageScale::Scale3;
+                config.rcc.voltage_scale = VoltageScale::Scale1;
                 config.rcc.mux.usbsel = mux::Usbsel::HSI48;
                 config.rcc.mux.persel = mux::Persel::HSI;
                 config.rcc.mux.adcsel = mux::Adcsel::PER;
@@ -262,6 +263,8 @@ impl Sirin {
             ));
 
             ptr!(sirin.led).write(Output::new(p.PA1, Level::Low, Speed::High));
+            
+            ptr!(sirin.led2).write(Output::new(p.PB9, Level::Low, Speed::High));
 
             ptr!(sirin.parachute_main).write(Output::new(p.PA8, Level::Low, Speed::High));
 
