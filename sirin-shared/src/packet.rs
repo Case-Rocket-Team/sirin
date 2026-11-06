@@ -135,6 +135,7 @@ pub struct SirinDataState{
     pub pos: Pos,
     pub vel: Vel,
     pub rot_quaternion: Quaternion<f32>,
+    pub voltage: MatchVoltage
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -509,4 +510,21 @@ pub enum FlightHeaderStatus {
     Null = 0xFF,
     Valid = 0x01,
     Overwritten = 0x00
+}
+
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, Debug, SongSize, ToSong, FromSong, PartialEq)]
+pub struct MatchVoltage{
+    pub apo_v: f32,
+    pub main_v: f32
+}
+
+impl MatchVoltage {
+    pub fn new(apo: f32, main: f32) -> Self {
+        Self {
+            apo_v: apo,
+            main_v: main
+        }
+    }
 }

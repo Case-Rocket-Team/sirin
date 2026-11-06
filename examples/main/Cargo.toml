@@ -47,6 +47,8 @@ rfm9 = { version = "0.1.1", path = "../../rfm9", features = ['defmt'] }
 postcard = "1.1.1"
 w25qx = { version = "0.1.1", path = "../../w25qx" }
 sirin-shared = { version = "0.1.0", path = "../../sirin-shared" }
+nalgebra = { version = "*", default-features = false, features = ["libm"] }
+sirin-filter = { version = "0.1.1", path = "../../sirin-filter"}
 #panic-halt = "0.2.0"
 
 [[bin]]
