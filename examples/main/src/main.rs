@@ -18,6 +18,7 @@ use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_ta
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, Publisher, Subscriber}};
 use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
+use sirin::packet::MatchVoltage;
 use nalgebra as na;
 use na::{Matrix3, Matrix6, Vector3, UnitQuaternion, Rotation3, ComplexField};
 mod config;
@@ -251,7 +252,8 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             gps_fix: state.gps_fix.clone(),
             pos: state.nominal.pos.clone(),
             vel: state.nominal.vel.clone(),
-            rot_quaternion: state.nominal.rot_quaternion.clone()
+            rot_quaternion: state.nominal.rot_quaternion.clone(),
+            voltage: MatchVoltage::new(0.0, 0.0)
         };
 
         //info!("Calculate barometric altitude");
