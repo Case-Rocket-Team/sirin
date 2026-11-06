@@ -77,6 +77,7 @@ pub struct Sirin {
     pub radio: Rfm9<SpiDev>,
     pub usb: SirinUsb,
     pub led: Output<'static>,
+    pub led2: Output<'static>,
     pub parachute_main: Output<'static>,
     pub main_power: Output<'static>,
     pub parachute_apo: Output<'static>,
@@ -262,6 +263,8 @@ impl Sirin {
             ));
 
             ptr!(sirin.led).write(Output::new(p.PA1, Level::Low, Speed::High));
+            
+            ptr!(sirin.led2).write(Output::new(p.PB9, Level::Low, Speed::High));
 
             ptr!(sirin.parachute_main).write(Output::new(p.PA8, Level::Low, Speed::High));
 
