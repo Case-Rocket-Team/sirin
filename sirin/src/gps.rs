@@ -33,6 +33,7 @@ pub async fn gps_init(gps_uart: &mut Uart<'_, Async>) {
 
         reserved5: 0,
     };
+
     //Navigation Mode config
     let mut nav_mode_config = CfgNav5Builder::default();
     nav_mode_config.dyn_model = ublox::cfg_nav5::NavDynamicModel::AirborneWithLess4gAcceleration;
@@ -109,7 +110,10 @@ pub async fn gps_task(
     loop {
         //info!("New gps loop iteration");
         match gps_impl(gps_rx, gps_tx, &mut packet_parser, &mut buf, &mut fix).await {
-            Err(err) => error!("GPS Error: {}", Debug2Format(&err)),
+            Err(err) => {
+                error!("GPS Error: {}", Debug2Format(&err));
+                // packet_parser = ublox::Parser::new_fixed(); // clear stuck/desynced state
+            }
             Ok(_) => {}
         };
     }
