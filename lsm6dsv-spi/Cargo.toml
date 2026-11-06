@@ -1,9 +1,9 @@
 [package]
-name = "lsm6dso-spi"
+name = "lsm6dsv-spi"
 version = "0.1.1"
 edition = "2021"
 license = "MIT"
-description = "LSM6DSO Accelerometer/IMU"
+description = "LSM6DSV Accelerometer/IMU"
 repository = "https://github.com/Nautki/sirin"
 
 [dependencies]

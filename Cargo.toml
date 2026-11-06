@@ -7,7 +7,7 @@ members = [
     "dev-csr",
     "dev-csr-macro",
     "h3lis",
-    "lsm6dso-spi",
+    "lsm6dsv-spi",
     "rfm9",
     "spi-handle",
     "w25qx",

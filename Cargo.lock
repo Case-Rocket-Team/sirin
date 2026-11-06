@@ -1280,7 +1280,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
 
 [[package]]
-name = "lsm6dso-spi"
+name = "lsm6dsv-spi"
 version = "0.1.1"
 dependencies = [
  "defmt",
@@ -1796,7 +1796,7 @@ dependencies = [
  "h3lis",
  "heapless 0.8.0",
  "lis3mdl",
- "lsm6dso-spi",
+ "lsm6dsv-spi",
  "nalgebra",
  "paste",
  "postcard",

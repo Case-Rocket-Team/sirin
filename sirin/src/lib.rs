@@ -20,7 +20,7 @@ use sync::Mutex;
 use usb::{setup_usb, WriteEp, ReadEp, SirinUsb, UsbSerialClass};
 use uunit::{Celsius, Pascals};
 use w25qx::W25Q;
-use lsm6dso_spi::Lsm6dso;
+use lsm6dsv_spi::Lsm6dsv32x;
 use lis3mdl::Lis3mdl;
 use h3lis::H3lis;
 use spi::{Spi, SpiConfig, SpiConfigStruct, SpiDev, SpiInstance, WithSpiHandle};
@@ -85,7 +85,7 @@ pub struct Sirin {
 
     // Instrument subsytems
     pub baro: Bmp3<SpiDev>,
-    pub imu: Lsm6dso<SpiDev>,
+    pub imu: Lsm6dsv32x<SpiDev>,
     pub high_g_imu: H3lis<SpiDev>,
     pub magnetometer: Lis3mdl<SpiDev>,
 
@@ -216,9 +216,9 @@ impl Sirin {
             config.write((*flash_ptr).init().await.unwrap());
             info!("{}", Display2Format(&*config));
 
-            let imu_ptr: *mut Lsm6dso<SpiDev> = ptr!(sirin.imu);
+            let imu_ptr: *mut Lsm6dsv32x<SpiDev> = ptr!(sirin.imu);
             let imu_cs = Output::new(p.PE11, Level::High, Speed::High);
-            imu_ptr.write(Lsm6dso::new((*spi1).handle(imu_cs)));
+            imu_ptr.write(Lsm6dsv32x::new((*spi1).handle(imu_cs)));
 
             let highg_imu_ptr: *mut H3lis<SpiDev> = ptr!(sirin.high_g_imu);
             let highg_imu_cs = Output::new(p.PE13, Level::High, Speed::High);

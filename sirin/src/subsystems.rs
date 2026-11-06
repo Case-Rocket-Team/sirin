@@ -7,7 +7,7 @@ use defmt::Str;
 use embassy_time::Instant;  
 use embedded_hal::spi::ErrorKind as SpiErrorKind;
 use h3lis::H3lis;
-use lsm6dso_spi::{Accel, AngularVel, Lsm6dso};
+use lsm6dsv_spi::{Accel, AngularVel, Lsm6dsv32x};
 use paste::paste;
 use rfm9::Rfm9;
 use sirin_macros::Measurement;
@@ -129,7 +129,7 @@ impl Subsystem for W25Q<SpiDev> {
     }
 }
 
-impl Subsystem for Lsm6dso<SpiDev> {
+impl Subsystem for Lsm6dsv32x<SpiDev> {
     const NAME: &str = "IMU";
     const PART: &str = "LSM6DSO32";
 
@@ -141,7 +141,7 @@ impl Subsystem for Lsm6dso<SpiDev> {
     }
 }
 
-impl Instrument for Lsm6dso<SpiDev> {
+impl Instrument for Lsm6dsv32x<SpiDev> {
     type Data = ImuData;
 
     async fn measure(&mut self) -> Self::Data {
@@ -226,7 +226,7 @@ impl Subsystem for Rfm9<SpiDev> {
 
 pub async fn measure_sirin(
     baro: &mut Bmp3<SpiDev>,
-    imu: &mut Lsm6dso<SpiDev>,
+    imu: &mut Lsm6dsv32x<SpiDev>,
     high_g_imu: &mut H3lis<SpiDev>,
     magnetometer: &mut Lis3mdl<SpiDev>
 ) -> SirinData {
