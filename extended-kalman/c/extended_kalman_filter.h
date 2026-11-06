@@ -19,8 +19,6 @@ Hampsey: https://matthewhampsey.github.io/blog/2020/07/18/mekf
 extern "C" {
 #endif
 
-#include <assert.h>
-
 #include "base/base.h"
 
 #define EKF_STATE_DIM 18
@@ -63,6 +61,7 @@ typedef struct {
 
     f32 baro_var_ft2;
 
+    vec3f world_magn_north_guass;
     f32 magn_covar_gauss2[3 * 3];
     f32 magn_bias_var_gauss2;
 
@@ -73,8 +72,6 @@ typedef struct {
     ekf_nominal_state nominal_state;
 
     ekf_settings settings;
-
-    vec3f world_magn_north_guass;
     
     // Timestamp of the current state estimate
     u32 state_time_us;
@@ -88,16 +85,11 @@ typedef struct {
 } extended_kalman_filter;
 
 // Initializes the kalman filter to zero state and the given settings.
-//
-// `local_down` should be calculated from averaged accelerometer values while
-// stationary
-// `local_magn_guass` should be averaged values from the magnetometer while
-// stationary 
+// You can just create the `extended_kalman_filter` structure if you would like
+// more control, but this ensures you start with a valid attitude quaternion.
 void ekf_init(
     extended_kalman_filter* ekf,
     const ekf_settings* settings,
-    vec3f local_down,
-    vec3f local_magn_gauss,
     u32 timestamp_us
 );
 
