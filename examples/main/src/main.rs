@@ -253,7 +253,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             pos: state.nominal.pos.clone(),
             vel: state.nominal.vel.clone(),
             rot_quaternion: state.nominal.rot_quaternion.clone(),
-            voltage: MatchVoltage::new(0.0, 0.0)
+            voltage: sirin.match_sense.read(),
         };
 
         //info!("Calculate barometric altitude");
