@@ -284,7 +284,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     || accel_mag_squared.is_some_and(|accel| accel.value > accel_threshold.value)
                     || desired_mode == Some(SirinMode::Flight)
                 {
-                    sirin.led.set_high();
+                    sirin.led_white.set_high();
                     state.mode = SirinMode::Flight;
                     info!("Entered flight mode...");
                     FLASH_LOGGING_ENABLED.store(true, Ordering::Relaxed);
@@ -373,7 +373,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 }
 
                 if desired_mode == Some(SirinMode::Landed) {
-                    sirin.led.set_low();
+                    sirin.led_white.set_low();
                     state.mode = SirinMode::Landed;
                     FLASH_LOGGING_ENABLED.store(false, Ordering::Relaxed);
                 }

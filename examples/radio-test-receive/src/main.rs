@@ -64,12 +64,12 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 InPacket::DeployApo => {
                     Sirin::deploy_chute_apo(&mut sirin.parachute_apo); 
                     info!("Apo deployed!");
-                    sirin.led.set_high();
+                    sirin.led_white.set_high();
                 },
                 InPacket::DeployMain => {
                     Sirin::deploy_chute_main(&mut sirin.parachute_main); 
                     info!("Main deployed!");
-                    sirin.led.set_high();
+                    sirin.led_white.set_high();
                 },
                 _ => {}
                 }

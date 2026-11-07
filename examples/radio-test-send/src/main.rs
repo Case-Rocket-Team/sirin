@@ -90,9 +90,9 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         //sirin.radio.transmit(b"KF8BAA").await?;
 
         info!("Transmitting!");
-        sirin.led.set_high();
+        sirin.led_white.set_high();
         Timer::after_millis(100).await; 
-        sirin.led.set_low();
+        sirin.led_white.set_low();
         Timer::after_millis(900).await;
     }
 }
