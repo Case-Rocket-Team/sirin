@@ -330,7 +330,6 @@ pub struct SirinData {
     pub time: Milliseconds<u32>,
     pub baro: BaroData,
     pub imu: ImuData,
-    pub high_g_imu: HighGImuData,
     pub magnetometer: MagnetometerData,
     pub altitude: Meters<f64>
 }
@@ -345,7 +344,6 @@ impl Measurement for SirinData {
             time: 0u32.with_units(),
             baro: BaroData::unmeasured(),
             imu: ImuData::unmeasured(),
-            high_g_imu: HighGImuData::unmeasured(),
             magnetometer: MagnetometerData::unmeasured(),
             altitude: 0.0.with_units()
         }
