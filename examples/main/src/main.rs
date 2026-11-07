@@ -21,6 +21,7 @@ use sirin::song::SongDiscriminant;
 use sirin::packet::MatchVoltage;
 use nalgebra as na;
 use na::{Matrix3, Matrix6, Vector3, UnitQuaternion, Rotation3, ComplexField};
+use extended_kalman::{Ekf, ekf_settings, vec3f};
 mod config;
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
