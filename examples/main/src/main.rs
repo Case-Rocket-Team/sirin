@@ -328,6 +328,8 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             SirinMode::Descent => {
                 // Maintain active flight duration update
                 dur = launched_at.map(|t| Instant::now() - t);
+                sirin.led_white.set_low();
+                sirin.led_blue.set_high();
 
                 // Log DataState packet during descent
                 OUT_CHANNEL.publish_immediate(IoPacket::new(
@@ -381,6 +383,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             },
             SirinMode::Landed => {
                 info!("In landed mode");
+                sirin.led_blue.set_low();
             }
         }
 
