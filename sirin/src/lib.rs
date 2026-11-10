@@ -254,7 +254,7 @@ impl Sirin {
             highg_imu_ptr.write(H3lis::new((*spi1).handle(highg_imu_cs)));
 
             let magnetometer_ptr: *mut Lis3mdl<SpiDev> = ptr!(sirin.magnetometer);
-            let magnetometer_cs = Output::new(p.PA3, Level::High, Speed::High); 
+            let magnetometer_cs = Output::new(p.PC7, Level::High, Speed::High); 
             magnetometer_ptr.write(Lis3mdl::new((*spi1).handle(magnetometer_cs)));
             
             let mut gps_config = usart::Config::default();
