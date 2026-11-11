@@ -15,7 +15,7 @@ use gpio::GpioPins;
 use rfm9::{ReadRfm9, Rfm9};
 use sirin_macros::{FromSong, SongSize, ToSong};
 use snafu::{ensure, Snafu};
-use sirin_shared::{config::SirinConfig, packet::{Measurement, SirinData, SubsystemError}, song::{FromSong, FromSongError, SongSize, ToSong, ToSongError}};
+use sirin_shared::{config::SirinConfig, packet::{MatchVoltage, Measurement, SirinData, SubsystemError}, song::{FromSong, FromSongError, SongSize, ToSong, ToSongError}};
 use sync::Mutex;
 use usb::{setup_usb, WriteEp, ReadEp, SirinUsb, UsbSerialClass};
 use uunit::{Celsius, Pascals};
@@ -63,6 +63,37 @@ pub struct SirinHealth {
     pub magnetometer: Result<(), SubsystemError>
 }
 
+pub struct MatchSense {
+    adc: Adc<'static, embassy_stm32::peripherals::ADC3>,
+    apo_pin: embassy_stm32::peripherals::PC2_C,
+    main_pin: embassy_stm32::peripherals::PC3_C,
+}
+
+impl MatchSense {
+    pub fn new(
+        adc: embassy_stm32::peripherals::ADC3,
+        apo_pin: embassy_stm32::peripherals::PC2_C,
+        main_pin: embassy_stm32::peripherals::PC3_C,
+    ) -> Self {
+        let mut adc = Adc::new(adc);
+        adc.set_resolution(embassy_stm32::adc::Resolution::BITS12);
+        Self { adc, apo_pin, main_pin }
+    }
+
+    pub fn read(&mut self) -> MatchVoltage {
+        const VREF: f32 = 3.7;
+        const MAX_COUNTS: f32 = 4095.0;
+
+        let raw_apo = self.adc.blocking_read(&mut self.apo_pin);
+        let raw_main = self.adc.blocking_read(&mut self.main_pin);
+
+        MatchVoltage {
+            apo_v: raw_apo as f32 / MAX_COUNTS * VREF,
+            main_v: raw_main as f32 / MAX_COUNTS * VREF,
+        }
+    }
+}
+
 pub struct Sirin {
     pub spawner: Spawner,
     pub spi1: SpiInstance,
@@ -74,8 +105,8 @@ pub struct Sirin {
     pub flash: Flash,
     pub radio: Rfm9<SpiDev>,
     pub usb: SirinUsb,
-    pub led: Output<'static>,
-    pub led2: Output<'static>,
+    pub led_white: Output<'static>,
+    pub led_blue: Output<'static>,
     pub parachute_main: Output<'static>,
     pub main_power: Output<'static>,
     pub parachute_apo: Output<'static>,
@@ -91,8 +122,7 @@ pub struct Sirin {
     pub gps_tx: UartTx<'static, Async>,
     //pub driver: Driver<'static, peripherals::USB_OTG_FS>
 
-    pub adc: Adc<'static, embassy_stm32::peripherals::ADC1>,
-    pub pc4: embassy_stm32::peripherals::PC4,
+    pub match_sense: MatchSense,
 
     pub data: SirinData,
     pub health: SirinHealth,
@@ -192,8 +222,7 @@ impl Sirin {
                 p14: p.PD4
             });
 
-            let pc4_ptr: *mut embassy_stm32::peripherals::PC4 = ptr!(sirin.pc4);
-            pc4_ptr.write(p.PC4);
+            ptr!(sirin.match_sense).write(MatchSense::new(p.ADC3, p.PC2_C, p.PC3_C));
 
             let baro_ptr: *mut Bmp3<SpiDev> = ptr!(sirin.baro);
             let baro_cs = Output::new(p.PA2, Level::High, Speed::High);
@@ -218,7 +247,7 @@ impl Sirin {
             imu_ptr.write(Lsm6dsv32x::new((*spi1).handle(imu_cs)));
 
             let magnetometer_ptr: *mut Lis3mdl<SpiDev> = ptr!(sirin.magnetometer);
-            let magnetometer_cs = Output::new(p.PA3, Level::High, Speed::High); 
+            let magnetometer_cs = Output::new(p.PC7, Level::High, Speed::High); 
             magnetometer_ptr.write(Lis3mdl::new((*spi1).handle(magnetometer_cs)));
             
             let mut gps_config = usart::Config::default();
@@ -255,9 +284,9 @@ impl Sirin {
                 p.PA11
             ));
 
-            ptr!(sirin.led).write(Output::new(p.PA1, Level::Low, Speed::High));
+            ptr!(sirin.led_white).write(Output::new(p.PA1, Level::Low, Speed::High));
             
-            ptr!(sirin.led2).write(Output::new(p.PB9, Level::Low, Speed::High));
+            ptr!(sirin.led_blue).write(Output::new(p.PB9, Level::Low, Speed::High));
 
             ptr!(sirin.parachute_main).write(Output::new(p.PA8, Level::Low, Speed::High));
 
@@ -266,9 +295,6 @@ impl Sirin {
             ptr!(sirin.parachute_apo).write(Output::new(p.PA10, Level::Low, Speed::High));
 
             ptr!(sirin.apo_power).write(Output::new(p.PD1, Level::High, Speed::High));
-
-            let adc_ptr: *mut Adc<'static, embassy_stm32::peripherals::ADC1> = ptr!(sirin.adc);
-            adc_ptr.write(Adc::new(p.ADC1));
 
             // TODO: JOIN FUTURES, AWAIT
             baro_ptr.write(baro_future.await.unwrap());
@@ -334,134 +360,4 @@ impl Sirin {
     pub fn deploy_chute_apo(parachute_apo: &mut Output<'static>){
         parachute_apo.set_high();
     }
-
-    pub fn read_match_voltage(
-        adc: &mut Adc<'static, embassy_stm32::peripherals::ADC1>,
-        pc4: &mut embassy_stm32::peripherals::PC4,
-    ) -> Result<f32, SirinError> {
-        const VREF: f32 = 3.3;
-        const MAX_COUNTS: f32 = 4095.0;
-
-        adc.set_resolution(embassy_stm32::adc::Resolution::BITS12);
-        let raw = adc.blocking_read(pc4);
-        Ok(raw as f32 / MAX_COUNTS * VREF)
-    }
-
-    /*
-    pub async fn kalman_filter(
-        &mut self, 
-        &mut prev_reading: &mut Instant,
-        nominal: &mut sirin_filter::NominalState,
-        error: &mut sirin_filter::ErrorState,
-        cov: &mut sirin_filter::CovarianceMatrixP
-    )  -> Result<state::NominalState, SirinError>{
-        // calibration data for a sirin not in ebay
-        // let free_hard_iron_bias_x = -47.573810;
-        // let free_hard_iron_bias_y = 44.599533;
-        // let free_hard_iron_bias_z = -169.833372;
-
-        // let free_scale_x = 0.976603;
-        // let free_scale_y = 1.056380;
-        // let free_scale_z = 0.971427;
-        
-        // Sirin D offset calibration
-        let hard_iron_bias_x = -18.269513;
-        let hard_iron_bias_y = 17.129495;
-        let hard_iron_bias_z = -42.261032;
-
-        let free_soft_iron_bias_xx = 18.728720;
-        let free_soft_iron_bias_xy = 1.581941;
-        let free_soft_iron_bias_xz = 0.091705;
-
-        let free_soft_iron_bias_yx = 1.581941;
-        let free_soft_iron_bias_yy = 16.487833;
-        let free_soft_iron_bias_yz = -0.505229;
-
-        let free_soft_iron_bias_zx = 0.091705;
-        let free_soft_iron_bias_zy = -0.505229;
-        let free_soft_iron_bias_zz = 18.669202;
-
-        let mut is_first_reading = true;
-        let mut angular_test = Vector3::new(0.0 as f32, 0.0 as f32, 0.0 as f32);
-        let curr_reading = Instant::now();
-
-
-
-        let dt = curr_reading.duration_since(prev_reading);
-
-        let accel = self.imu.accel().await?;
-        
-        let accel = Vector3::new(
-            (accel.x.value as f32) / 1e6 *  9.81,
-            (accel.y.value as f32) / 1e6 *  9.81,
-            (accel.z.value as f32) / 1e6 *  9.81,
-        );
-
-        let angular = self.imu.angular_vel().await?;
-
-        let angular = Vector3::new(
-            (angular.x_pitch.value as f32) * PI / 180.0 / 1e6 * -1.0,
-            (angular.y_roll.value as f32) * PI / 180.0 / 1e6,
-            (angular.z_yaw.value as f32) * PI / 180.0 / 1e6 * -1.0,
-        );
-
-        let (x_raw, y_raw, z_raw) = self.magnetometer.magnetic().await?;
-        // divide by 6842 for Gauss, mult by 100 for micro Teslas (uT)
-        let mag_reading = [
-            (x_raw as f32) / 6842.0 * 100.0,
-            (y_raw as f32) / 6842.0 * 100.0,
-            (z_raw as f32) / 6842.0 * 100.0,
-        ];
-
-        let mag_offset = Vector3::new(
-            mag_reading[0] - hard_iron_bias_x,
-            mag_reading[1] - hard_iron_bias_y,
-            mag_reading[2] - hard_iron_bias_z,
-        );
-
-        let mag_calibrated = [
-            mag_offset[0] * free_soft_iron_bias_xx + mag_offset[1] * free_soft_iron_bias_yx + mag_offset[2] * free_soft_iron_bias_zx,
-            mag_offset[0] * free_soft_iron_bias_xy + mag_offset[1] * free_soft_iron_bias_yy + mag_offset[2] * free_soft_iron_bias_zy,
-            mag_offset[0] * free_soft_iron_bias_xz + mag_offset[1] * free_soft_iron_bias_yz + mag_offset[2] * free_soft_iron_bias_zz,
-        ];
-
-        angular_test = angular_test + angular * dt.as_micros() as f32; 
-        prev_reading = curr_reading;
-
-
-        if is_first_reading {
-            is_first_reading = false;
-
-            let magn = self.magnetometer.magnetic().await?;
-            let magn = Vector3::new(
-                magn.0 as f32,
-                magn.1 as f32,
-                magn.2 as f32,
-                // (magn.0 as f32) - hard_iron_bias_x,
-                // (magn.1 as f32) - hard_iron_bias_y,
-                // (magn.2 as f32) - hard_iron_bias_z,
-            );
-
-            let _ = sirin_filter::init_with_imu(
-                    &mut nominal,
-                    &accel,
-                    &angular,
-                    &magn,
-            );
-        } else {
-            sirin_filter::update_with_imu(
-                &mut nominal,
-                &mut error,
-                &mut cov,
-                dt.as_micros() as f32 / 1e6,
-                &accel,
-                &angular
-            );
-            if true {
-                sirin_filter::fuse_magnetometer(&mut nominal, &mut error, &mut cov, &mag_offset);
-            }
-        }
-        let state = sirin_shared::state::NominalState::from(&nominal);
-        Ok(state)
-    }*/
 }

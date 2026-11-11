@@ -16,7 +16,7 @@ sirin-macros = { path = "../sirin-macros" }
 cortex-m-rt = "0.7.3"
 embassy-executor = { git = "https://github.com/embassy-rs/embassy", features = ["arch-cortex-m", "executor-thread", "defmt"] }
 embassy-time = { git = "https://github.com/embassy-rs/embassy" }
-embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", features = [ "stm32h743ii" ]}
+embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", features = [ "stm32h743ii", "split-pc2", "split-pc3" ]}
 embassy-sync = { git = "https://github.com/embassy-rs/embassy" }
 embassy-futures = { git = "https://github.com/embassy-rs/embassy"}
 embassy-usb = { git = "https://github.com/embassy-rs/embassy" }

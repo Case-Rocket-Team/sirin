@@ -52,6 +52,7 @@ async fn setup_task(spawner: Spawner, sirin: &'static mut MaybeUninit<Sirin>) {
 
 async fn main_task(sirin: &'static mut Sirin)  -> Result<(), SirinError> {
     let mut ticker = Ticker::every(Duration::from_millis(1000));
+    /*
     println!("Starting countdown:");
     for i in (1..=5).rev() {
         println!("{}", i);
@@ -64,11 +65,12 @@ async fn main_task(sirin: &'static mut Sirin)  -> Result<(), SirinError> {
     ticker.next().await;
     //Sirin::close_chute_main(&mut sirin.parachute_main);
     //println!("Main closed!");
+    */
     
     loop {
         
-        let voltage = Sirin::read_match_voltage(&mut sirin.adc, &mut sirin.pc4)?;
-        println!("Voltage across Pin 2: {}", voltage);
+        let voltage = sirin.match_sense.read();
+        println!("Apo: {}V\n Main: {}V", voltage.apo_v, voltage.main_v);
 
         ticker.next().await;
         
