@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+sirin-shared = { version = "0.1.0", path = "../sirin-shared" }
+uunit = { version = "0.1.0", git = "https://github.com/Nautki/uunit" }
 
 [build-dependencies]
 cc = "1.2"

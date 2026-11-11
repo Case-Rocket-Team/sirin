@@ -1,4 +1,4 @@
-fn main(){
+fn main() {
     println!("cargo::rerun-if-changed=c");
 
     cc::Build::new()
