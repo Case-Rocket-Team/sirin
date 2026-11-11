@@ -292,7 +292,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 }
             },
             SirinMode::Flight => {
-                //Log a DataState packet every 100 milliseconds
+                // Log a DataState packet every loop iteration
                 OUT_CHANNEL.publish_immediate(IoPacket::new(
                     IoChannel::Flash, OutPacket::LogEntry(
                         LogEntry::new(
@@ -326,8 +326,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 }
             },
             SirinMode::Descent => {
-                // Maintain active flight duration update
-                dur = launched_at.map(|t| Instant::now() - t);
                 sirin.led_white.set_low();
                 sirin.led_blue.set_high();
 
@@ -340,7 +338,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     )),
                 ));
 
-                //Deploy main parachute
+                // Deploy main parachute
                 if state.apogee.is_some() {
                     if state.altitude.value < main_deployment_altitude {
                         if !main_deployed {
