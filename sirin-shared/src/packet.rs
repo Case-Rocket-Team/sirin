@@ -135,7 +135,7 @@ pub struct SirinDataState{
     pub pos: Pos,
     pub vel: Vel,
     pub rot_quaternion: Quaternion<f32>,
-    pub voltage: MatchVoltage 
+    pub voltage: MatchVoltage
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -320,7 +320,7 @@ pub enum Log {
     Data(SirinData),
     DataState(SirinDataState),
     BarometricAltitude(Meters<f64>),
-    TrackMe(TrackMe)
+    TrackMe(TrackMe),
     GpsNmea([u8; 200])
 }
 
@@ -510,8 +510,6 @@ pub enum FlightHeaderStatus {
     Null = 0xFF,
     Valid = 0x01,
     Overwritten = 0x00
-}
-
 }
 
 

@@ -950,7 +950,7 @@ impl <S: SpiHandle> Lsm6dsv32x<S> {
           self.write_reg(RegCtrl1, 0b0_000_1100 as u8).await?;
           // 11: +- 32g FS
           self.write_reg(RegCtrl8, 0b000_0_0_1_11 as u8).await?;
- 
+
           // Gyroscope setup
           // 000: high performance mode
           // 1100: 7.68 kHz ODR
@@ -989,9 +989,9 @@ impl <S: SpiHandle> Lsm6dsv32x<S> {
           Ok(
           match real_val {
                0 => 4,
-               1 => 8,
-               2 => 16,
-               3 => 32,
+               1 => 32,
+               2 => 8,
+               3 => 16,
                _ => unreachable!()
           })
      }
