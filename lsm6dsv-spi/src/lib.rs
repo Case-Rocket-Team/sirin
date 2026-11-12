@@ -933,6 +933,44 @@ pub struct Lsm6dsv32x<S: SpiHandle> {
     spi: S
 }
 
+/// SFLP output data rate (SFLP_ODR register, SFLP_GAME_ODR_[2:0]).
+#[derive(Clone, Copy, Debug)]
+#[repr(u8)]
+pub enum SflpOdr {
+     Hz15 = 0b000,
+     Hz30 = 0b001,
+     Hz60 = 0b010,
+     Hz120 = 0b011,
+     Hz240 = 0b100,
+     Hz480 = 0b101,
+}
+
+// Bit that switches to the embedded functions register page.
+const EMB_FUNC_REG_ACCESS: u8 = 1 << 7;
+
+// Embedded functions page addresses
+const EMB_FUNC_EN_A: u8 = 0x04;
+const EMB_FUNC_FIFO_EN_A: u8 = 0x44;
+const EMB_SFLP_ODR: u8 = 0x5E;
+const EMB_FUNC_INIT_A: u8 = 0x66;
+
+// Enable the SFLP game rotation / gravity algorithm.
+const SFLP_GAME_EN: u8 = 1 << 1;
+// Batch the SFLP gravity vector into the FIFO.
+const SFLP_GRAVITY_FIFO_EN: u8 = 1 << 4;
+// EMB_FUNC_INIT_A: restart the SFLP algorithm.
+const SFLP_GAME_INIT: u8 = 1 << 1;
+
+const FIFO_MODE_BYPASS: u8 = 0b000;
+const FIFO_MODE_CONTINUOUS: u8 = 0b110;
+
+// FIFO_DATA_OUT_TAG sensor tag for an SFLP gravity vector word
+const FIFO_TAG_SFLP_GRAVITY: u8 = 0x17;
+
+/// SFLP gravity output scale: 0.061 mg/LSB
+const SFLP_GRAVITY_UG_PER_LSB: i32 = 61;
+const SFLP_MAX_FIFO_READS: u16 = 32;
+
 impl <S: SpiHandle> Lsm6dsv32x<S> {
     pub fn new(spi: S) -> Self {
         Self {
@@ -1071,6 +1109,64 @@ impl <S: SpiHandle> Lsm6dsv32x<S> {
                y: accel_y.with_units(),
                z: accel_z.with_units()
           })
+     }
+
+     pub async fn enable_sflp_gravity(&mut self, odr: SflpOdr) -> Result<(), <S::Bus as ErrorType>::Error> {
+          // Open the embedded-functions register page. Must close before other parts access the chip.
+          let func_cfg = self.read_reg(RegFuncCfgAccess).await?;
+          self.write_reg(RegFuncCfgAccess, func_cfg | EMB_FUNC_REG_ACCESS).await?;
+
+          // SFLP output rate
+          self.write_reg(EMB_SFLP_ODR, 0b0100_0011 | ((odr as u8) << 3)).await?;
+          // Batch only the gravity vector into the FIFO.
+          let fifo_en = self.read_reg(EMB_FUNC_FIFO_EN_A).await?;
+          self.write_reg(EMB_FUNC_FIFO_EN_A, fifo_en | SFLP_GRAVITY_FIFO_EN).await?;
+          // Enable the SFLP algorithm, then restart it for a clean start
+          let emb_en = self.read_reg(EMB_FUNC_EN_A).await?;
+          self.write_reg(EMB_FUNC_EN_A, emb_en | SFLP_GAME_EN).await?;
+          self.write_reg(EMB_FUNC_INIT_A, SFLP_GAME_INIT).await?;
+
+          // Back to the main register page.
+          self.write_reg(RegFuncCfgAccess, func_cfg & !EMB_FUNC_REG_ACCESS).await?;
+
+          // Don't batch raw accel/gyro, so the FIFO only holds SFLP output
+          self.write_reg(RegFifoCtrl3, 0).await?;
+          // FIFO_MODE: newest data overwrites the oldest)
+          self.write_reg(RegFifoCtrl4, FIFO_MODE_CONTINUOUS).await?;
+          Ok(())
+     }
+
+     /// Latest gravity vector from the SFLP block, in µg, in the IMU's axes.
+     pub async fn sflp_gravity(&mut self) -> Result<Option<Accel>, <S::Bus as ErrorType>::Error> {
+          let mut status = [0u8; 2];
+          self.read_contiguous_regs(RegFifoStatus1, &mut status).await?;
+          let unread = status[0] as u16 | (((status[1] & 1) as u16) << 8);
+
+          // Too far behind (e.g. first read after boot): reading every entry
+          if unread > SFLP_MAX_FIFO_READS {
+               self.write_reg(RegFifoCtrl4, FIFO_MODE_BYPASS).await?;
+               self.write_reg(RegFifoCtrl4, FIFO_MODE_CONTINUOUS).await?;
+               return Ok(None);
+          }
+
+          let mut latest = None;
+          for _ in 0..unread {
+               let mut word = [0u8; 7];
+               self.read_contiguous_regs(RegFifoDataOutTag, &mut word).await?;
+               if word[0] >> 3 == FIFO_TAG_SFLP_GRAVITY {
+                    latest = Some([
+                         i16::from_le_bytes([word[1], word[2]]),
+                         i16::from_le_bytes([word[3], word[4]]),
+                         i16::from_le_bytes([word[5], word[6]]),
+                    ]);
+               }
+          }
+
+          Ok(latest.map(|[x, y, z]| Accel {
+               x: (x as i32 * SFLP_GRAVITY_UG_PER_LSB).with_units(),
+               y: (y as i32 * SFLP_GRAVITY_UG_PER_LSB).with_units(),
+               z: (z as i32 * SFLP_GRAVITY_UG_PER_LSB).with_units(),
+          }))
      }
 
      pub async fn angular_vel(&mut self) -> Result<AngularVel, <S::Bus as ErrorType>::Error> {
