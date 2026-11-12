@@ -1,26 +1,37 @@
 
 #include "extended_kalman_filter.h"
 
+#define _EKF_G_FPS2 32.174f
+
 void ekf_init(
     extended_kalman_filter* ekf,
     const ekf_settings* settings,
+    vec3f local_down,
+    vec3f local_magn_gauss,
     u32 timestamp_us
 ) {
+    vec3f world_down = (vec3f){ 0.0f, 0.0f, -1.0f };
+
+    quatf attitude = quatf_rot_between(local_down, world_down);
+
     *ekf = (extended_kalman_filter) {
         .nominal_state = {
-            .attitude = (quatf){ .w = 1  }
+            .attitude = attitude
         },
+    
+        .control_input = (ekf_control_input){
+            .accel_fps2 = quatf_rot_vec3f(
+                quatf_conj(attitude),
+                (vec3f){ 0.0f, 0.0f, _EKF_G_FPS2 }
+             )
+        },
+
+        .world_magn_north_guass = quatf_rot_vec3f(attitude, local_magn_gauss),
 
         .settings = *settings,
         
         .state_time_us = timestamp_us,
     };
-
-    // Initializing the covariance with identity because I think 0 covariance 
-    // might mess up subsequent update steps, but this might not be necessary
-    for (u32 i = 0; i < EKF_STATE_DIM; i++) {
-        ekf->state_covar[i * EKF_STATE_DIM + i] = 1.0f;
-    }
 }
 
 typedef union {
@@ -207,7 +218,7 @@ void _ekf_predict_to(
 
     vec3f world_accel_fps2 = vec3f_add(
         // Accelerometers measure a constant 1g for gravity
-        (vec3f){ 0.0f, 0.0f, -32.174f },
+        (vec3f){ 0.0f, 0.0f, -_EKF_G_FPS2 },
         quatf_rot_vec3f(
             ekf->nominal_state.attitude,
             accel_fps2
@@ -525,7 +536,7 @@ void ekf_inject_magn(
     _ekf_vec3_u predicted_measure = {
         .vec = quatf_rot_vec3f(
             world_to_body,
-            ekf->settings.world_magn_north_guass
+            ekf->world_magn_north_guass
         )
     };
 
@@ -537,11 +548,7 @@ void ekf_inject_magn(
     observation_model[1 * EKF_STATE_DIM + 16] = 1.0f;
     observation_model[2 * EKF_STATE_DIM + 17] = 1.0f;
 
-    f32 measure[3] = {
-        magn_north_gauss.x,
-        magn_north_gauss.y,
-        magn_north_gauss.z,
-    };
+    _ekf_vec3_u measure = { .vec = magn_north_gauss };
 
     predicted_measure.vec = vec3f_add(
         predicted_measure.vec,
@@ -550,7 +557,7 @@ void ekf_inject_magn(
 
     _ekf_update(
         ekf, 3,
-        measure, ekf->settings.magn_covar_gauss2,
+        measure.v, ekf->settings.magn_covar_gauss2,
         observation_model, predicted_measure.v
     );
 }
@@ -577,3 +584,4 @@ void ekf_inject_gnss(
         observation_model, predicted_measure.v
     );
 }
+
