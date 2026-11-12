@@ -22,7 +22,6 @@ use uunit::{Celsius, Pascals};
 use w25qx::W25Q;
 use lsm6dsv_spi::Lsm6dsv32x;
 use lis3mdl::Lis3mdl;
-use h3lis::H3lis;
 use spi::{Spi, SpiConfig, SpiConfigStruct, SpiDev, SpiInstance, WithSpiHandle};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State as UsbState};
 use embassy_usb::Builder as UsbBuilder;
@@ -61,7 +60,6 @@ pub struct SirinHealth {
     pub radio: Result<(), SubsystemError>,
     pub baro: Result<(), SubsystemError>,
     pub imu: Result<(), SubsystemError>,
-    pub high_g_imu: Result<(), SubsystemError>,
     pub magnetometer: Result<(), SubsystemError>
 }
 
@@ -117,7 +115,6 @@ pub struct Sirin {
     // Instrument subsytems
     pub baro: Bmp3<SpiDev>,
     pub imu: Lsm6dsv32x<SpiDev>,
-    pub high_g_imu: H3lis<SpiDev>,
     pub magnetometer: Lis3mdl<SpiDev>,
 
     //UART GPS
@@ -249,10 +246,6 @@ impl Sirin {
             let imu_cs = Output::new(p.PE11, Level::High, Speed::High);
             imu_ptr.write(Lsm6dsv32x::new((*spi1).handle(imu_cs)));
 
-            let highg_imu_ptr: *mut H3lis<SpiDev> = ptr!(sirin.high_g_imu);
-            let highg_imu_cs = Output::new(p.PE13, Level::High, Speed::High);
-            highg_imu_ptr.write(H3lis::new((*spi1).handle(highg_imu_cs)));
-
             let magnetometer_ptr: *mut Lis3mdl<SpiDev> = ptr!(sirin.magnetometer);
             let magnetometer_cs = Output::new(p.PC7, Level::High, Speed::High); 
             magnetometer_ptr.write(Lis3mdl::new((*spi1).handle(magnetometer_cs)));
@@ -308,7 +301,6 @@ impl Sirin {
             (*radio_ptr).init().await.unwrap();
             (*radio_ptr).use_high_power().await.unwrap();
             (*imu_ptr).setup().await.unwrap();
-            (*highg_imu_ptr).setup().await.unwrap();
             (*magnetometer_ptr).setup().await.unwrap();
 
             {
@@ -328,13 +320,12 @@ impl Sirin {
                     (*baro_ptr).selfcheck(),
                 );
 
-                let join2 = join3(
+                let join2 = join(
                     (*imu_ptr).selfcheck(),
-                    (*highg_imu_ptr).selfcheck(),
                     (*magnetometer_ptr).selfcheck(),
                 );
 
-                let ((flash, radio, baro), (imu, high_g_imu, magnetometer)) = join(
+                let ((flash, radio, baro), (imu, magnetometer)) = join(
                     join1,
                     join2,
                 ).await;
@@ -344,7 +335,6 @@ impl Sirin {
                     radio,
                     baro,
                     imu,
-                    high_g_imu,
                     magnetometer
                 });
 

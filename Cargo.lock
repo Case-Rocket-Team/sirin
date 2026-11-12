@@ -1016,51 +1016,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "h3lis"
-version = "0.1.1"
-dependencies = [
- "dev-csr",
- "embedded-hal 1.0.0",
- "embedded-hal-async",
- "spi-handle",
-]
-
-[[package]]
-name = "h3lis-test"
-version = "0.1.0"
-dependencies = [
- "bmp3",
- "chrono",
- "cortex-m",
- "cortex-m-rt",
- "critical-section",
- "defmt",
- "defmt-rtt",
- "embassy-executor",
- "embassy-futures 0.1.1",
- "embassy-net",
- "embassy-stm32",
- "embassy-sync",
- "embassy-time",
- "embassy-usb",
- "embedded-hal 0.2.7",
- "embedded-hal 1.0.0",
- "embedded-hal-async",
- "embedded-io-async",
- "embedded-nal-async 0.7.1",
- "embedded-storage",
- "futures",
- "heapless 0.8.0",
- "micromath",
- "panic-probe",
- "rand_core",
- "rfm9",
- "sirin",
- "static_cell",
- "stm32-fmc",
-]
-
-[[package]]
 name = "hash32"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1831,7 +1786,6 @@ dependencies = [
  "embedded-hal-async",
  "embedded-io",
  "enum-display-derive",
- "h3lis",
  "heapless 0.8.0",
  "lis3mdl",
  "lsm6dsv-spi",
