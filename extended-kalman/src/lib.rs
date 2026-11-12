@@ -23,7 +23,7 @@ struct quatf {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ekf_settings {
+pub struct Ekf_settings {
     pub accel_var_f2ps4: f32,
     pub accel_bias_var_f2ps4: f32,
 
@@ -43,7 +43,7 @@ pub struct ekf_settings {
 struct extended_kalman_filter {
     nominal_state: ekf_nominal_state,
 
-    settings: ekf_settings,
+    settings: Ekf_settings,
 
     world_magn_north_gauss: vec3f,
 
@@ -91,7 +91,7 @@ union ekf_control_input {
 }
 
 unsafe extern "C" {
-    fn ekf_init(ekf: *mut extended_kalman_filter, settings: *const ekf_settings, local_down: vec3f, local_magn_gauss: vec3f, timestamp_us: u32);
+    fn ekf_init(ekf: *mut extended_kalman_filter, settings: *const Ekf_settings, local_down: vec3f, local_magn_gauss: vec3f, timestamp_us: u32);
     fn ekf_inject_imu(ekf: *mut extended_kalman_filter, accel_fps2: vec3f, gyro_radps: vec3f, timestamp_us: u32);
     fn ekf_inject_baro(ekf: *mut extended_kalman_filter, altitude_ft: f32, timestamp_us: u32);
     fn ekf_inject_magn(ekf: *mut extended_kalman_filter, magn_north_gauss: vec3f, timestamp_us: u32);
@@ -100,14 +100,18 @@ unsafe extern "C" {
 
 
 
+use core::f32::consts::PI;
+
 use sirin_shared::{
-    packet::Vec3,
-    state::{Accel, AngularVel, Pos, Quaternion, Vel},
+    packet::{ImuData, MagnetometerData, Vec3},
+    state::{Pos, Quaternion, Vel},
 };
-use uunit::{Meters, Quantity};
+use uunit::{MicroGs, Meters, Quantity};
 
 const FT_TO_M: f32 = 0.3048;
 const M_TO_FT: f32 = 1.0 / FT_TO_M;
+const G_FTPS2: f32 = 9.80665 * M_TO_FT;
+const MAG_LSB_PER_GAUSS: f32 = 6842.0;
 
 
 fn pos_to_vec3f(p: &Pos) -> vec3f {
@@ -118,28 +122,31 @@ fn pos_to_vec3f(p: &Pos) -> vec3f {
     }
 }
 
-fn accel_to_vec3f(a: &Accel) -> vec3f {
+fn accel_to_vec3f(a: &Vec3<MicroGs<i32>>) -> vec3f {
     vec3f {
-        x: a.x.value * M_TO_FT,
-        y: a.y.value * M_TO_FT,
-        z: a.z.value * M_TO_FT
+        x: a.x.value as f32 * 1e-6 * G_FTPS2,
+        y: a.y.value as f32 * 1e-6 * G_FTPS2,
+        z: a.z.value as f32 * 1e-6 * G_FTPS2
     }
 }
 
-fn angular_vel_to_vec3f(w: &AngularVel) -> vec3f {
-    vec3f {
-        x: w.x_pitch.value,
-        y: w.y_roll.value,
-        z: w.z_yaw.value
-    }
+fn angular_vel_to_vec3f(w: &ImuData) -> Option<vec3f> {
+    let w = w.angular_vel.as_ref().ok()?;
+    Some(vec3f {
+        x: w.x.value as f32 * 1e-6 * (PI / 180.0),
+        y: w.y.value as f32 * 1e-6 * (PI / 180.0),
+        z: w.z.value as f32 * 1e-6 * (PI / 180.0)
+    })
 }
 
-fn gauss_to_vec3f(v: &Vec3<f32>) -> vec3f {
-    vec3f {
-        x: v.x,
-        y: v.y,
-        z: v.z
-    }
+
+fn gauss_to_vec3f(m: &MagnetometerData) -> Option<vec3f> {
+    let m = m.mag.as_ref().ok()?;
+    Some(vec3f {
+        x: m.x as f32 / MAG_LSB_PER_GAUSS,
+        y: m.y as f32 / MAG_LSB_PER_GAUSS,
+        z: m.z as f32 / MAG_LSB_PER_GAUSS
+    })
 }
 
 fn vec3f_to_pos(v: vec3f) -> Pos {
@@ -167,32 +174,37 @@ pub struct Ekf {
 }
 
 impl Ekf {
-    pub fn new(settings: &ekf_settings, local_down: &Accel, local_magn_gauss: &Vec3<f32>, timestamp_us: u32) -> Self {
+    pub fn new(settings: &Ekf_settings, imu: &ImuData, mag: &MagnetometerData, timestamp_us: u32) -> Option<Self> {
         let mut raw = core::mem::MaybeUninit::<extended_kalman_filter>::uninit();
-        let local_down_vec3f = accel_to_vec3f(local_down);
-        let local_magn_gauss_vec3f = gauss_to_vec3f(local_magn_gauss);
+        let accel = accel_to_vec3f(imu.accel.as_ref().ok()?);
+        let local_down_vec3f = vec3f { x: -accel.x, y: -accel.y, z: -accel.z };
+        let local_magn_gauss_vec3f = gauss_to_vec3f(mag)?;
         unsafe {
             ekf_init(raw.as_mut_ptr(), settings, local_down_vec3f, local_magn_gauss_vec3f, timestamp_us);
-            Self {
+            Some(Self {
                 raw: raw.assume_init()
-            }
+            })
         }
     }
-    pub fn inject_imu(&mut self, accel: &Accel, gyro: &AngularVel, timestamp_us: u32) {
+    pub fn inject_imu(&mut self, imu: &ImuData, timestamp_us: u32) {
+        let (Ok(accel), Some(gyro_radps)) = (&imu.accel, angular_vel_to_vec3f(imu)) else {
+            return;
+        };
         let accel_fps2 = accel_to_vec3f(accel);
-        let gyro_radps = angular_vel_to_vec3f(gyro);
         unsafe {
             ekf_inject_imu(&mut self.raw, accel_fps2, gyro_radps, timestamp_us)
         };
     }
-    pub fn inject_baro(&mut self, altitude: Meters<f32>, timestamp_us: u32) {
-        let altitude_ft = altitude.value * M_TO_FT;
+    pub fn inject_baro(&mut self, altitude: Meters<f64>, timestamp_us: u32) {
+        let altitude_ft = altitude.value as f32 * M_TO_FT;
         unsafe {
             ekf_inject_baro(&mut self.raw, altitude_ft, timestamp_us)
         };
     }
-    pub fn inject_magn(&mut self, magn_gauss: &Vec3<f32>, timestamp_us: u32) {
-        let magn_north_gauss = gauss_to_vec3f(magn_gauss);
+    pub fn inject_magn(&mut self, mag: &MagnetometerData, timestamp_us: u32) {
+        let Some(magn_north_gauss) = gauss_to_vec3f(mag) else {
+            return;
+        };
         unsafe {
             ekf_inject_magn(&mut self.raw, magn_north_gauss, timestamp_us)
         };

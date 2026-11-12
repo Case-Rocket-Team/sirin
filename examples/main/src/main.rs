@@ -21,7 +21,7 @@ use sirin::song::SongDiscriminant;
 use sirin::packet::MatchVoltage;
 use nalgebra as na;
 use na::{Matrix3, Matrix6, Vector3, UnitQuaternion, Rotation3, ComplexField};
-use extended_kalman::{Ekf, ekf_settings, vec3f};
+use extended_kalman::{Ekf, Ekf_settings};
 mod config;
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
@@ -111,6 +111,24 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut usb_ticks_since_broadcast: u32 = 0;
     let mut apogee_check = ThresholdWindow::<{ config::THRESHOLD_WINDOW }>::new();
     let mut landed_check = ThresholdWindow::<{ config::THRESHOLD_WINDOW }>::new();
+
+
+    // Kalman filter init
+    let ekf_settings = Ekf_settings {
+        accel_var_f2ps4: 0.0,
+        accel_bias_var_f2ps4: 0.0,
+        gyro_var_rad2ps2: 0.0,
+        gyro_bias_var_rad2ps2: 0.0,
+        baro_var_ft2: 0.0,
+        magn_covar_gauss2: [0.0; 9],
+        magn_bias_var_gauss2: 0.0,
+        gnss_covar_ft2: [0.0; 9],
+    };
+    let down_vec = todo!();
+    let local_magn_gauss = todo!();
+    let t_us = Instant::now().as_micros() as u32;
+
+    let filter = Ekf::new(&ekf_settings, down_vec, local_magn_gauss, t_us)?;
 
     loop {
         //True only once velocity is successfully calculated
@@ -238,11 +256,15 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             &mut sirin.high_g_imu,
             &mut sirin.magnetometer
         ).await;
+        sirin.data.imu;
         
         //Add a Kalman filter function here
-        //state.nominal = kalman_filter(&mut self, &prev_reading);
-        //TODO: Set velocity_valid here based on whether the Kalman filter successfully computes velocity
-        //Necessary so that flight mode does not detect a landing if the Kalman filter fails during descent
+        filter.inject_imu(&sirin.data.imu, Instant::now().as_micros() as u32);
+        filter.inject_magn(&sirin.data.magnetometer, Instant::now().as_micros() as u32);
+        //filter.inject_gnss(todo!(), Instant::now().as_micros() as u32);
+        if let Ok(pressure) = sirin.data.baro.pressure {
+            filter.inject_baro(approx_pressure_altitude(pressure.convert()), Instant::now().as_micros() as u32);
+        }
 
         //Calculate DataState
         let datastate = SirinDataState{
@@ -251,9 +273,9 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             altitude: state.altitude.clone(),
             apogee: state.apogee.clone(),
             gps_fix: state.gps_fix.clone(),
-            pos: state.nominal.pos.clone(),
-            vel: state.nominal.vel.clone(),
-            rot_quaternion: state.nominal.rot_quaternion.clone(),
+            pos: filter.position(),
+            vel: filter.velocity(),
+            rot_quaternion: filter.attitude(),
             voltage: sirin.match_sense.read(),
         };
 
