@@ -1394,6 +1394,7 @@ dependencies = [
  "extended-kalman",
  "futures",
  "heapless 0.8.0",
+ "lsm6dsv-spi",
  "micromath",
  "nalgebra",
  "panic-probe",

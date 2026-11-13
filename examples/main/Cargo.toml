@@ -50,6 +50,7 @@ sirin-shared = { version = "0.1.0", path = "../../sirin-shared" }
 nalgebra = { version = "*", default-features = false, features = ["libm"] }
 sirin-filter = { version = "0.1.1", path = "../../sirin-filter"}
 extended-kalman = { version = "0.1.0", path = "../../extended-kalman" }
+lsm6dsv-spi = { version = "0.1.0", path = "../../lsm6dsv-spi"}
 #panic-halt = "0.2.0"
 
 [[bin]]

@@ -1,7 +1,7 @@
 // FOR IREC ROCKET - CHECK TO ENSURE THESE VALUES ARE CODED:
 
 //Flight-specific parameters
-pub const ACCEL_THRESHOLD_GS_SQUARED: f64 = 3.0 * 3.0; //In Gs squared
+pub const ACCEL_THRESHOLD_GS_SQUARED: f64 = 4.0 * 4.0; //In Gs squared
 pub const ALTITUDE_THRESHOLD_M: f64 = 3.0; //In meters
 pub const MAIN_DEPLOYMENT_ALTITUDE_M: f64 = 2.5; //In meters (1500 ft)
 pub const FLIGHT_DURATION_S: u64 = 10; //In seconds
@@ -19,9 +19,9 @@ pub const DESCENT_BROADCAST_HZ: f64 = 5.0; //In Hz
 pub const LANDED_BROADCAST_HZ: f64 = 0.025; //In Hz
 
 //Sampling rate
-pub const LOOP_RATE_HZ: f64 = 10.0; //Main loop rate
+pub const LOOP_RATE_HZ: f64 = 100.0; //Main loop rate
 
 //USB broadcast config
-pub const USB_BROADCAST_HZ: f64 = 4.0; //In Hz
+pub const USB_BROADCAST_HZ: f64 = 10.0; //In Hz
 pub const USB_BROADCASTING_ALLOWED: bool = true;
 

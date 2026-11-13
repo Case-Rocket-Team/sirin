@@ -129,7 +129,7 @@ impl Default for SirinState {
 pub struct SirinDataState{
     pub data: SirinData,
     pub mode: SirinMode,
-    pub altitude: Meters<f64>,
+    pub altitude: Meters<f32>,
     pub apogee: Option<Meters<f64>>,
     pub gps_fix: GpsFix,
     pub pos: Pos,

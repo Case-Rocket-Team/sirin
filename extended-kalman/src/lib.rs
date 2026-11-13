@@ -104,7 +104,7 @@ use core::f32::consts::PI;
 
 use sirin_shared::{
     packet::{ImuData, MagnetometerData, Vec3},
-    state::{Pos, Quaternion, Vel},
+    state::{Pos, Quaternion, Vel, Accel, AngularVel},
 };
 use uunit::{MicroGs, Meters, Quantity};
 
@@ -112,6 +112,13 @@ const FT_TO_M: f32 = 0.3048;
 const M_TO_FT: f32 = 1.0 / FT_TO_M;
 const G_FTPS2: f32 = 9.80665 * M_TO_FT;
 const MAG_LSB_PER_GAUSS: f32 = 6842.0;
+
+const ACCEL_OFFSET_G: [f32; 3] = [0.00035467744, -0.000054717064, 0.008441657];
+const ACCEL_SCALE: [f32; 3] = [1.0079681, 1.0090547, 1.0095128];
+
+fn calibrate_g(reading_g: f32, axis: usize) -> f32 {
+    (reading_g - ACCEL_OFFSET_G[axis]) * ACCEL_SCALE[axis]
+}
 
 
 fn pos_to_vec3f(p: &Pos) -> vec3f {
@@ -124,9 +131,9 @@ fn pos_to_vec3f(p: &Pos) -> vec3f {
 
 fn accel_to_vec3f(a: &Vec3<MicroGs<i32>>) -> vec3f {
     vec3f {
-        x: a.x.value as f32 * 1e-6 * G_FTPS2,
-        y: a.y.value as f32 * 1e-6 * G_FTPS2,
-        z: a.z.value as f32 * 1e-6 * G_FTPS2
+        x: calibrate_g(a.x.value as f32 * 1e-6, 0) * G_FTPS2,
+        y: calibrate_g(a.y.value as f32 * 1e-6, 1) * G_FTPS2,
+        z: calibrate_g(a.z.value as f32 * 1e-6, 2) * G_FTPS2
     }
 }
 
@@ -174,16 +181,25 @@ pub struct Ekf {
 }
 
 impl Ekf {
-    pub fn new(settings: &Ekf_settings, imu: &ImuData, mag: &MagnetometerData, timestamp_us: u32) -> Option<Self> {
+    pub fn new(settings: &Ekf_settings, imu: &Accel, gyro_bias: &AngularVel, mag: &MagnetometerData, timestamp_us: u32) -> Option<Self> {
         let mut raw = core::mem::MaybeUninit::<extended_kalman_filter>::uninit();
-        let accel = accel_to_vec3f(imu.accel.as_ref().ok()?);
+        const G_MPS2: f32 = 9.80665;
+        let accel = vec3f {
+            x: calibrate_g(imu.x.value / G_MPS2, 0) * G_FTPS2,
+            y: calibrate_g(imu.y.value / G_MPS2, 1) * G_FTPS2,
+            z: calibrate_g(imu.z.value / G_MPS2, 2) * G_FTPS2,
+        };
         let local_down_vec3f = vec3f { x: -accel.x, y: -accel.y, z: -accel.z };
         let local_magn_gauss_vec3f = gauss_to_vec3f(mag)?;
         unsafe {
             ekf_init(raw.as_mut_ptr(), settings, local_down_vec3f, local_magn_gauss_vec3f, timestamp_us);
-            Some(Self {
-                raw: raw.assume_init()
-            })
+            let mut raw = raw.assume_init();
+            raw.nominal_state.gyro_bias_radps = vec3f {
+                x: gyro_bias.x_pitch.value,
+                y: gyro_bias.y_roll.value,
+                z: gyro_bias.z_yaw.value,
+            };
+            Some(Self { raw })
         }
     }
     pub fn inject_imu(&mut self, imu: &ImuData, timestamp_us: u32) {

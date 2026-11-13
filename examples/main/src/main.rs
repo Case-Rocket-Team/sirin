@@ -5,6 +5,7 @@
 use core::{f32::consts::PI, mem::{self, transmute_copy, MaybeUninit}, pin::Pin, sync::atomic::Ordering, u16};
 
 use bmp3::{hal::{Bmp3RawData, ReadBmp3, RegErrReg, RegStatus}, Bmp3Readout};
+use lsm6dsv_spi::{SflpOdr};
 use defmt::{debug, info, println, Debug2Format};
 use embassy_executor::{task, Executor, Spawner};
 use embassy_stm32::{bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, peripherals::{self, DMA1_CH0, DMA1_CH1, PD8, PD9, USART3}, usart::{self, Config, Uart}};
@@ -85,7 +86,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         Timer::after_millis(25).await;
     }
     altitude_array.sort_unstable_by(|a, b | a.partial_cmp(b).unwrap());
-    let initial_altitude = altitude_array[50].with_units();
+    let initial_altitude: Meters<f64> = altitude_array[50].with_units();
     info!("Initial altitude: {}", initial_altitude.value);
 
     //Spawn background tasks
@@ -98,6 +99,157 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     sirin.spawner.spawn(flash_io_task(unsafe {
         transmute_into_static(&mut flash)
     })).unwrap();
+
+    info!("Keep Sirin still while blue light is on.");
+    for i in 0..5{
+        if i == 5{
+            break;
+        }
+        sirin.led_blue.set_high();
+        Timer::after_millis(100).await;
+        sirin.led_blue.set_low();
+        Timer::after_millis(300).await;
+    }
+    sirin.led_blue.set_high();
+
+    // Checking for gravity vector and gyro bias while the board is still
+    let (gravity, gyro_bias): (Accel, AngularVel) = {
+        const SAMPLES: u32 = 400;
+        // Skip a sample if any gyro axis exceeds this
+        const STILL_GYRO_UDPS: i64 = 3_000_000;
+        // Start over if any axis varies more than this
+        const MAX_STD_UG: f64 = 20_000.0;
+        // Start over if any gyro axis varies more than this (1 dps)
+        const MAX_GYRO_STD_UDPS: f64 = 1_000_000.0;
+
+        let mut ticker = Ticker::every(Duration::from_millis(5));
+        loop {
+            let mut sum = [0i64; 3];
+            let mut sum_sq = [0f64; 3];
+            let mut gyro_sum = [0i64; 3];
+            let mut gyro_sum_sq = [0f64; 3];
+            let mut n: u32 = 0;
+            for _ in 0..SAMPLES {
+                ticker.next().await;
+                let (Ok(a), Ok(w)) = (sirin.imu.accel().await, sirin.imu.angular_vel().await) else {
+                    continue;
+                };
+                if [w.x_pitch.value, w.y_roll.value, w.z_yaw.value]
+                    .iter()
+                    .any(|v| v.abs() > STILL_GYRO_UDPS)
+                {
+                    continue;
+                }
+                for (i, v) in [a.x.value, a.y.value, a.z.value].into_iter().enumerate() {
+                    sum[i] += v as i64;
+                    sum_sq[i] += (v as f64) * (v as f64);
+                }
+                for (i, v) in [w.x_pitch.value, w.y_roll.value, w.z_yaw.value].into_iter().enumerate() {
+                    gyro_sum[i] += v;
+                    gyro_sum_sq[i] += (v as f64) * (v as f64);
+                }
+                n += 1;
+            }
+
+            if n < SAMPLES / 2 {
+                info!("Gravity: board moving or IMU reads failing ({}/{} samples kept), retrying", n, SAMPLES);
+                continue;
+            }
+            let nf = n as f64;
+            let mean_ug = [sum[0] as f64 / nf, sum[1] as f64 / nf, sum[2] as f64 / nf];
+            let moved = (0..3).any(|i| sum_sq[i] / nf - mean_ug[i] * mean_ug[i] > MAX_STD_UG * MAX_STD_UG);
+            if moved {
+                info!("Gravity: board moved during measurement, retrying");
+                continue;
+            }
+            let gyro_mean_udps = [gyro_sum[0] as f64 / nf, gyro_sum[1] as f64 / nf, gyro_sum[2] as f64 / nf];
+            let gyro_std_udps = [0, 1, 2].map(|i| {
+                ComplexField::sqrt((gyro_sum_sq[i] / nf - gyro_mean_udps[i] * gyro_mean_udps[i]).max(0.0))
+            });
+            if gyro_std_udps.iter().any(|&s| s > MAX_GYRO_STD_UDPS) {
+                info!(
+                    "Gyro bias: board turned during measurement (std x={} y={} z={} µdps), retrying",
+                    gyro_std_udps[0], gyro_std_udps[1], gyro_std_udps[2],
+                );
+                continue;
+            }
+
+            let ms2 = |axis: usize| {
+                ((mean_ug[axis] * 1e-6) as f32) * 9.80665
+            };
+            let g = Accel {
+                x: ms2(0).with_units(),
+                y: ms2(1).with_units(),
+                z: ms2(2).with_units(),
+            };
+            info!(
+                "Gravity ({} samples): x={} y={} z={} m/s²",
+                n, g.x.value, g.y.value, g.z.value,
+            );
+
+            let rad_s = |axis: usize| ((gyro_mean_udps[axis] * 1e-6) as f32) * (PI / 180.0);
+            let bias = AngularVel {
+                x_pitch: rad_s(0).with_units(),
+                y_roll: rad_s(1).with_units(),
+                z_yaw: rad_s(2).with_units(),
+            };
+            info!(
+                "Gyro bias ({} samples): x={} y={} z={} µdps",
+                n, gyro_mean_udps[0], gyro_mean_udps[1], gyro_mean_udps[2],
+            );
+            break (g, bias);
+        }
+    };
+
+    // Checking for an initial magnetic heading while the board is still
+    let mag_reference: sirin::packet::MagnetometerData = {
+        const SAMPLES: u32 = 30;
+        // Start over if any axis varies more than this
+        const MAX_STD_COUNTS: f64 = 150.0;
+
+        let mut ticker = Ticker::every(Duration::from_millis(100));
+        loop {
+            let mut sum = [0i64; 3];
+            let mut sum_sq = [0f64; 3];
+            let mut n: u32 = 0;
+            for _ in 0..SAMPLES {
+                ticker.next().await;
+                let Ok((x, y, z)) = sirin.magnetometer.magnetic().await else {
+                    continue;
+                };
+                for (i, v) in [x, y, z].into_iter().enumerate() {
+                    sum[i] += v as i64;
+                    sum_sq[i] += (v as f64) * (v as f64);
+                }
+                n += 1;
+            }
+
+            if n < SAMPLES / 2 {
+                info!("Magnetometer: reads failing ({}/{} samples kept), retrying", n, SAMPLES);
+                continue;
+            }
+            let nf = n as f64;
+            let mean = [sum[0] as f64 / nf, sum[1] as f64 / nf, sum[2] as f64 / nf];
+            let moved = (0..3).any(|i| sum_sq[i] / nf - mean[i] * mean[i] > MAX_STD_COUNTS * MAX_STD_COUNTS);
+            if moved {
+                info!("Magnetometer: board moved during measurement, retrying");
+                continue;
+            }
+            let m = sirin::packet::Vec3 {
+                x: mean[0].round() as i16,
+                y: mean[1].round() as i16,
+                z: mean[2].round() as i16,
+            };
+            info!(
+                "Magnetometer reference ({} samples): x={} y={} z={} counts",
+                n, m.x, m.y, m.z,
+            );
+            break sirin::packet::MagnetometerData { mag: Ok(m), temp: Ok(0) };
+        }
+    };
+
+    sirin.led_blue.set_low();
+
 
     info!("Start main");
 
@@ -115,20 +267,28 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
     // Kalman filter init
     let ekf_settings = Ekf_settings {
-        accel_var_f2ps4: 0.0,
-        accel_bias_var_f2ps4: 0.0,
-        gyro_var_rad2ps2: 0.0,
-        gyro_bias_var_rad2ps2: 0.0,
-        baro_var_ft2: 0.0,
-        magn_covar_gauss2: [0.0; 9],
-        magn_bias_var_gauss2: 0.0,
-        gnss_covar_ft2: [0.0; 9],
+        accel_var_f2ps4: 0.011196358441216, // σ = 0.1058 ft/s² (≈ 3.3 mg)
+        accel_bias_var_f2ps4: 1e-4,
+        gyro_var_rad2ps2: 1.09662e-6,
+        gyro_bias_var_rad2ps2: 1e-5,        // σ ≈ 0.00105 rad/s (≈ 0.06 °/s)
+        baro_var_ft2: 100.0,                // σ = 10 ft (≈ 3 m
+        magn_covar_gauss2: [                // σ = 3.2 mG (x, y), 4.1 mG (z)
+            3.2e-3 * 3.2e-3, 0.0, 0.0,
+            0.0, 3.2e-3 * 3.2e-3, 0.0,
+            0.0, 0.0, 4.1e-3 * 4.1e-3,
+        ],
+        magn_bias_var_gauss2: 1e-5,
+        gnss_covar_ft2: [                   // unused while you don't inject GPS
+            18.0, 0.0, 0.0,
+            0.0, 18.0, 0.0,
+            0.0, 0.0, 200.0,
+        ],
     };
-    let down_vec = todo!();
-    let local_magn_gauss = todo!();
-    let t_us = Instant::now().as_micros() as u32;
 
-    let filter = Ekf::new(&ekf_settings, down_vec, local_magn_gauss, t_us)?;
+    let t_us = Instant::now().as_micros() as u32;
+    let mut mag_inject_counter = 0;
+
+    let mut filter = Ekf::new(&ekf_settings, &gravity, &gyro_bias, &mag_reference, t_us).unwrap();
 
     loop {
         //True only once velocity is successfully calculated
@@ -256,11 +416,14 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             &mut sirin.high_g_imu,
             &mut sirin.magnetometer
         ).await;
-        sirin.data.imu;
         
         //Add a Kalman filter function here
         filter.inject_imu(&sirin.data.imu, Instant::now().as_micros() as u32);
-        filter.inject_magn(&sirin.data.magnetometer, Instant::now().as_micros() as u32);
+
+        mag_inject_counter += 1;
+        if(mag_inject_counter % 10 == 0){
+            filter.inject_magn(&sirin.data.magnetometer, Instant::now().as_micros() as u32);   
+        }
         //filter.inject_gnss(todo!(), Instant::now().as_micros() as u32);
         if let Ok(pressure) = sirin.data.baro.pressure {
             filter.inject_baro(approx_pressure_altitude(pressure.convert()), Instant::now().as_micros() as u32);
@@ -270,7 +433,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         let datastate = SirinDataState{
             data: sirin.data.clone(),
             mode: state.mode.clone(),
-            altitude: state.altitude.clone(),
+            altitude: filter.position().z,
             apogee: state.apogee.clone(),
             gps_fix: state.gps_fix.clone(),
             pos: filter.position(),
@@ -279,7 +442,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             voltage: sirin.match_sense.read(),
         };
 
-        //info!("Calculate barometric altitude");
+        /*info!("Calculate barometric altitude");
         if let Ok(pressure) = sirin.data.baro.pressure {
             let measured_altitude = approx_pressure_altitude(pressure.convert());
             state.altitude = measured_altitude - initial_altitude;
@@ -287,7 +450,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 max_altitude = state.altitude;
             }
         }
-        //info!("Altitude calculated");
+        //info!("Altitude calculated");*/
 
         let accel_mag_squared = if let Ok(accel) = &sirin.data.imu.accel {
             let x_f64: MicroGs<f64> = (accel.x.value as f64).with_units();
@@ -405,7 +568,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 
             },
             SirinMode::Landed => {
-                info!("In landed mode");
                 sirin.led_blue.set_low();
             }
         }

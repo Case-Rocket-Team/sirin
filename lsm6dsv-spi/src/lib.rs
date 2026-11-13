@@ -1093,6 +1093,8 @@ impl <S: SpiHandle> Lsm6dsv32x<S> {
 
      /// returns a tuple with units of ug (10^-6)
      pub async fn accel(&mut self) -> Result<Accel, <S::Bus as ErrorType>::Error> {
+          const ACCEL_OFFSET_X: [f32; 3]  = [0.009915292, 0.057236224, 0.3050423];
+          const ACCEL_SCALE: [f32; 3] = [1.0081183, 1.010551, 1.0043522];
           let (raw_x, raw_y, raw_z) = self.raw_accel().await?;
           //sensitivity mode
           let fs = self.accel_sensitivity().await?;
@@ -1100,9 +1102,9 @@ impl <S: SpiHandle> Lsm6dsv32x<S> {
           //xyz are corrected so that
           //x -> cable direction
           //yz follow from right hand rule, x as index finger
-          let accel_x: i32 = scalar * (raw_x as i32);
-          let accel_y: i32 = scalar * (raw_y as i32);
-          let accel_z: i32 = scalar * (raw_z as i32);
+          let accel_x: i32 = (scalar * (raw_x as i32)) - (ACCEL_OFFSET_X[0] * 1e6) as i32 * ACCEL_SCALE[0] as i32;
+          let accel_y: i32 = (scalar * (raw_y as i32)) - (ACCEL_OFFSET_X[1] * 1e6) as i32 * ACCEL_SCALE[1] as i32;
+          let accel_z: i32 = (scalar * (raw_z as i32)) - (ACCEL_OFFSET_X[2] * 1e6) as i32 * ACCEL_SCALE[2] as i32;
 
           Ok(Accel {
                x: accel_x.with_units(),
