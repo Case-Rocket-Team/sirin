@@ -28,7 +28,7 @@ members = [
     "examples/mag-calibrate",
     "examples/allan-variance", 
     "examples/ematch-test",
-    "examples/mag-test"
+    "examples/mag-test",
 ]
 resolver = "2"
 

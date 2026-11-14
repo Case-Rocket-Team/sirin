@@ -1,12 +1,12 @@
 // FOR IREC ROCKET - CHECK TO ENSURE THESE VALUES ARE CODED:
 
 //Flight-specific parameters
-pub const ACCEL_THRESHOLD_GS_SQUARED: f64 = 4.0 * 4.0; //In Gs squared
-pub const ALTITUDE_THRESHOLD_M: f64 = 3.0; //In meters
+pub const ACCEL_THRESHOLD_GS_SQUARED: f64 = 5.0 * 5.0; //In Gs squared
+pub const ALTITUDE_THRESHOLD_M: f64 = 20.0; //In meters
 pub const MAIN_DEPLOYMENT_ALTITUDE_M: f64 = 2.5; //In meters (1500 ft)
 pub const FLIGHT_DURATION_S: u64 = 10; //In seconds
 pub const APOGEE_ERROR_M: f64 = 0.5; //In meters
-pub const APOGEE_TIMEOUT_S: u64 = 0; //In seconds
+pub const APOGEE_TIMEOUT_S: u64 = 10; //In seconds
 pub const FLIGHT_TIMEOUT_S: u64 = 10; //In seconds
 pub const LANDED_VELOCITY_THRESHOLD_M_S: f64 = 0.5; //In meters per second
 pub const THRESHOLD_WINDOW: usize = 10; //Size of ring buffer for apogee/landing detection

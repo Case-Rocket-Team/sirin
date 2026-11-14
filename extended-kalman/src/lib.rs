@@ -147,13 +147,30 @@ fn angular_vel_to_vec3f(w: &ImuData) -> Option<vec3f> {
 }
 
 
-/// Magnetometer calibration inside Test Rocket ebay
+/* 
+Magnetometer calibration inside Test Rocket ebay
 const MAG_HARD_IRON_UT: [f32; 3] = [-74.704506, -169.0767, -71.9992];
 const MAG_SOFT_IRON: [[f32; 3]; 3] = [
     [1.0387778, -0.00072778534, -0.046094228],
     [-0.00072778534, 1.1413802, 0.019123822],
     [-0.046094228, 0.019123822, 0.8457911],
 ];
+*/
+
+/// Magnetometer calibration outside ebay
+const MAG_HARD_IRON_UT: [f32; 3] = [-31.609482, 19.682993, -145.27975];
+const MAG_SOFT_IRON: [[f32; 3]; 3] = [
+    [0.73480767, 0.031696126, 0.031522755],
+    [0.031696126, 1.2069818, 0.054923296],
+    [0.031522755, 0.054923296, 1.1325343],
+];
+
+/// Magnetometer reading after the same hard/soft-iron calibration the filter
+/// uses, in µT. For logging and checking the calibration.
+pub fn calibrated_magn_ut(m: &MagnetometerData) -> Option<[f32; 3]> {
+    let v = gauss_to_vec3f(m)?;
+    Some([v.x * 100.0, v.y * 100.0, v.z * 100.0])
+}
 
 fn gauss_to_vec3f(m: &MagnetometerData) -> Option<vec3f> {
     let m = m.mag.as_ref().ok()?;

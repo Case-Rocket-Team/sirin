@@ -286,7 +286,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     };
 
     let t_us = Instant::now().as_micros() as u32;
-    let mut mag_inject_counter = 0;
+    let mut inject_counter = 0;
 
     let mut filter = Ekf::new(&ekf_settings, &gravity, &gyro_bias, &mag_reference, t_us).unwrap();
 
@@ -422,24 +422,26 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         if let Some(fix) = GPS_FIX.try_take() {
             if fix.fix_type != GpsFixType::NoFix {
                 state.gps_fix = fix;
-                filter.inject_gnss(
+                /*filter.inject_gnss(
                     &Pos { 
                         x: (state.gps_fix.pos.x.value as f32).with_units(), 
                         y: (state.gps_fix.pos.y.value as f32).with_units(),
                         z: (state.gps_fix.pos.z.value as f32).with_units()
                     },
                     Instant::now().as_micros() as u32
-                );
+                );*/
             }
         } 
 
-        mag_inject_counter += 1;
-        if(mag_inject_counter % 10 == 0){
+        inject_counter += 1;
+        if(inject_counter % 10 == 0){
             filter.inject_magn(&sirin.data.magnetometer, Instant::now().as_micros() as u32);   
         }
 
         if let Ok(pressure) = sirin.data.baro.pressure {
-            filter.inject_baro(approx_pressure_altitude(pressure.convert()) - initial_altitude, Instant::now().as_micros() as u32);
+            if inject_counter % 4 == 0{
+                filter.inject_baro(approx_pressure_altitude(pressure.convert()) - initial_altitude, Instant::now().as_micros() as u32);
+            }
         }
 
         //Calculate DataState
