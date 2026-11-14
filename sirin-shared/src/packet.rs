@@ -253,8 +253,7 @@ impl <T: SongSize + ToSong + FromSong> Page<T> {
     }
 }
 
-///#[cfg(feature = "serde")]
-//#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Display, Clone, PartialEq, Eq, SongSize, ToSong, FromSong)]
 #[song(discriminant(PacketErrorType = u8))]
 pub enum PacketError {
