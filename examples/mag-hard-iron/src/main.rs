@@ -34,7 +34,7 @@ use nalgebra::{Matrix3, SMatrix, SVector, Vector3};
 use {defmt_rtt as _, panic_probe as _};
 use sirin::Sirin;
 
-const HARD_IRON_BIAS: [f32; 3] = [-74.704506, -169.0767, -71.9992];
+const HARD_IRON_BIAS: [f32; 3] = [-25.440907, 30.405136, -149.43695];
 
 const COLLECT_SECONDS: u64 = 180;
 const COUNTDOWN_SECONDS: u64 = 5;
@@ -92,6 +92,17 @@ fn magnitude_stats(samples: &[[f32; 3]], offset: &Vector3<f64>, a: &Matrix3<f64>
 /// Returns the soft-iron matrix A = F · sqrt(M), F (fitted field strength, µT),
 /// and the centre c - the leftover hard-iron offset still in the samples.
 fn fit_ellipsoid(samples: &[[f32; 3]]) -> Result<(Matrix3<f64>, f64, Vector3<f64>), &'static str> {
+    // Shift the data so its mean is at the origin before fitting. The
+    // vᵀQv + 2gᵀv = 1 form below is badly conditioned when the origin is far
+    // outside the ellipsoid (a stale HARD_IRON_BIAS), and fails outright when
+    // the origin is near its surface. With the origin at the data's centre it
+    // works no matter what HARD_IRON_BIAS is. The shift is added back to c.
+    let mut mean = Vector3::<f64>::zeros();
+    for s in samples {
+        mean += Vector3::new(s[0] as f64, s[1] as f64, s[2] as f64);
+    }
+    mean /= samples.len() as f64;
+
     // Solve d·p = 1 by least squares, where
     // d = [x², y², z², 2xy, 2xz, 2yz, 2x, 2y, 2z]
     // p = [Qxx, Qyy, Qzz, Qxy, Qxz, Qyz, gx, gy, gz]
@@ -99,7 +110,7 @@ fn fit_ellipsoid(samples: &[[f32; 3]]) -> Result<(Matrix3<f64>, f64, Vector3<f64
     let mut dtd = SMatrix::<f64, 9, 9>::zeros();
     let mut dt1 = SVector::<f64, 9>::zeros();
     for s in samples {
-        let (x, y, z) = (s[0] as f64, s[1] as f64, s[2] as f64);
+        let (x, y, z) = (s[0] as f64 - mean.x, s[1] as f64 - mean.y, s[2] as f64 - mean.z);
         let d = SVector::<f64, 9>::from_column_slice(&[
             x * x, y * y, z * z,
             2.0 * x * y, 2.0 * x * z, 2.0 * y * z,
@@ -143,7 +154,7 @@ fn fit_ellipsoid(samples: &[[f32; 3]]) -> Result<(Matrix3<f64>, f64, Vector3<f64
     let v = eig.eigenvectors;
     let a = f * v * sqrt_l * v.transpose();
 
-    Ok((a, f, c))
+    Ok((a, f, c + mean))
 }
 
 async fn main_task(sirin: &'static mut Sirin, samples: &'static mut [[f32; 3]; MAX_SAMPLES]) {
