@@ -416,17 +416,30 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             &mut sirin.high_g_imu,
             &mut sirin.magnetometer
         ).await;
-        
         //Add a Kalman filter function here
         filter.inject_imu(&sirin.data.imu, Instant::now().as_micros() as u32);
+
+        if let Some(fix) = GPS_FIX.try_take() {
+            if fix.fix_type != GpsFixType::NoFix {
+                state.gps_fix = fix;
+                filter.inject_gnss(
+                    &Pos { 
+                        x: (state.gps_fix.pos.x.value as f32).with_units(), 
+                        y: (state.gps_fix.pos.y.value as f32).with_units(),
+                        z: (state.gps_fix.pos.z.value as f32).with_units()
+                    },
+                    Instant::now().as_micros() as u32
+                );
+            }
+        } 
 
         mag_inject_counter += 1;
         if(mag_inject_counter % 10 == 0){
             filter.inject_magn(&sirin.data.magnetometer, Instant::now().as_micros() as u32);   
         }
-        //filter.inject_gnss(todo!(), Instant::now().as_micros() as u32);
+
         if let Ok(pressure) = sirin.data.baro.pressure {
-            filter.inject_baro(approx_pressure_altitude(pressure.convert()), Instant::now().as_micros() as u32);
+            filter.inject_baro(approx_pressure_altitude(pressure.convert()) - initial_altitude, Instant::now().as_micros() as u32);
         }
 
         //Calculate DataState
@@ -606,13 +619,6 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     Log::DataState(datastate.clone())
                 ))
             ));
-        }
-
-        //info!("Try get GPS fix");
-        if let Some(fix) = GPS_FIX.try_take() {
-            //if fix.fix_type != GpsFixType::NoFix {
-                state.gps_fix = fix;
-            //}
         }
     }
 }

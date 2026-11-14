@@ -147,13 +147,22 @@ fn angular_vel_to_vec3f(w: &ImuData) -> Option<vec3f> {
 }
 
 
+/// Magnetometer calibration inside Test Rocket ebay
+const MAG_HARD_IRON_UT: [f32; 3] = [-74.704506, -169.0767, -71.9992];
+const MAG_SOFT_IRON: [[f32; 3]; 3] = [
+    [1.0387778, -0.00072778534, -0.046094228],
+    [-0.00072778534, 1.1413802, 0.019123822],
+    [-0.046094228, 0.019123822, 0.8457911],
+];
+
 fn gauss_to_vec3f(m: &MagnetometerData) -> Option<vec3f> {
     let m = m.mag.as_ref().ok()?;
-    Some(vec3f {
-        x: m.x as f32 / MAG_LSB_PER_GAUSS,
-        y: m.y as f32 / MAG_LSB_PER_GAUSS,
-        z: m.z as f32 / MAG_LSB_PER_GAUSS
-    })
+    let raw_ut = [m.x as f32, m.y as f32, m.z as f32].map(|c| c / MAG_LSB_PER_GAUSS * 100.0);
+    let off = [0, 1, 2].map(|i| raw_ut[i] - MAG_HARD_IRON_UT[i]);
+    let cal_gauss = [0, 1, 2].map(|r| {
+        (MAG_SOFT_IRON[r][0] * off[0] + MAG_SOFT_IRON[r][1] * off[1] + MAG_SOFT_IRON[r][2] * off[2]) / 100.0
+    });
+    Some(vec3f { x: cal_gauss[0], y: cal_gauss[1], z: cal_gauss[2] })
 }
 
 fn vec3f_to_pos(v: vec3f) -> Pos {

@@ -157,7 +157,7 @@ pub async fn gps_impl(
                 //println!("{:?}", Debug2Format(&packet));
                 match packet {
                     PacketRef::NavPosEcef(p) => {
-                        //println!("Fix found!");
+                        println!("ECEF Fix found!");
                         fix.itow = p.itow();
                         // Not actually meters, I think.
                         fix.pos.x.value = p.ecef_x_meters_raw();
@@ -167,11 +167,34 @@ pub async fn gps_impl(
                         GPS_FIX.signal(fix.clone());
                     }
                     PacketRef::NavPvt(p) => {
-                        //println!("NavPvt packet found!");
+                        println!("NavPvt packet found!");
                         fix.itow = p.itow();
                         fix.lon = p.longitude();
                         fix.lat = p.latitude();
                         GPS_FIX.signal(fix.clone());
+                        match p.fix_type() {
+                            GnssFixType::TimeOnlyFix => {
+                                fix.fix_type = GpsFixType::TimeOnlyFix;
+                            }
+                            GnssFixType::GPSPlusDeadReckoning => {
+                                fix.fix_type = GpsFixType::FixDifferential;
+                            }
+                            GnssFixType::NoFix => {
+                                fix.fix_type = GpsFixType::NoFix;
+                            }
+                            GnssFixType::DeadReckoningOnly => {
+                                fix.fix_type = GpsFixType::FixPrediction;
+                            }
+                            GnssFixType::Fix2D => {
+                                fix.fix_type = GpsFixType::Fix2d;
+                            }
+                            GnssFixType::Fix3D => {
+                                fix.fix_type = GpsFixType::Fix3d;
+                            }
+                            _ => {
+                                fix.fix_type = GpsFixType::NoFix;
+                            }
+                        }
                     }
                     _ => {} /*PacketRef::NavPvt(nav_pvt_packet) => {
                                 //info!("Got version message: nav_pvt");
