@@ -896,6 +896,8 @@ name = "extended-kalman"
 version = "0.1.0"
 dependencies = [
  "cc",
+ "sirin-shared",
+ "uunit",
 ]
 
 [[package]]
@@ -1389,6 +1391,7 @@ dependencies = [
  "embedded-io-async",
  "embedded-nal-async 0.7.1",
  "embedded-storage",
+ "extended-kalman",
  "futures",
  "heapless 0.8.0",
  "micromath",
