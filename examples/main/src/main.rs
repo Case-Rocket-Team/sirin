@@ -268,14 +268,20 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     // Kalman filter init
     let ekf_settings = Ekf_settings {
         accel_var_f2ps4: 0.011196358441216, // σ = 0.1058 ft/s² (≈ 3.3 mg)
-        accel_bias_var_f2ps4: 1e-4,
+        accel_bias_var_f2ps4: 1e-6,
         gyro_var_rad2ps2: 1.09662e-6,
-        gyro_bias_var_rad2ps2: 1e-5,        // σ ≈ 0.00105 rad/s (≈ 0.06 °/s)
-        baro_var_ft2: 100.0,                // σ = 10 ft (≈ 3 m
+        gyro_bias_var_rad2ps2: 1e-10,        // σ ≈ 0.00105 rad/s (≈ 0.06 °/s)
+        baro_var_ft2: 100.0,  
+        /*            // σ = 10 ft (≈ 3 m
         magn_covar_gauss2: [                // σ = 3.2 mG (x, y), 4.1 mG (z)
             3.2e-3 * 3.2e-3, 0.0, 0.0,
             0.0, 3.2e-3 * 3.2e-3, 0.0,
             0.0, 0.0, 4.1e-3 * 4.1e-3,
+        ], */
+        magn_covar_gauss2: [
+            0.025 * 0.025, 0.0, 0.0,
+            0.0, 0.025 * 0.025, 0.0,
+            0.0, 0.0, 0.025 * 0.025,
         ],
         magn_bias_var_gauss2: 1e-5,
         gnss_covar_ft2: [                   // unused while you don't inject GPS
@@ -287,6 +293,8 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
     let t_us = Instant::now().as_micros() as u32;
     let mut inject_counter = 0;
+    // Last raw magnetometer reading so each sample is injected only once
+    let mut last_mag: Option<(i16, i16, i16)> = None;
 
     let mut filter = Ekf::new(&ekf_settings, &gravity, &gyro_bias, &mag_reference, t_us).unwrap();
 
@@ -416,7 +424,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             &mut sirin.high_g_imu,
             &mut sirin.magnetometer
         ).await;
-        //Add a Kalman filter function here
+
         filter.inject_imu(&sirin.data.imu, Instant::now().as_micros() as u32);
 
         if let Some(fix) = GPS_FIX.try_take() {
@@ -434,10 +442,28 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         } 
 
         inject_counter += 1;
-        if(inject_counter % 10 == 0){
-            filter.inject_magn(&sirin.data.magnetometer, Instant::now().as_micros() as u32);   
-        }
 
+        // Only inject magnetometer readings when the board is nearly still and the reading is new
+        const MAG_MAX_GYRO_UDPS: f32 = 25_000_000.0;
+        const MAG_MAX_ACCEL_ERR_UG: f32 = 100_000.0;
+        if let Ok(m) = &sirin.data.magnetometer.mag {
+            let new_mag = last_mag != Some((m.x, m.y, m.z));
+            last_mag = Some((m.x, m.y, m.z));
+
+            let calm = match (&sirin.data.imu.angular_vel, &sirin.data.imu.accel) {
+                (Ok(w), Ok(a)) => {
+                    let w2 = [w.x.value, w.y.value, w.z.value].iter().map(|&v| (v as f32) * (v as f32)).sum::<f32>();
+                    let a2 = [a.x.value, a.y.value, a.z.value].iter().map(|&v| (v as f32) * (v as f32)).sum::<f32>();
+                    let a_lo = 1_000_000.0 - MAG_MAX_ACCEL_ERR_UG;
+                    let a_hi = 1_000_000.0 + MAG_MAX_ACCEL_ERR_UG;
+                    w2 < MAG_MAX_GYRO_UDPS * MAG_MAX_GYRO_UDPS && a2 > a_lo * a_lo && a2 < a_hi * a_hi
+                }
+                _ => false,
+            };
+            if new_mag && calm {
+                filter.inject_magn(&sirin.data.magnetometer, Instant::now().as_micros() as u32);
+            }
+        }
         if let Ok(pressure) = sirin.data.baro.pressure {
             if inject_counter % 4 == 0{
                 filter.inject_baro(approx_pressure_altitude(pressure.convert()) - initial_altitude, Instant::now().as_micros() as u32);

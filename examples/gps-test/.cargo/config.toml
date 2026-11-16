@@ -9,7 +9,7 @@ runner = 'probe-rs run --chip STM32H743VITx'
 target = "thumbv7em-none-eabihf"
 
 [env]
-DEFMT_LOG = "trace"
+DEFMT_LOG = "info"
 
 [unstable]
 build-std = ["core"]

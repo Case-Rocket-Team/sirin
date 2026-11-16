@@ -158,11 +158,11 @@ const MAG_SOFT_IRON: [[f32; 3]; 3] = [
 */
 
 /// Magnetometer calibration outside ebay
-const MAG_HARD_IRON_UT: [f32; 3] = [-31.609482, 19.682993, -145.27975];
+const MAG_HARD_IRON_UT: [f32; 3] = [-25.440907, 30.405136, -149.43695];
 const MAG_SOFT_IRON: [[f32; 3]; 3] = [
-    [0.73480767, 0.031696126, 0.031522755],
-    [0.031696126, 1.2069818, 0.054923296],
-    [0.031522755, 0.054923296, 1.1325343],
+    [0.98703164, 0.023529176, -0.018318616],
+    [0.023529176, 0.9792689, 0.009106107],
+    [-0.018318616, 0.009106107, 1.0356128],
 ];
 
 /// Magnetometer reading after the same hard/soft-iron calibration the filter

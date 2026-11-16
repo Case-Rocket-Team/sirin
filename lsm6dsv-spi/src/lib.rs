@@ -986,15 +986,23 @@ impl <S: SpiHandle> Lsm6dsv32x<S> {
           // 000: high performance mode
           // 1100: 7.68 kHz ODR
           self.write_reg(RegCtrl1, 0b0_000_1100 as u8).await?;
+          // 100: LPF2 bandwidth ODR/100 (~77 Hz at 7.68 kHz), used once LPF2 is enabled in CTRL9
           // 11: +- 32g FS
-          self.write_reg(RegCtrl8, 0b000_0_0_1_11 as u8).await?;
+          self.write_reg(RegCtrl8, 0b100_0_0_1_11 as u8).await?;
+          // Enable accel LPF2 so each sample is filtered instead of instantaneous
+          let ctrl9 = self.read_reg(RegCtrl9).await?;
+          self.write_reg(RegCtrl9, ctrl9 | 0b0000_1000).await?;
  
           // Gyroscope setup
           // 000: high performance mode
           // 1100: 7.68 kHz ODR
           self.write_reg(RegCtrl2, 0b0_000_1100 as u8).await?;
-          // 0001: +-250dps FS
-          self.write_reg(RegCtrl6, 0b0_000_0001 as u8).await?;
+          // 101: LPF1 bandwidth
+          // 0100: +-2000dps FS
+          self.write_reg(RegCtrl6, 0b0_101_0100 as u8).await?;
+          // Enable gyro LPF1
+          let ctrl7 = self.read_reg(RegCtrl7).await?;
+          self.write_reg(RegCtrl7, ctrl7 | 0b0000_0001).await?;
           Ok(())    
     }
 
