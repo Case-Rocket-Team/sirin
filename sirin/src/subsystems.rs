@@ -6,7 +6,6 @@ use bmp3::Bmp3;
 use defmt::Str;
 use embassy_time::Instant;  
 use embedded_hal::spi::ErrorKind as SpiErrorKind;
-use h3lis::H3lis;
 use lsm6dsv_spi::{Accel, AngularVel, Lsm6dsv32x};
 use paste::paste;
 use rfm9::Rfm9;
@@ -152,42 +151,6 @@ impl Instrument for Lsm6dsv32x<SpiDev> {
     }
 }
 
-impl Subsystem for H3lis<SpiDev> {
-    const NAME: &str = "High G IMU";
-    const PART: &str = "H3LIS";
-
-    async fn selfcheck(&mut self) -> Result<(), SubsystemError> {
-        let manufacturer_id = self.manufacturer_id().await?;
-
-        sanity_check!(manufacturer_id => 50)?;
-        Ok(())
-    }
-}
-
-impl Instrument for H3lis<SpiDev> {
-    type Data = HighGImuData;
-
-    async fn measure(&mut self) -> Self::Data {
-        match self.acceleration().await.map_err(|e| e.into()) {
-            Ok(accel) => {
-                Self::Data {
-                    accel: Ok(Vec3 {
-                        x: accel.0,
-                        y: accel.1,
-                        z: accel.2
-                    })
-                }
-            },
-            Err(e) => {
-                Self::Data {
-                    accel: Err(e)
-                }
-            }
-        }
-
-    }
-}
-
 impl Subsystem for Lis3mdl<SpiDev> {
     const NAME: &str = "Magnetometer";
     const PART: &str = "LIS3MDL";
@@ -227,7 +190,6 @@ impl Subsystem for Rfm9<SpiDev> {
 pub async fn measure_sirin(
     baro: &mut Bmp3<SpiDev>,
     imu: &mut Lsm6dsv32x<SpiDev>,
-    high_g_imu: &mut H3lis<SpiDev>,
     magnetometer: &mut Lis3mdl<SpiDev>
 ) -> SirinData {
     let barodata = baro.measure().await;
@@ -236,7 +198,6 @@ pub async fn measure_sirin(
         time: (Instant::now().as_millis() as u32).with_units(),
         baro: barodata.clone(),
         imu: imu.measure().await,
-        high_g_imu: high_g_imu.measure().await,
         magnetometer: magnetometer.measure().await,
         altitude: approx_pressure_altitude(barodata.pressure.unwrap().convert())
     }

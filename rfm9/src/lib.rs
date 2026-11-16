@@ -397,10 +397,10 @@ impl <S: SpiHandle> Rfm9<S> {
     pub async fn calibrate(&mut self) -> Result<(), Error> {
         self.set_mode(Mode::Sleep).await?;
         
-        //6B78a8 for 429.86MHz
-        //6c8000 for 434MHz
-        // sets frequency to 434 MHz
-        let freq_bytes: [u8; 3] = [0x6b, 0x77, 0x0e];
+        // Frequency = value * 32 MHz / 2^19 (61.035 Hz per step)
+        //6B770E for 429.86MHz
+        //6C8000 for 434MHz
+        let freq_bytes: [u8; 3] = [0x6c, 0x77, 0x0E];
         self.write_contiguous_regs(RegFrMsb, &freq_bytes).await?;
 
         //self.set_frf_msb(0x6c).await?;
