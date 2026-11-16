@@ -252,7 +252,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             pos: state.nominal.pos.clone(),
             vel: state.nominal.vel.clone(),
             rot_quaternion: state.nominal.rot_quaternion.clone(),
-            voltage: MatchVoltage::new(0.0, 0.0)
+            voltage: sirin.match_sense.read(),
         };
 
         //info!("Calculate barometric altitude");
@@ -283,7 +283,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     || accel_mag_squared.is_some_and(|accel| accel.value > accel_threshold.value)
                     || desired_mode == Some(SirinMode::Flight)
                 {
-                    sirin.led.set_high();
+                    sirin.led_white.set_high();
                     state.mode = SirinMode::Flight;
                     info!("Entered flight mode...");
                     FLASH_LOGGING_ENABLED.store(true, Ordering::Relaxed);
@@ -327,6 +327,8 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             SirinMode::Descent => {
                 // Maintain active flight duration update
                 dur = launched_at.map(|t| Instant::now() - t);
+                sirin.led_white.set_low();
+                sirin.led_blue.set_high();
 
                 // Log DataState packet during descent
                 OUT_CHANNEL.publish_immediate(IoPacket::new(
@@ -372,7 +374,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 }
 
                 if desired_mode == Some(SirinMode::Landed) {
-                    sirin.led.set_low();
+                    sirin.led_white.set_low();
                     state.mode = SirinMode::Landed;
                     FLASH_LOGGING_ENABLED.store(false, Ordering::Relaxed);
                 }
@@ -380,6 +382,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             },
             SirinMode::Landed => {
                 info!("In landed mode");
+                sirin.led_blue.set_low();
             }
         }
 
