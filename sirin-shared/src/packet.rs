@@ -253,8 +253,7 @@ impl <T: SongSize + ToSong + FromSong> Page<T> {
     }
 }
 
-///#[cfg(feature = "serde")]
-//#[derive(serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Display, Clone, PartialEq, Eq, SongSize, ToSong, FromSong)]
 #[song(discriminant(PacketErrorType = u8))]
 pub enum PacketError {
@@ -321,7 +320,7 @@ pub enum Log {
     DataState(SirinDataState),
     BarometricAltitude(Meters<f64>),
     TrackMe(TrackMe),
-    GpsNmea([u8; 200])
+    GpsNmea(#[cfg_attr(feature = "serde", serde(with = "serde_big_array::BigArray"))] [u8; 200])
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -332,7 +331,7 @@ pub struct SirinData {
     pub imu: ImuData,
     pub high_g_imu: HighGImuData,
     pub magnetometer: MagnetometerData,
-    pub altitude: Meters<f64>
+    pub raw_altitude: Meters<f64>
 }
 
 pub trait Measurement {
@@ -347,7 +346,7 @@ impl Measurement for SirinData {
             imu: ImuData::unmeasured(),
             high_g_imu: HighGImuData::unmeasured(),
             magnetometer: MagnetometerData::unmeasured(),
-            altitude: 0.0.with_units()
+            raw_altitude: 0.0.with_units()
         }
     }
 }

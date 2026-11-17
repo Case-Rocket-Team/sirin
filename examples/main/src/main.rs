@@ -295,8 +295,23 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut inject_counter = 0;
     // Last raw magnetometer reading so each sample is injected only once
     let mut last_mag: Option<(i16, i16, i16)> = None;
+    // When the board last became still
+    let mut calm_since: Option<Instant> = None;
 
     let mut filter = Ekf::new(&ekf_settings, &gravity, &gyro_bias, &mag_reference, t_us).unwrap();
+
+    // Converts GPS ECEF coordinates to the local east/north/up frame
+    const MAG_DECLINATION_DEG: f32 = 0.0;
+    let (north_cos, north_sin) = {
+        let (mx, my, _) = filter.world_magn_north_gauss();
+        let h = ComplexField::sqrt(mx * mx + my * my);
+        let (c, s) = (mx / h, my / h);
+        let d = MAG_DECLINATION_DEG * (PI / 180.0);
+        let (cd, sd) = (ComplexField::cos(d), ComplexField::sin(d));
+        (c * cd - s * sd, s * cd + c * sd)
+    };
+    // Pad ECEF position
+    let mut gps_pad: Option<([i32; 3], [[f64; 3]; 3])> = None;
 
     loop {
         //True only once velocity is successfully calculated
@@ -428,14 +443,32 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         filter.inject_imu(&sirin.data.imu, Instant::now().as_micros() as u32);
 
         if let Some(fix) = GPS_FIX.try_take() {
-            if fix.fix_type != GpsFixType::NoFix {
-                state.gps_fix = fix;
+            let new_3d_fix = fix.fix_type == GpsFixType::Fix3d;
+            state.gps_fix = fix;
+            // Only inject a new 3D fix
+            if new_3d_fix {
+                let f = &state.gps_fix;
+                let ecef = [f.pos.x.value, f.pos.y.value, f.pos.z.value];
+                let (pad, r) = *gps_pad.get_or_insert_with(|| {
+                    let lat = f.lat * (core::f64::consts::PI / 180.0);
+                    let lon = f.lon * (core::f64::consts::PI / 180.0);
+                    let (sl, cl) = (ComplexField::sin(lat), ComplexField::cos(lat));
+                    let (so, co) = (ComplexField::sin(lon), ComplexField::cos(lon));
+                    (ecef, [
+                        [-so, co, 0.0],             // east
+                        [-sl * co, -sl * so, cl],   // north
+                        [cl * co, cl * so, sl],     // up
+                    ])
+                });
+                // Subtract the pad while still in integer cm
+                let d = [0, 1, 2].map(|i| (ecef[i] - pad[i]) as f64 * 0.01);
+                let [e, n, u] = r.map(|row| row[0] * d[0] + row[1] * d[1] + row[2] * d[2]);
+                let (e, n) = (e as f32, n as f32);
+                // East/north -> filter world x/y
+                let x = e * north_sin + n * north_cos;
+                let y = -e * north_cos + n * north_sin;
                 /*filter.inject_gnss(
-                    &Pos { 
-                        x: (state.gps_fix.pos.x.value as f32).with_units(), 
-                        y: (state.gps_fix.pos.y.value as f32).with_units(),
-                        z: (state.gps_fix.pos.z.value as f32).with_units()
-                    },
+                    &Pos { x: x.with_units(), y: y.with_units(), z: (u as f32).with_units() },
                     Instant::now().as_micros() as u32
                 );*/
             }
@@ -446,6 +479,9 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         // Only inject magnetometer readings when the board is nearly still and the reading is new
         const MAG_MAX_GYRO_UDPS: f32 = 25_000_000.0;
         const MAG_MAX_ACCEL_ERR_UG: f32 = 100_000.0;
+        // The board must stay still this long before readings are injected. Mag averages over a timeframe so
+        // an extended duration is needed to obtain real values
+        const MAG_SETTLE_MS: u64 = 750;
         if let Ok(m) = &sirin.data.magnetometer.mag {
             let new_mag = last_mag != Some((m.x, m.y, m.z));
             last_mag = Some((m.x, m.y, m.z));
@@ -460,12 +496,19 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 }
                 _ => false,
             };
-            if new_mag && calm {
+            if !calm {
+                calm_since = None;
+            } else if calm_since.is_none() {
+                calm_since = Some(Instant::now());
+            }
+            let settled = calm_since.is_some_and(|t| Instant::now() - t >= Duration::from_millis(MAG_SETTLE_MS));
+
+            if new_mag && settled {
                 filter.inject_magn(&sirin.data.magnetometer, Instant::now().as_micros() as u32);
             }
         }
         if let Ok(pressure) = sirin.data.baro.pressure {
-            if inject_counter % 4 == 0{
+            if inject_counter % 1 == 0{
                 filter.inject_baro(approx_pressure_altitude(pressure.convert()) - initial_altitude, Instant::now().as_micros() as u32);
             }
         }
@@ -482,6 +525,10 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             rot_quaternion: filter.attitude(),
             voltage: sirin.match_sense.read(),
         };
+
+        if datastate.altitude.value as f64 > max_altitude.value {
+            max_altitude = (datastate.altitude.value as f64).with_units();
+        }
 
         /*info!("Calculate barometric altitude");
         if let Ok(pressure) = sirin.data.baro.pressure {
@@ -533,7 +580,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
                 //Check apogee: altitude must be below the max by apogee_error
                 //for THRESHOLD_REQUIRED of the last THRESHOLD_WINDOW measurements
-                apogee_check.push(max_altitude.value > state.altitude.value + apogee_error);
+                apogee_check.push(max_altitude.value > datastate.altitude.value as f64 + apogee_error);
                 if state.apogee.is_none() && apogee_check.passes(config::THRESHOLD_REQUIRED) {
                     state.apogee = Some(max_altitude);
 

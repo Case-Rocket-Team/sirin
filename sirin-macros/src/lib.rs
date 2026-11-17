@@ -365,6 +365,7 @@ fn derive_song_size_enum(enum_song: &EnumSong) -> syn::Result<TokenStream2> {
             let vis = &enum_song.item.vis;
 
             Ok(quote! {
+                #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
                 #[derive(Clone, Copy, PartialEq, Eq, Debug, SongSize, ToSong, FromSong)]
                 #[repr(#disc_type)]
                 #vis enum #disc_name {

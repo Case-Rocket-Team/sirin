@@ -9,7 +9,7 @@ use serde::de;
 use sirin_shared::{packet::{self, EcefPos, GpsDop, GpsFix, GpsFixType, Log, OutPacket, Vec3},song::FromSong,};
 use uunit::{Meters, MetersPerSecond, WithUnits};
 use ublox::{
-    nav_pvt::proto27_31::{NavPvt, NavPvtRef}, proto31::*, rxm_rawx::RxmRawx,
+    nav_pvt::{proto27_31::{NavPvt, NavPvtRef}, common::NavPvtFlags}, proto31::*, rxm_rawx::RxmRawx,
     cfg_inf::{CfgInf, CfgInfMask, CfgInfBuilder}, cfg_msg::CfgMsgSinglePortBuilder, cfg_rate::{CfgRate, CfgRateBuilder},
     cfg_gnss::CfgGnssBuilder, cfg_nav5::CfgNav5Builder, mon_rf::MonRf, nav_dop::NavDop, nav_sat::NavSat, nav_pos_ecef::NavPosEcef,
     cfg_prt::{CfgPrtUartBuilder, DataBits, InProtoMask, OutProtoMask, Parity, StopBits, UartMode,UartPortId,},
@@ -39,8 +39,9 @@ pub async fn gps_init(gps_uart: &mut Uart<'_, Async>) {
     nav_mode_config.dyn_model = ublox::cfg_nav5::NavDynamicModel::AirborneWithLess4gAcceleration;
     nav_mode_config.fix_mode = ublox::cfg_nav5::NavFixMode::Auto2D3D;
     //GPS measurement and calculation rate
+    // Measure rate at 1Hz so the GPS searches for satellites more thoroughly per update
     let gps_update_config = CfgRateBuilder {
-        measure_rate_ms: 100,
+        measure_rate_ms: 1000,
         nav_rate: 1,
         time_ref: ublox::cfg_rate::AlignmentToReferenceTime::Utc,
     };
@@ -100,6 +101,8 @@ pub async fn gps_task(
     gps_tx: &'static mut UartTx<'static, Async>,
 ) {
     let mut fix = GpsFix::default();
+    // iTOW of the last NavPvt, used to send one GPS_FIX per epoch
+    let mut pvt_itow = u32::MAX;
 
     //Create packet parser
     let mut packet_parser: Parser<FixedBuffer<512>, Proto31> = ublox::Parser::new_fixed();
@@ -109,7 +112,7 @@ pub async fn gps_task(
     //Task loop
     loop {
         //info!("New gps loop iteration");
-        match gps_impl(gps_rx, gps_tx, &mut packet_parser, &mut buf, &mut fix).await {
+        match gps_impl(gps_rx, gps_tx, &mut packet_parser, &mut buf, &mut fix, &mut pvt_itow).await {
             Err(err) => {
                 error!("GPS Error: {}", Debug2Format(&err));
                 // packet_parser = ublox::Parser::new_fixed(); // clear stuck/desynced state
@@ -140,6 +143,7 @@ pub async fn gps_impl(
     packet_parser: &mut Parser<FixedBuffer<512>, Proto31>,
     buf: &mut [u8],
     fix: &mut GpsFix,
+    pvt_itow: &mut u32,
 ) -> Result<(), SirinError> {
     //Read bytes from GPS RingBuffer until Bytes is full
     read(gps_rx, buf).await?;
@@ -164,14 +168,17 @@ pub async fn gps_impl(
                         fix.pos.y.value = p.ecef_y_meters_raw();
                         fix.pos.z.value = p.ecef_z_meters_raw();
                         fix.pos_acc.value = p.p_acc_meters_raw();
-                        GPS_FIX.signal(fix.clone());
+                        // Signal once both messages of this epoch have arrived
+                        if *pvt_itow == fix.itow {
+                            GPS_FIX.signal(fix.clone());
+                        }
                     }
                     PacketRef::NavPvt(p) => {
                         //println!("NavPvt packet found!");
-                        fix.itow = p.itow();
+                        *pvt_itow = p.itow();
                         fix.lon = p.longitude();
                         fix.lat = p.latitude();
-                        GPS_FIX.signal(fix.clone());
+                        fix.satellites = p.num_satellites();
                         match p.fix_type() {
                             GnssFixType::TimeOnlyFix => {
                                 fix.fix_type = GpsFixType::TimeOnlyFix;
@@ -194,6 +201,12 @@ pub async fn gps_impl(
                             _ => {
                                 fix.fix_type = GpsFixType::NoFix;
                             }
+                        }
+                        if !p.flags().contains(NavPvtFlags::GPS_FIX_OK) {
+                            fix.fix_type = GpsFixType::NoFix;
+                        }
+                        if fix.itow == *pvt_itow {
+                            GPS_FIX.signal(fix.clone());
                         }
                     }
                     _ => {} /*PacketRef::NavPvt(nav_pvt_packet) => {

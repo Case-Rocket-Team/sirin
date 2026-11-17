@@ -113,8 +113,8 @@ const M_TO_FT: f32 = 1.0 / FT_TO_M;
 const G_FTPS2: f32 = 9.80665 * M_TO_FT;
 const MAG_LSB_PER_GAUSS: f32 = 6842.0;
 
-const ACCEL_OFFSET_G: [f32; 3] = [0.00035467744, -0.000054717064, 0.008441657];
-const ACCEL_SCALE: [f32; 3] = [1.0079681, 1.0090547, 1.0095128];
+const ACCEL_OFFSET_G: [f32; 3] = [-0.0028896034, -0.0009460449, 0.014054924];
+const ACCEL_SCALE: [f32; 3] = [1.0076265, 1.0095489, 1.0088745];
 
 fn calibrate_g(reading_g: f32, axis: usize) -> f32 {
     (reading_g - ACCEL_OFFSET_G[axis]) * ACCEL_SCALE[axis]
@@ -262,6 +262,11 @@ impl Ekf {
     }
     pub fn velocity(&self) -> Vel {
         vec3f_to_vel(self.raw.nominal_state.vel_fps)
+    }
+    /// Reference magnetic field in the filter's world frame captured at init.
+    pub fn world_magn_north_gauss(&self) -> (f32, f32, f32) {
+        let m = self.raw.world_magn_north_gauss;
+        (m.x, m.y, m.z)
     }
     pub fn attitude(&self) -> Quaternion<f32> {
         quatf_to_quaternion(self.raw.nominal_state.attitude)

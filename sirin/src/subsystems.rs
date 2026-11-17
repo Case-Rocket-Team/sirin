@@ -238,6 +238,6 @@ pub async fn measure_sirin(
         imu: imu.measure().await,
         high_g_imu: high_g_imu.measure().await,
         magnetometer: magnetometer.measure().await,
-        altitude: approx_pressure_altitude(barodata.pressure.unwrap().convert())
+        raw_altitude: approx_pressure_altitude(barodata.pressure.unwrap().convert())
     }
 }
