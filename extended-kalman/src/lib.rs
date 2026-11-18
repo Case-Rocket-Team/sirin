@@ -113,8 +113,8 @@ const M_TO_FT: f32 = 1.0 / FT_TO_M;
 const G_FTPS2: f32 = 9.80665 * M_TO_FT;
 const MAG_LSB_PER_GAUSS: f32 = 6842.0;
 
-const ACCEL_OFFSET_G: [f32; 3] = [-0.0028896034, -0.0009460449, 0.014054924];
-const ACCEL_SCALE: [f32; 3] = [1.0076265, 1.0095489, 1.0088745];
+const ACCEL_OFFSET_G: [f32; 3] = [-0.001058042, -0.00002938509, 0.009213299];
+const ACCEL_SCALE: [f32; 3] = [1.0074443, 1.0089374, 1.0090505];
 
 fn calibrate_g(reading_g: f32, axis: usize) -> f32 {
     (reading_g - ACCEL_OFFSET_G[axis]) * ACCEL_SCALE[axis]
@@ -127,6 +127,26 @@ fn pos_to_vec3f(p: &Pos) -> vec3f {
         y: p.y.value * M_TO_FT,
         z: p.z.value * M_TO_FT
     }
+}
+
+/// Calibrated still-board gravity reading (m/s² in) as ft/s²
+fn gravity_to_vec3f(imu: &Accel) -> vec3f {
+    const G_MPS2: f32 = 9.80665;
+    vec3f {
+        x: calibrate_g(imu.x.value / G_MPS2, 0) * G_FTPS2,
+        y: calibrate_g(imu.y.value / G_MPS2, 1) * G_FTPS2,
+        z: calibrate_g(imu.z.value / G_MPS2, 2) * G_FTPS2,
+    }
+}
+
+/// Square root by Newton's method from a nearby starting guess (no libm in no_std).
+/// Converges to f32 precision in a few steps when `guess` is within a few percent.
+fn sqrt_near(x: f32, guess: f32) -> f32 {
+    let mut r = guess;
+    for _ in 0..6 {
+        r = 0.5 * (r + x / r);
+    }
+    r
 }
 
 fn accel_to_vec3f(a: &Vec3<MicroGs<i32>>) -> vec3f {
@@ -209,12 +229,7 @@ pub struct Ekf {
 impl Ekf {
     pub fn new(settings: &Ekf_settings, imu: &Accel, gyro_bias: &AngularVel, mag: &MagnetometerData, timestamp_us: u32) -> Option<Self> {
         let mut raw = core::mem::MaybeUninit::<extended_kalman_filter>::uninit();
-        const G_MPS2: f32 = 9.80665;
-        let accel = vec3f {
-            x: calibrate_g(imu.x.value / G_MPS2, 0) * G_FTPS2,
-            y: calibrate_g(imu.y.value / G_MPS2, 1) * G_FTPS2,
-            z: calibrate_g(imu.z.value / G_MPS2, 2) * G_FTPS2,
-        };
+        let accel = gravity_to_vec3f(imu);
         let local_down_vec3f = vec3f { x: -accel.x, y: -accel.y, z: -accel.z };
         let local_magn_gauss_vec3f = gauss_to_vec3f(mag)?;
         unsafe {
@@ -227,6 +242,26 @@ impl Ekf {
             };
             Some(Self { raw })
         }
+    }
+    /// Set the starting accelerometer bias from the still-board gravity measurement
+    /// (same `Accel` passed to `new`, in m/s²).
+    ///
+    /// The calibrated reading should be exactly 1 g at rest. Its direction already
+    /// sets the attitude, so only the magnitude error is observable: the bias is
+    /// the part of the reading along gravity beyond 1 g, `a - 1g * â`.
+    /// Returns that error in g (positive = reads high), or `None` if the reading
+    /// is too far from 1 g to be a still board and nothing was changed.
+    pub fn seed_accel_bias_from_gravity(&mut self, gravity: &Accel) -> Option<f32> {
+        const MAX_ERR_G: f32 = 0.05;
+        let a = gravity_to_vec3f(gravity);
+        let norm = sqrt_near(a.x * a.x + a.y * a.y + a.z * a.z, G_FTPS2);
+        let err_g = norm / G_FTPS2 - 1.0;
+        if !(err_g.abs() <= MAX_ERR_G) {
+            return None;
+        }
+        let k = 1.0 - G_FTPS2 / norm;
+        self.raw.nominal_state.accel_bias_fps2 = vec3f { x: a.x * k, y: a.y * k, z: a.z * k };
+        Some(err_g)
     }
     pub fn inject_imu(&mut self, imu: &ImuData, timestamp_us: u32) {
         let (Ok(accel), Some(gyro_radps)) = (&imu.accel, angular_vel_to_vec3f(imu)) else {

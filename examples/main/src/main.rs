@@ -6,7 +6,7 @@ use core::{f32::consts::PI, mem::{self, transmute_copy, MaybeUninit}, pin::Pin, 
 
 use bmp3::{hal::{Bmp3RawData, ReadBmp3, RegErrReg, RegStatus}, Bmp3Readout};
 use lsm6dsv_spi::{SflpOdr};
-use defmt::{debug, info, println, Debug2Format};
+use defmt::{debug, info, println, warn, Debug2Format};
 use embassy_executor::{task, Executor, Spawner};
 use embassy_stm32::{bind_interrupts, dma::NoDma, gpio::{Level, Output, Speed}, peripherals::{self, DMA1_CH0, DMA1_CH1, PD8, PD9, USART3}, usart::{self, Config, Uart}};
 use embassy_time::{Duration, Instant, Ticker, Timer, TICK_HZ};
@@ -15,7 +15,7 @@ use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task}, io::{FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_flash_logging_enabled, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{SirinDataState, GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
+use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task, gps_task_with_nav_db}, io::{FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_flash_logging_enabled, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{SirinDataState, GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, Publisher, Subscriber}};
 use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
@@ -93,12 +93,11 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     sirin.spawner.spawn(radio_io_task(&sirin.config, &mut sirin.radio)).unwrap();
     sirin.spawner.spawn(usb_input_task(&mut sirin.usb.read_ep)).unwrap();
     sirin.spawner.spawn(usb_output_task(&mut sirin.usb.write_ep)).unwrap();
-    sirin.spawner.spawn(gps_task(&mut sirin.gps_rx, &mut sirin.gps_tx)).unwrap();
-    
+
     let mut flash = Mutex::new(&mut sirin.flash);
-    sirin.spawner.spawn(flash_io_task(unsafe {
-        transmute_into_static(&mut flash)
-    })).unwrap();
+    let flash_static: &'static Mutex<&'static mut Flash> = unsafe { transmute_into_static(&mut flash) };
+    sirin.spawner.spawn(flash_io_task(flash_static)).unwrap();
+    sirin.spawner.spawn(gps_task_with_nav_db(&mut sirin.gps_rx, &mut sirin.gps_tx, flash_static)).unwrap();
 
     info!("Keep Sirin still while blue light is on.");
     for i in 0..5{
@@ -267,10 +266,10 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
     // Kalman filter init
     let ekf_settings = Ekf_settings {
-        accel_var_f2ps4: 0.011196358441216, // σ = 0.1058 ft/s² (≈ 3.3 mg)
-        accel_bias_var_f2ps4: 1e-6,
+        accel_var_f2ps4: 0.051196358441216, // σ = 0.1058 ft/s² (≈ 3.3 mg)
+        accel_bias_var_f2ps4: 0.01,
         gyro_var_rad2ps2: 1.09662e-6,
-        gyro_bias_var_rad2ps2: 1e-10,        // σ ≈ 0.00105 rad/s (≈ 0.06 °/s)
+        gyro_bias_var_rad2ps2: 0.01,        // σ ≈ 0.00105 rad/s (≈ 0.06 °/s)
         baro_var_ft2: 100.0,  
         /*            // σ = 10 ft (≈ 3 m
         magn_covar_gauss2: [                // σ = 3.2 mG (x, y), 4.1 mG (z)
@@ -279,11 +278,11 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             0.0, 0.0, 4.1e-3 * 4.1e-3,
         ], */
         magn_covar_gauss2: [
-            0.025 * 0.025, 0.0, 0.0,
-            0.0, 0.025 * 0.025, 0.0,
-            0.0, 0.0, 0.025 * 0.025,
+            3.0, 0.0, 0.0,
+            0.0, 3.0, 0.0,
+            0.0, 0.0, 3.0
         ],
-        magn_bias_var_gauss2: 1e-5,
+        magn_bias_var_gauss2: 1e-3,
         gnss_covar_ft2: [                   // unused while you don't inject GPS
             18.0, 0.0, 0.0,
             0.0, 18.0, 0.0,
@@ -299,6 +298,12 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     let mut calm_since: Option<Instant> = None;
 
     let mut filter = Ekf::new(&ekf_settings, &gravity, &gyro_bias, &mag_reference, t_us).unwrap();
+    // The accel's offset drifts ~10-20 mg between runs, so start the filter's bias
+    // from this run's still-board gravity reading instead of zero
+    match filter.seed_accel_bias_from_gravity(&gravity) {
+        Some(err_g) => info!("Accel bias seeded: reads {} mg off 1 g at rest", err_g * 1000.0),
+        None => warn!("Accel bias not seeded: gravity reading too far from 1 g"),
+    }
 
     // Converts GPS ECEF coordinates to the local east/north/up frame
     const MAG_DECLINATION_DEG: f32 = 0.0;
@@ -467,10 +472,10 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 // East/north -> filter world x/y
                 let x = e * north_sin + n * north_cos;
                 let y = -e * north_cos + n * north_sin;
-                /*filter.inject_gnss(
+                filter.inject_gnss(
                     &Pos { x: x.with_units(), y: y.with_units(), z: (u as f32).with_units() },
                     Instant::now().as_micros() as u32
-                );*/
+                );
             }
         } 
 

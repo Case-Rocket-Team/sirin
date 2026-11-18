@@ -13,7 +13,7 @@ pub const THRESHOLD_WINDOW: usize = 10; //Size of ring buffer for apogee/landing
 pub const THRESHOLD_REQUIRED: usize = 8; //Values meeting threshold in ring buffer to pass the check
 
 //LoRa broadcast config
-pub const STANDBY_BROADCAST_HZ: f64 = 0.5; //In Hz
+pub const STANDBY_BROADCAST_HZ: f64 = 0.0025; //In Hz
 pub const FLIGHT_BROADCAST_HZ: f64 = 5.0; //In Hz
 pub const DESCENT_BROADCAST_HZ: f64 = 5.0; //In Hz
 pub const LANDED_BROADCAST_HZ: f64 = 0.025; //In Hz

@@ -18,6 +18,16 @@ const FLASH_SIZE: u32 = 16777216;
 const SECTOR_SIZE: u32 = 4096;
 const FLIGHT_HEADER_COUNT: usize = 256;
 
+// GPS navigation database (UBX-MGA-DBD dump), stored in two A/B slots at the
+// end of flash so a power cut mid-save never loses the previous copy.
+const GPS_NAV_DB_SLOT_SIZE: u32 = 8 * SECTOR_SIZE;
+const GPS_NAV_DB_REGION_START: u32 = FLASH_SIZE - 2 * GPS_NAV_DB_SLOT_SIZE;
+// Data starts on a page boundary (w25q.write() needs page-aligned addresses)
+const GPS_NAV_DB_DATA_OFFSET: u32 = 256;
+pub const GPS_NAV_DB_MAX_LEN: usize = (GPS_NAV_DB_SLOT_SIZE - GPS_NAV_DB_DATA_OFFSET) as usize;
+const GPS_NAV_DB_MAGIC: u32 = u32::from_le_bytes(*b"GDB1");
+const GPS_NAV_DB_HEADER_LEN: usize = 32;
+
 const_assert!(FLIGHT_HEADER_COUNT / 2 < SECTOR_SIZE as usize / FlightHeader::SONG_SIZE);
 
 pub struct Flash {
@@ -39,7 +49,7 @@ impl Flash {
     pub(crate) unsafe fn new(w25q: W25Q<SpiDev>) -> Self {
         Self {
             w25q,
-            flight_data: CyclicFlashSection::new(4 * SECTOR_SIZE, FLASH_SIZE),
+            flight_data: CyclicFlashSection::new(4 * SECTOR_SIZE, GPS_NAV_DB_REGION_START),
             flight_headers: Deque::new(),
             is_second_config: true,
         }
@@ -260,6 +270,133 @@ impl Flash {
 
         Ok(())
     }
+
+    async fn read_gps_nav_db_header(&mut self, slot: u32) -> Result<Option<GpsNavDbHeader>, SirinError> {
+        let mut buf = [0u8; GPS_NAV_DB_HEADER_LEN];
+        self.w25q.read(gps_nav_db_slot_addr(slot), &mut buf).await?;
+        Ok(GpsNavDbHeader::from_bytes(&buf))
+    }
+
+    /// Load the newest valid GPS navigation database into `buf`.
+    /// Returns its header, or `None` if no valid copy is stored.
+    pub async fn load_gps_nav_db(&mut self, buf: &mut [u8]) -> Result<Option<GpsNavDbHeader>, SirinError> {
+        let mut slots = [
+            (0, self.read_gps_nav_db_header(0).await?),
+            (1, self.read_gps_nav_db_header(1).await?),
+        ];
+        // Newest first
+        slots.sort_unstable_by_key(|(_, h)| core::cmp::Reverse(h.map(|h| h.seq)));
+
+        for (slot, header) in slots {
+            let Some(header) = header else { continue };
+            let len = header.len as usize;
+            if len > buf.len() {
+                continue;
+            }
+            self.w25q.read(gps_nav_db_slot_addr(slot) + GPS_NAV_DB_DATA_OFFSET, &mut buf[..len]).await?;
+            if fnv1a(&buf[..len]) == header.checksum {
+                return Ok(Some(header));
+            }
+            error!("GPS nav DB slot {} failed its checksum", slot);
+        }
+
+        Ok(None)
+    }
+
+    /// Save a GPS navigation database, overwriting the older of the two slots.
+    pub async fn save_gps_nav_db(&mut self, data: &[u8], frames: u32, pos: GpsNavDbPos) -> Result<(), SirinError> {
+        if data.len() > GPS_NAV_DB_MAX_LEN {
+            return Err(SirinError::CorruptedData);
+        }
+
+        let a = self.read_gps_nav_db_header(0).await?;
+        let b = self.read_gps_nav_db_header(1).await?;
+        let (slot, newest_seq) = match (a, b) {
+            (Some(a), Some(b)) if a.seq >= b.seq => (1, a.seq),
+            (Some(_), Some(b)) => (0, b.seq),
+            (Some(a), None) => (1, a.seq),
+            (None, Some(b)) => (0, b.seq),
+            (None, None) => (0, 0),
+        };
+        let addr = gps_nav_db_slot_addr(slot);
+
+        // Erase only the sectors this copy needs (the header sector is always included)
+        let sectors = (GPS_NAV_DB_DATA_OFFSET + data.len() as u32).div_ceil(SECTOR_SIZE);
+        for i in 0..sectors {
+            self.w25q.erase_sector(addr + i * SECTOR_SIZE).await?;
+        }
+
+        // Data first, header last, so a half-written slot never looks valid
+        self.w25q.write(addr + GPS_NAV_DB_DATA_OFFSET, data).await?;
+        let header = GpsNavDbHeader {
+            seq: newest_seq.wrapping_add(1),
+            len: data.len() as u32,
+            frames,
+            checksum: fnv1a(data),
+            pos,
+        };
+        self.w25q.write(addr, &header.to_bytes()).await?;
+        self.w25q.until_ready().await?;
+
+        info!("Saved GPS nav DB: slot {}, seq {}, {} frames, {} bytes", slot, header.seq, frames, data.len());
+        Ok(())
+    }
+}
+
+/// Last known position, saved alongside the GPS navigation database
+#[derive(Clone, Copy, Debug, defmt::Format)]
+pub struct GpsNavDbPos {
+    /// Latitude in 1e-7 degrees
+    pub lat_e7: i32,
+    /// Longitude in 1e-7 degrees
+    pub lon_e7: i32,
+    /// Height above the WGS84 ellipsoid in centimetres
+    pub alt_cm: i32,
+}
+
+#[derive(Clone, Copy, Debug, defmt::Format)]
+pub struct GpsNavDbHeader {
+    pub seq: u32,
+    pub len: u32,
+    pub frames: u32,
+    pub checksum: u32,
+    pub pos: GpsNavDbPos,
+}
+
+impl GpsNavDbHeader {
+    fn to_bytes(&self) -> [u8; GPS_NAV_DB_HEADER_LEN] {
+        let words = [
+            GPS_NAV_DB_MAGIC, self.seq, self.len, self.frames, self.checksum,
+            self.pos.lat_e7 as u32, self.pos.lon_e7 as u32, self.pos.alt_cm as u32,
+        ];
+        let mut out = [0u8; GPS_NAV_DB_HEADER_LEN];
+        for (chunk, word) in out.chunks_exact_mut(4).zip(words) {
+            chunk.copy_from_slice(&word.to_le_bytes());
+        }
+        out
+    }
+
+    fn from_bytes(buf: &[u8; GPS_NAV_DB_HEADER_LEN]) -> Option<Self> {
+        let w = |i: usize| u32::from_le_bytes(buf[i * 4..i * 4 + 4].try_into().unwrap());
+        if w(0) != GPS_NAV_DB_MAGIC || w(2) as usize > GPS_NAV_DB_MAX_LEN {
+            return None;
+        }
+        Some(Self {
+            seq: w(1),
+            len: w(2),
+            frames: w(3),
+            checksum: w(4),
+            pos: GpsNavDbPos { lat_e7: w(5) as i32, lon_e7: w(6) as i32, alt_cm: w(7) as i32 },
+        })
+    }
+}
+
+fn gps_nav_db_slot_addr(slot: u32) -> u32 {
+    GPS_NAV_DB_REGION_START + slot * GPS_NAV_DB_SLOT_SIZE
+}
+
+fn fnv1a(data: &[u8]) -> u32 {
+    data.iter().fold(0x811c_9dc5u32, |h, b| (h ^ *b as u32).wrapping_mul(0x0100_0193))
 }
 
 pub struct FlashFlightPacketsIterator<'a> {

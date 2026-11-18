@@ -53,7 +53,8 @@ use crate::{error::SirinError, subsystems::Subsystem};
 
 pub type Radio = Rfm9<SpiDev>;
 
-static mut GPS_BUF: [u8; 512] = [0u8; 512];
+// ~350 ms of data at 115200 baud
+static mut GPS_BUF: [u8; 4096] = [0u8; 4096];
 
 #[derive(Debug, Clone)]
 pub struct SirinHealth {

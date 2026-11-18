@@ -1121,6 +1121,11 @@ impl <S: SpiHandle> Lsm6dsv32x<S> {
           })
      }
 
+     pub async fn read_temp(&mut self) -> Result<f32, <S::Bus as ErrorType>::Error> {
+          let raw_temp = self.temp_data().await?.cast_signed();
+          Ok(25.0 + raw_temp as f32 / 256.0)
+     }
+
      pub async fn enable_sflp_gravity(&mut self, odr: SflpOdr) -> Result<(), <S::Bus as ErrorType>::Error> {
           // Open the embedded-functions register page. Must close before other parts access the chip.
           let func_cfg = self.read_reg(RegFuncCfgAccess).await?;
