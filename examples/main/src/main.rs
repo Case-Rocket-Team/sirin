@@ -267,9 +267,9 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
     // Kalman filter init
     let ekf_settings = Ekf_settings {
         accel_var_f2ps4: 0.051196358441216, // σ = 0.1058 ft/s² (≈ 3.3 mg)
-        accel_bias_var_f2ps4: 0.01,
+        accel_bias_var_f2ps4: 1e-5,
         gyro_var_rad2ps2: 1.09662e-6,
-        gyro_bias_var_rad2ps2: 0.01,        // σ ≈ 0.00105 rad/s (≈ 0.06 °/s)
+        gyro_bias_var_rad2ps2: 1e-3,        // σ ≈ 0.00105 rad/s (≈ 0.06 °/s)
         baro_var_ft2: 100.0,  
         /*            // σ = 10 ft (≈ 3 m
         magn_covar_gauss2: [                // σ = 3.2 mG (x, y), 4.1 mG (z)
@@ -509,7 +509,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             let settled = calm_since.is_some_and(|t| Instant::now() - t >= Duration::from_millis(MAG_SETTLE_MS));
 
             if new_mag && settled {
-                filter.inject_magn(&sirin.data.magnetometer, Instant::now().as_micros() as u32);
+                //filter.inject_magn(&sirin.data.magnetometer, Instant::now().as_micros() as u32);
             }
         }
         if let Ok(pressure) = sirin.data.baro.pressure {
