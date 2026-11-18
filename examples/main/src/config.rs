@@ -24,4 +24,6 @@ pub const LOOP_RATE_HZ: f64 = 100.0; //Main loop rate
 //USB broadcast config
 pub const USB_BROADCAST_HZ: f64 = 10.0; //In Hz
 pub const USB_BROADCASTING_ALLOWED: bool = true;
+// Send an EkfDebug packet over USB every main loop iteration
+pub const EKF_DEBUG_ENABLED: bool = true;
 

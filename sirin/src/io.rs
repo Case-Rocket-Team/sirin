@@ -11,7 +11,7 @@ use uunit::Milliseconds;
 use crate::{sync::Mutex, usb::{ReadEp, SirinUsb, WriteEp}};
 
 use crate::{error::SirinError, Flash, Radio};
-use sirin_shared::{config::{CallsignBuf, SirinConfig}, packet::{InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, RadioPacket, MAX_OUT_PACKET_SIZE}, song::{FromSong, FromSongError, SongSize, ToSong, ToSongError}};
+use sirin_shared::{config::{CallsignBuf, SirinConfig}, packet::{EkfDebug, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, RadioPacket, MAX_OUT_PACKET_SIZE}, song::{FromSong, FromSongError, SongSize, ToSong, ToSongError}};
 
 //pub static OUT_CHANNEL: Channel<CriticalSectionRawMutex, OutPacket, 10> = Channel::new();
 
@@ -23,6 +23,10 @@ pub static BROADCAST_CHANNEL: PubSubChannel<OutPacket, 3> = EmbassyPubSubChannel
 // High priority I/O channels
 pub static OUT_CHANNEL: PubSubChannel<IoPacket<OutPacket>, 3> = EmbassyPubSubChannel::new();
 pub static IN_CHANNEL: Channel<CriticalSectionRawMutex, IoPacket<InPacket>, 32> = Channel::new();
+
+// Latest EKF debug snapshot, sent over USB only. Kept out of OUT_CHANNEL so its
+// high rate can't push out radio or flash packets; only the newest is kept.
+pub static EKF_DEBUG: Signal<CriticalSectionRawMutex, EkfDebug> = Signal::new();
 
 static USB_BROADCASTING_ENABLED: AtomicBool = AtomicBool::new(false);
 pub static FLASH_LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
@@ -183,11 +187,13 @@ async fn usb_output_task_impl(
     loop {
         usb.wait_enabled().await;
 
-        let packet = next_out_packet(
-            &mut broadcast_sub,
-            &mut out_sub,
-            IoChannel::Usb
-        ).await;
+        let packet = match select(
+            next_out_packet(&mut broadcast_sub, &mut out_sub, IoChannel::Usb),
+            EKF_DEBUG.wait()
+        ).await {
+            Either::First(p) => p,
+            Either::Second(d) => OutPacket::EkfDebug(d),
+        };
 
         packet.to_song(&mut buf)?;
         let len = packet.song_size();
