@@ -22,6 +22,10 @@ use sirin::packet::MatchVoltage;
 use nalgebra as na;
 use na::{Matrix3, Matrix6, Vector3, UnitQuaternion, Rotation3, ComplexField};
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+use extended_kalman::{Ekf, ekf_settings};
+>>>>>>> Stashed changes
 =======
 use extended_kalman::{Ekf, ekf_settings};
 >>>>>>> Stashed changes

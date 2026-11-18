@@ -10,13 +10,17 @@ from io import StringIO
 from scipy import linalg
 
 # Be sure to remove your outliers and check the data to see if it looks correct. ideally there should not any dots far from the "circles".
-my_top_percentile = 0.025 # Percentage of outliers to remove from the top of the data, increase adjust until you data looks cleaned.
-my_bottom_percentile = 0.025 # Percentage of outliers to remove from the bottom of the data
+# Fraction of samples to drop as outliers: the ones whose distance from the first-pass center is furthest from
+# the typical radius. Increase until the plots look clean.
+outlier_fraction = 0.05
 save_plots_to_file = True   # Set to True to save the plots to a file
 plot_sampling_percentage = 1 # Adjust if need to plot faster, 1.0 = 100% of the data, 0.5 = 50% of the data, 0.1 = 10% of the data, etc.
-figure_size = (10, 10) # Adjust the size of all the plots, (width, height)  
-file_name = "mag_out_D_free4.csv" 
-do_soft_iron = False
+figure_size = (10, 10) # Adjust the size of all the plots, (width, height)
+file_name = "mag_out_D_free4.csv"
+do_soft_iron = True  # False = hard iron only (per-axis min/max midpoint), soft iron = identity
+
+LSB_PER_GAUSS = 6842.0  # LIS3MDL at +-4 gauss; the CSV is already in uT (raw / 6842 * 100)
+UT_PER_GAUSS = 100.0
 
 def apply_calibration(df, b, A_1):
     """
@@ -54,30 +58,23 @@ def calibrate(df):
     """
     # Convert dataframe to numpy array
     data = df[['x', 'y', 'z']].values
-    
-    print(f"Calibrating with {len(data)} data points...")
-    # magnetic field strength, in microTesla
-    F = 1000.0
-    print(f"Magnetic field strength: {F} microTesla")
-    b = np.zeros([3, 1])  # Hard iron bias
-    A_1 = np.eye(3)       # soft iron bias
-    
-    # Ellipsoid fit
+
+    # Ellipsoid fit: all points satisfy  m^T M m + 2 n^T m + d = 0
     s = data.T
     M, n, d = _ellipsoid_fit(s)
-    
-    # Calculate calibration parameters
+
+    # Hard iron = ellipsoid center
     M_1 = linalg.inv(M)
     b = -np.dot(M_1, n)
-    A_1 = np.real(F / np.sqrt(np.dot(n.T, np.dot(M_1, n)) - d) * linalg.sqrtm(M))
-    
-    print("\nCalibration completed!")
-    print("Hard iron bias (microTesla):")
-    print(f"  X: {b[0,0]:.6f}")
-    print(f"  Y: {b[1,0]:.6f}")
-    print(f"  Z: {b[2,0]:.6f}")
-    print("\nSoft iron transformation matrix:")
-    print(A_1)
+
+    # Rewritten around the center:  (m - b)^T M (m - b) = K,  K = n^T M^-1 n - d
+    K = (np.dot(n.T, np.dot(M_1, n)) - d).item()
+    # A_unit maps the ellipsoid onto the unit sphere: |A_unit (m - b)| = 1
+    A_unit = np.real(linalg.sqrtm(M)) / np.sqrt(K)
+
+    # Rescale so det(A_1) = 1: A_1 only reshapes the ellipsoid into a sphere and keeps its volume,
+    # so the output stays in the sensor's own units (uT here, gauss on the rocket).
+    A_1 = A_unit / np.cbrt(np.linalg.det(A_unit))
     return b, A_1
 
 def calibrate_magnetometer_offset(df):
@@ -92,25 +89,10 @@ def calibrate_magnetometer_offset(df):
     """
     # Convert dataframe to numpy array
     data = df[['x', 'y', 'z']].values
-    
-    print(f"Calibrating with {len(data)} data points...")
-    
+
     # Calculate hard iron bias as the mean of min and max values for each axis
     # This assumes the magnetometer was rotated through all orientations
-    b = np.zeros([3, 1])
-    
-    for i, axis in enumerate(['X', 'Y', 'Z']):
-        min_val = np.min(data[:, i])
-        max_val = np.max(data[:, i])
-        b[i, 0] = (max_val + min_val) / 2.0
-        print(f"{axis}-axis: min={min_val:.2f}, max={max_val:.2f}, offset={b[i,0]:.2f}")
-    
-    print("\nCalibration completed!")
-    print("Hard iron bias (offset in microTesla):")
-    print(f"  X: {b[0,0]:.6f}")
-    print(f"  Y: {b[1,0]:.6f}")
-    print(f"  Z: {b[2,0]:.6f}")
-    
+    b = ((data.max(axis=0) + data.min(axis=0)) / 2.0).reshape(3, 1)
     return b
 
 def _ellipsoid_fit(s):
@@ -156,8 +138,9 @@ def _ellipsoid_fit(s):
     E = np.dot(linalg.inv(C),
                 S_11 - np.dot(S_12, np.dot(linalg.inv(S_22), S_21)))
 
+    # E is not symmetric, so eig may hand back complex dtype; the eigenvector we want is real
     E_w, E_v = np.linalg.eig(E)
-    v_1 = E_v[:, np.argmax(E_w)]
+    v_1 = np.real(E_v[:, np.argmax(np.real(E_w))])
     if v_1[0] < 0: v_1 = -v_1
 
     # v_2 (eq. 13, solution)
@@ -188,15 +171,39 @@ def load_clean_csv(file_path):
     
     # Create a DataFrame from the filtered lines
     df = pd.read_csv(StringIO(''.join(filtered_lines)))
+
+    # The firmware logs faster than the 10 Hz sensor updates, so the same sample often appears
+    # twice in a row. Drop the repeats so slow parts of the tumble don't get extra weight.
+    df = df[(df != df.shift()).any(axis=1)].reset_index(drop=True)
     return df
 
-def filter_outlier(df, top_percentile=my_top_percentile, bottom_percentile=my_bottom_percentile):
-    # Filter out the top 5% and bottom 5% values in each column to remove noise
-    for column in ['x', 'y', 'z']:
-        lower_bound = df[column].quantile(0 + bottom_percentile/2)
-        upper_bound = df[column].quantile(1 - top_percentile/2)
-        df = df[(df[column] >= lower_bound) & (df[column] <= upper_bound)]
-    return df
+def corrected_radius(df, b, A_1):
+    """Distance of each corrected sample from the origin."""
+    data = df[['x', 'y', 'z']].values
+    return np.linalg.norm((data - b.T) @ A_1.T, axis=1)
+
+def filter_outlier(df, b, A_1, fraction=outlier_fraction):
+    # Drop the samples whose corrected radius is furthest from the typical radius.
+    # (Trimming each axis separately would remove the extreme points that pin the ellipsoid down.)
+    r = corrected_radius(df, b, A_1)
+    deviation = np.abs(r - np.median(r))
+    return df[deviation <= np.quantile(deviation, 1 - fraction)]
+
+def report_quality(df, b, A_1):
+    """Print how well the corrected samples sit on a sphere and how well they cover it."""
+    data = df[['x', 'y', 'z']].values
+    c = (data - b.T) @ A_1.T
+    r = np.linalg.norm(c, axis=1)
+    R = r.mean()
+    spread = r.std() / R * 100
+    print(f"\nCorrected radius: {R:.1f} uT (Earth's field is ~25-65 uT; check NOAA for your location)")
+    print(f"Radius spread:    {spread:.1f} %  {'OK' if spread < 5 else 'HIGH - redo the tumble away from metal, or raise outlier_fraction'}")
+    for i, axis in enumerate('XYZ'):
+        lo, hi = c[:, i].min() / R, c[:, i].max() / R
+        ok = lo < -0.8 and hi > 0.8
+        print(f"{axis} coverage:       {lo:+.2f} .. {hi:+.2f} of radius  {'OK' if ok else 'POOR - point this axis further up and down'}")
+    octants = np.bincount(((c > 0) * [1, 2, 4]).sum(axis=1), minlength=8)
+    print(f"Samples per octant: {octants.tolist()}  {'OK' if octants.min() >= 0.02 * len(c) else 'POOR - some directions barely visited'}")
 
 # Helper functions for plotting
 def clean_filename(filename):
@@ -227,41 +234,39 @@ def plot_data(df, title, xlabel, ylabel,save_img=False):
     plt.show(block=False)
 
 def print_rust_code(b, A_1):
-    """Print calibration parameters as rust code."""
-    print("\n" + "="*50)
-    print("Rust Code for calibration parameters:")
-    print("="*50)
-    print(f"let hard_iron_bias_x = {b[0,0]:.6f};")
-    print(f"let hard_iron_bias_y = {b[1,0]:.6f};")
-    print(f"let hard_iron_bias_z = {b[2,0]:.6f};")
-    print()
-    print(f"let soft_iron_bias_xx = {A_1[0,0]:.6f};")
-    print(f"let soft_iron_bias_xy = {A_1[0,1]:.6f};")
-    print(f"let soft_iron_bias_xz = {A_1[0,2]:.6f};")
-    print()
-    print(f"let soft_iron_bias_yx = {A_1[1,0]:.6f};")
-    print(f"let soft_iron_bias_yy = {A_1[1,1]:.6f};")
-    print(f"let soft_iron_bias_yz = {A_1[1,2]:.6f};")
-    print()
-    print(f"let soft_iron_bias_zx = {A_1[2,0]:.6f};")
-    print(f"let soft_iron_bias_zy = {A_1[2,1]:.6f};")
-    print(f"let soft_iron_bias_zz = {A_1[2,2]:.6f};")
-    print("="*50)
+    """Print calibration parameters as constants for examples/main/src/config.rs."""
+    b_gauss = b[:, 0] / UT_PER_GAUSS
+    row = lambda r: "[" + ", ".join(f"{v:.6f}" for v in r) + "]"
+    print("\n" + "="*70)
+    print("Paste into examples/main/src/config.rs:")
+    print("="*70)
+    print(f"// Magnetometer calibration from {file_name}. Apply as: m_cal = SI * (m_counts / {LSB_PER_GAUSS:.0f} - HI)")
+    print(f"pub const MAG_HARD_IRON_BIAS_GAUSS: [f32; 3] = {row(b_gauss)};")
+    print("pub const MAG_SOFT_IRON: [[f32; 3]; 3] = [ // unitless, row-major, det = 1")
+    for r in A_1:
+        print(f"    {row(r)},")
+    print("];")
+    print("="*70)
 # Main function
 def main():
     # Step 1: Read data from "data.csv"
     original_df = load_clean_csv(file_name) # helper function to load and clean the data, makes sure only lines with x,y,z values are present
-    
-    # Step 2: Filter out the outliers and print some information about the data
-    filtered_df = filter_outlier(original_df, 0.025, 0.025)
-    print(f"Total samples:  {len(original_df)}\t\toutliers filtered: {len(original_df) - len(filtered_df)}/{my_top_percentile + my_bottom_percentile}%")
-    
-    # Step 3: Apply correction and plot the data
+
+    # Step 2: Rough ellipsoid fit on everything, only used to find outliers, then drop them
+    b0, A0 = calibrate(original_df)
+    filtered_df = filter_outlier(original_df, b0, A0)
+    print(f"Samples: {len(original_df)}  outliers dropped: {len(original_df) - len(filtered_df)} ({outlier_fraction:.0%})")
+
+    # Step 3: Real fit on the cleaned data
     if do_soft_iron:
         b, A_1 = calibrate(filtered_df)
     else:
         b = calibrate_magnetometer_offset(filtered_df)
         A_1 = np.eye(3)
+
+    print(f"\nHard iron bias (uT): {np.round(b[:, 0], 3).tolist()}")
+    print(f"Soft iron matrix (unitless):\n{np.round(A_1, 4)}")
+    report_quality(filtered_df, b, A_1)
 
     filtered_corrected_df = apply_calibration(filtered_df, b, A_1)
     print_rust_code(b, A_1)

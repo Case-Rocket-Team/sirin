@@ -60,7 +60,9 @@ async fn main_task(sirin: &'static mut Sirin) {
     let free_soft_iron_bias_zy = 0.239927;
     let free_soft_iron_bias_zz = 16.148427;
 
-    let calibrate = false;
+    // true = log raw readings (uT) for plot-calibrate.py. false logs readings with the old bias already
+    // subtracted, which would make the script report only the leftover offset.
+    let calibrate = true;
     loop {
         let (x_raw, y_raw, z_raw) = sirin.magnetometer.magnetic().await.unwrap();
         // divide by 6842 for Gauss, mult by 100 for micro Teslas (uT)
