@@ -39,7 +39,10 @@ impl Flash {
     pub(crate) unsafe fn new(w25q: W25Q<SpiDev>) -> Self {
         Self {
             w25q,
-            flight_data: CyclicFlashSection::new(4 * SECTOR_SIZE, FLASH_SIZE),
+            // Top 64 KB kept out of the flight log: GPS nav DB on ekf-implement, and saved
+            // magnetometer calibrations (mag-hard-iron) in the last sector. Same log region as
+            // ekf-implement, so switching between the branches doesn't move the log's bitmap
+            flight_data: CyclicFlashSection::new(4 * SECTOR_SIZE, FLASH_SIZE - 16 * SECTOR_SIZE),
             flight_headers: Deque::new(),
             is_second_config: true,
         }

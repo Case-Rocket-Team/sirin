@@ -20,6 +20,13 @@
 //!
 //! Every sample is also printed as "Magnetometer: [x, y, z]" (raw µT, before
 //! any correction), so the output still works with ../mag-calibrate/store-mag.py.
+//!
+//! Without the debug cable:
+//!   - Blue LED blinking: countdown, get ready. Solid: rotate the board.
+//!     Off: collection finished.
+//!   - Each successful fit is saved to flash. The next time this example boots
+//!     (e.g. after reflashing with the probe attached) it prints the newest
+//!     saved calibration first, before starting a new run.
 
 #![no_std]
 #![no_main]
@@ -29,10 +36,12 @@ use core::ptr::addr_of_mut;
 
 use defmt::{error, info, warn};
 use embassy_executor::{task, Executor, Spawner};
-use embassy_time::{Duration, Instant, Ticker};
+use embassy_time::{Duration, Instant, Ticker, Timer};
+use embedded_hal_1::spi::ErrorKind;
 use nalgebra::{Matrix3, SMatrix, SVector, Vector3};
 use {defmt_rtt as _, panic_probe as _};
-use sirin::Sirin;
+use sirin::{spi::SpiDev, Sirin};
+use w25qx::W25Q;
 
 const HARD_IRON_BIAS: [f32; 3] = [-25.440907, 30.405136, -149.43695];
 
@@ -48,6 +57,162 @@ const MAX_SANE_UT: f32 = 300.0;
 
 /// Bias-corrected samples. Static so ~14 KB doesn't sit on the task stack.
 static mut SAMPLES: [[f32; 3]; MAX_SAMPLES] = [[0.0; 3]; MAX_SAMPLES];
+
+/// Saved calibrations live in the last 4 KB sector of the 16 MB the flash
+/// driver can address. That's inside the top 64 KB the flight log leaves free;
+/// on ekf-implement the GPS nav DB also lives there but never grows this far.
+/// One record per 256-byte page, appended in order, so the sector keeps the
+/// last 16 runs. A record only counts if its checksum matches, so a run cut
+/// off mid-write is ignored and the previous one is used.
+const CAL_SECTOR_ADDR: u32 = 16 * 1024 * 1024 - 4096;
+const CAL_PAGE_SIZE: u32 = 256;
+const CAL_PAGES: u32 = 4096 / CAL_PAGE_SIZE;
+const CAL_MAGIC: u32 = u32::from_le_bytes(*b"MCAL");
+const CAL_WORDS: usize = 20;
+const CAL_RECORD_LEN: usize = CAL_WORDS * 4;
+
+const LED_BLINK_MS: u64 = 250;
+
+/// One finished calibration, as saved to flash.
+struct CalRecord {
+    seq: u32,
+    hard_iron_ut: [f32; 3],
+    soft_iron: [[f32; 3]; 3],
+    field_ut: f32,
+    /// Spread of |B| as a % of its mean, with the old bias only and fully corrected
+    spread_before_pct: f32,
+    spread_after_pct: f32,
+    samples: u32,
+    rejected: u32,
+}
+
+impl CalRecord {
+    /// Layout: magic, seq, hard iron (3), soft iron (9, row-major), F,
+    /// spread before, spread after, samples, rejected, checksum.
+    fn to_bytes(&self) -> [u8; CAL_RECORD_LEN] {
+        let mut w = [0u32; CAL_WORDS];
+        w[0] = CAL_MAGIC;
+        w[1] = self.seq;
+        for i in 0..3 {
+            w[2 + i] = self.hard_iron_ut[i].to_bits();
+        }
+        for r in 0..3 {
+            for c in 0..3 {
+                w[5 + r * 3 + c] = self.soft_iron[r][c].to_bits();
+            }
+        }
+        w[14] = self.field_ut.to_bits();
+        w[15] = self.spread_before_pct.to_bits();
+        w[16] = self.spread_after_pct.to_bits();
+        w[17] = self.samples;
+        w[18] = self.rejected;
+        w[19] = fnv1a(&w[..19]);
+
+        let mut b = [0u8; CAL_RECORD_LEN];
+        for (i, word) in w.iter().enumerate() {
+            b[i * 4..i * 4 + 4].copy_from_slice(&word.to_le_bytes());
+        }
+        b
+    }
+
+    fn from_bytes(b: &[u8; CAL_RECORD_LEN]) -> Option<Self> {
+        let w: [u32; CAL_WORDS] = core::array::from_fn(|i| {
+            u32::from_le_bytes([b[i * 4], b[i * 4 + 1], b[i * 4 + 2], b[i * 4 + 3]])
+        });
+        if w[0] != CAL_MAGIC || w[19] != fnv1a(&w[..19]) {
+            return None;
+        }
+        Some(Self {
+            seq: w[1],
+            hard_iron_ut: core::array::from_fn(|i| f32::from_bits(w[2 + i])),
+            soft_iron: core::array::from_fn(|r| core::array::from_fn(|c| f32::from_bits(w[5 + r * 3 + c]))),
+            field_ut: f32::from_bits(w[14]),
+            spread_before_pct: f32::from_bits(w[15]),
+            spread_after_pct: f32::from_bits(w[16]),
+            samples: w[17],
+            rejected: w[18],
+        })
+    }
+
+    fn print(&self) {
+        info!(
+            "Calibration #{}: {} samples ({} rejected), F = {} uT, |B| spread {}% before -> {}% after",
+            self.seq, self.samples, self.rejected, self.field_ut, self.spread_before_pct, self.spread_after_pct,
+        );
+        info!("Paste into extended-kalman/src/lib.rs:");
+        info!(
+            "const MAG_HARD_IRON_UT: [f32; 3] = [{}, {}, {}];",
+            self.hard_iron_ut[0], self.hard_iron_ut[1], self.hard_iron_ut[2],
+        );
+        info!("const MAG_SOFT_IRON: [[f32; 3]; 3] = [");
+        for r in 0..3 {
+            info!("    [{}, {}, {}],", self.soft_iron[r][0], self.soft_iron[r][1], self.soft_iron[r][2]);
+        }
+        info!("];");
+    }
+}
+
+/// FNV-1a over the little-endian bytes of `words`.
+fn fnv1a(words: &[u32]) -> u32 {
+    let mut h: u32 = 0x811c_9dc5;
+    for word in words {
+        for byte in word.to_le_bytes() {
+            h ^= byte as u32;
+            h = h.wrapping_mul(0x0100_0193);
+        }
+    }
+    h
+}
+
+struct CalScan {
+    newest: Option<CalRecord>,
+    /// First erased page, where the next record goes
+    free_page: Option<u32>,
+    valid: u32,
+}
+
+async fn scan_calibrations(flash: &mut W25Q<SpiDev>) -> Result<CalScan, ErrorKind> {
+    let mut scan = CalScan { newest: None, free_page: None, valid: 0 };
+    for page in 0..CAL_PAGES {
+        let mut b = [0u8; CAL_RECORD_LEN];
+        flash.read(CAL_SECTOR_ADDR + page * CAL_PAGE_SIZE, &mut b).await?;
+        if b.iter().all(|&x| x == 0xFF) {
+            scan.free_page.get_or_insert(page);
+            continue;
+        }
+        if let Some(rec) = CalRecord::from_bytes(&b) {
+            scan.valid += 1;
+            if scan.newest.as_ref().map_or(true, |n| rec.seq > n.seq) {
+                scan.newest = Some(rec);
+            }
+        }
+    }
+    Ok(scan)
+}
+
+/// Append `rec` after the newest saved record (erasing the sector once all 16
+/// pages are used) and read it back. Returns the seq it was saved under.
+async fn save_calibration(flash: &mut W25Q<SpiDev>, rec: &mut CalRecord) -> Result<Option<u32>, ErrorKind> {
+    let scan = scan_calibrations(flash).await?;
+    rec.seq = scan.newest.map_or(1, |n| n.seq.wrapping_add(1));
+
+    let page = match scan.free_page {
+        Some(p) => p,
+        None => {
+            flash.erase_sector(CAL_SECTOR_ADDR).await?;
+            0
+        }
+    };
+    let addr = CAL_SECTOR_ADDR + page * CAL_PAGE_SIZE;
+
+    // A record fits in one page and starts page-aligned, so this is a single page program
+    let bytes = rec.to_bytes();
+    flash.write(addr, &bytes).await?;
+
+    let mut back = [0u8; CAL_RECORD_LEN];
+    flash.read(addr, &mut back).await?;
+    Ok((back == bytes).then_some(rec.seq))
+}
 
 unsafe fn transmute_into_static<T>(item: &mut T) -> &'static mut T {
     core::mem::transmute(item)
@@ -171,15 +336,32 @@ async fn main_task(sirin: &'static mut Sirin, samples: &'static mut [[f32; 3]; M
         }
     }
 
+    // Report the last saved calibration before starting a new run
+    match scan_calibrations(&mut sirin.flash.w25q).await {
+        Ok(CalScan { newest: Some(rec), valid, .. }) => {
+            info!("==== Last saved calibration ({} saved in flash) ====", valid);
+            rec.print();
+        }
+        Ok(_) => info!("No saved calibration in flash yet"),
+        Err(_) => error!("SPI error reading saved calibrations"),
+    }
+
     if HARD_IRON_BIAS == [0.0, 0.0, 0.0] {
         warn!("HARD_IRON_BIAS is all zero - did you fill it in?");
     }
 
-    let mut ticker = Ticker::every(Duration::from_secs(1));
+    // Blink blue during the countdown
     for i in (1..=COUNTDOWN_SECONDS).rev() {
         info!("Starting in {}... get away from metal", i);
-        ticker.next().await;
+        for _ in 0..(1000 / (2 * LED_BLINK_MS)) {
+            sirin.led_blue.set_high();
+            Timer::after_millis(LED_BLINK_MS).await;
+            sirin.led_blue.set_low();
+            Timer::after_millis(LED_BLINK_MS).await;
+        }
     }
+    // Solid blue while collecting: rotate now
+    sirin.led_blue.set_high();
     info!("GO - rotate the board slowly through every orientation for {} s", COLLECT_SECONDS);
 
     let mut count: usize = 0;
@@ -241,6 +423,8 @@ async fn main_task(sirin: &'static mut Sirin, samples: &'static mut [[f32; 3]; M
         }
     }
 
+    sirin.led_blue.set_low();
+
     let samples = &samples[..count];
     info!("==== Collection done ====");
     info!("Samples used: {}, rejected: {}", count, rejected);
@@ -300,6 +484,22 @@ async fn main_task(sirin: &'static mut Sirin, samples: &'static mut [[f32; 3]; M
         info!("    [{}, {}, {}],", a[(r, 0)] as f32, a[(r, 1)] as f32, a[(r, 2)] as f32);
     }
     info!("];");
+
+    let mut rec = CalRecord {
+        seq: 0,
+        hard_iron_ut: core::array::from_fn(|i| HARD_IRON_BIAS[i] + offset[i] as f32),
+        soft_iron: core::array::from_fn(|r| core::array::from_fn(|c| a[(r, c)] as f32)),
+        field_ut: f as f32,
+        spread_before_pct: (100.0 * std_before / mean_before) as f32,
+        spread_after_pct: (100.0 * std_after / mean_after) as f32,
+        samples: count as u32,
+        rejected,
+    };
+    match save_calibration(&mut sirin.flash.w25q, &mut rec).await {
+        Ok(Some(seq)) => info!("Saved to flash as calibration #{}", seq),
+        Ok(None) => error!("Calibration written to flash but read back wrong - not saved"),
+        Err(_) => error!("SPI error saving calibration to flash"),
+    }
 
     loop {
         ticker.next().await;
