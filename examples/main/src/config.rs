@@ -13,17 +13,20 @@ pub const THRESHOLD_WINDOW: usize = 10; //Size of ring buffer for apogee/landing
 pub const THRESHOLD_REQUIRED: usize = 8; //Values meeting threshold in ring buffer to pass the check
 
 //LoRa broadcast config
-pub const STANDBY_BROADCAST_HZ: f64 = 0.0025; //In Hz
+pub const STANDBY_BROADCAST_HZ: f64 = 2.0; //In Hz
 pub const FLIGHT_BROADCAST_HZ: f64 = 5.0; //In Hz
 pub const DESCENT_BROADCAST_HZ: f64 = 5.0; //In Hz
-pub const LANDED_BROADCAST_HZ: f64 = 0.025; //In Hz
+pub const LANDED_BROADCAST_HZ: f64 = 5.0; //In Hz
 
 //Sampling rate
 pub const LOOP_RATE_HZ: f64 = 100.0; //Main loop rate
 
 //USB broadcast config
 pub const USB_BROADCAST_HZ: f64 = 10.0; //In Hz
-pub const USB_BROADCASTING_ALLOWED: bool = true;
+pub const USB_BROADCASTING_ALLOWED: bool = false;
 // Send an EkfDebug packet over USB every main loop iteration
 pub const EKF_DEBUG_ENABLED: bool = true;
+// Also send an EkfDebug packet over LoRa after each LoRa DataState packet.
+// Doubles radio airtime, so consider turning off for flights
+pub const EKF_DEBUG_RADIO_ENABLED: bool = true;
 

@@ -266,23 +266,17 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
     // Kalman filter init
     let ekf_settings = Ekf_settings {
-        accel_var_f2ps4: 0.051196358441216, // σ = 0.1058 ft/s² (≈ 3.3 mg)
+        accel_var_f2ps4: 0.011196358441216, // σ = 0.1058 ft/s² (≈ 3.3 mg)
         accel_bias_var_f2ps4: 1e-5,
         gyro_var_rad2ps2: 1.09662e-6,
-        gyro_bias_var_rad2ps2: 1e-3,        // σ ≈ 0.00105 rad/s (≈ 0.06 °/s)
-        baro_var_ft2: 100.0,  
-        /*            // σ = 10 ft (≈ 3 m
+        gyro_bias_var_rad2ps2: 1e-10,        // σ ≈ 0.00105 rad/s (≈ 0.06 °/s)
+        baro_var_ft2: 100.0,              // σ = 10 ft (≈ 3 m
         magn_covar_gauss2: [                // σ = 3.2 mG (x, y), 4.1 mG (z)
-            3.2e-3 * 3.2e-3, 0.0, 0.0,
-            0.0, 3.2e-3 * 3.2e-3, 0.0,
-            0.0, 0.0, 4.1e-3 * 4.1e-3,
-        ], */
-        magn_covar_gauss2: [
-            3.0, 0.0, 0.0,
-            0.0, 3.0, 0.0,
-            0.0, 0.0, 3.0
+            0.025 * 0.025, 0.0, 0.0,
+            0.0, 0.025 * 0.025, 0.0,
+            0.0, 0.0, 0.025 * 0.025,
         ],
-        magn_bias_var_gauss2: 1e-3,
+        magn_bias_var_gauss2: 1e-6,
         gnss_covar_ft2: [                   // unused while you don't inject GPS
             18.0, 0.0, 0.0,
             0.0, 18.0, 0.0,
@@ -509,7 +503,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             let settled = calm_since.is_some_and(|t| Instant::now() - t >= Duration::from_millis(MAG_SETTLE_MS));
 
             if new_mag && settled {
-                //filter.inject_magn(&sirin.data.magnetometer, Instant::now().as_micros() as u32);
+                filter.inject_magn(&sirin.data.magnetometer, Instant::now().as_micros() as u32);
             }
         }
         if let Ok(pressure) = sirin.data.baro.pressure {
@@ -703,6 +697,11 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     Log::DataState(datastate.clone())
                 ))
             ));
+            if config::EKF_DEBUG_RADIO_ENABLED {
+                OUT_CHANNEL.publish_immediate(IoPacket::new(
+                    IoChannel::ToLoRa, OutPacket::EkfDebug(filter.debug_snapshot(sirin.data.time))
+                ));
+            }
         }
     }
 }
