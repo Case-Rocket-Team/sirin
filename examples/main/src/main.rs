@@ -314,7 +314,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
     loop {
         //True only once velocity is successfully calculated
-        let mut velocity_valid = false;
+        let mut velocity_valid = true;
 
         //info!("Handle input packets");
         while let Ok(io_packet) = try_receive_packet() {
@@ -503,7 +503,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             let settled = calm_since.is_some_and(|t| Instant::now() - t >= Duration::from_millis(MAG_SETTLE_MS));
 
             if new_mag && settled {
-                filter.inject_magn(&sirin.data.magnetometer, Instant::now().as_micros() as u32);
+                //filter.inject_magn(&sirin.data.magnetometer, Instant::now().as_micros() as u32);
             }
         }
         if let Ok(pressure) = sirin.data.baro.pressure {
@@ -557,7 +557,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
         match state.mode {
             SirinMode::Standby => {
-                if state.altitude.value > altitude_threshold
+                if datastate.altitude.value as f64 > altitude_threshold
                     || accel_mag_squared.is_some_and(|accel| accel.value > accel_threshold.value)
                     || desired_mode == Some(SirinMode::Flight)
                 {
@@ -619,7 +619,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
                 //Deploy main parachute
                 if state.apogee.is_some() {
-                    if state.altitude.value < main_deployment_altitude {
+                    if (datastate.altitude.value as f64) < main_deployment_altitude {
                         if !main_deployed {
                             Sirin::deploy_chute_main(&mut sirin.parachute_main);
                             OUT_CHANNEL.publish_immediate(IoPacket::new(
