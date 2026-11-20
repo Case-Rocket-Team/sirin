@@ -15,7 +15,7 @@ use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task, gps_task_with_nav_db}, io::{EKF_DEBUG, FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_flash_logging_enabled, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{SirinDataState, GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
+use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task, gps_task_with_nav_db}, io::{EKF_DEBUG, FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, log_to_flash, radio_io_task, send_packet, send_packet_reliable,set_flash_logging_enabled, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{SirinDataState, GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, Publisher, Subscriber}};
 use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
@@ -266,9 +266,9 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
     // Kalman filter init
     let ekf_settings = Ekf_settings {
-        accel_var_f2ps4: 0.011196358441216, // σ = 0.1058 ft/s² (≈ 3.3 mg)
+        accel_var_f2ps4: 0.001272,
         accel_bias_var_f2ps4: 1e-5,
-        gyro_var_rad2ps2: 1.09662e-6,
+        gyro_var_rad2ps2: 3.668276077e-7,
         gyro_bias_var_rad2ps2: 1e-10,        // σ ≈ 0.00105 rad/s (≈ 0.06 °/s)
         baro_var_ft2: 100.0,              // σ = 10 ft (≈ 3 m
         magn_covar_gauss2: [                // σ = 3.2 mG (x, y), 4.1 mG (z)
@@ -397,13 +397,23 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     // borrow checker :(
                     let header = header.clone();
 
+                    // Wait for USB to take each log so none are dropped
                     let mut iter = flash.read_logs(&header);
+                    let mut host_reading = true;
                     while let Some(log) = iter.next().await {
                         //info!("Sent log: {}", Debug2Format(&log));
-                        send_packet(io_packet.reply(log?));
+                        if !send_packet_reliable(io_packet.reply(log?)).await {
+                            warn!("Host stopped reading, export of flight {} abandoned", index);
+                            host_reading = false;
+                            break;
+                        }
                     }
 
                     //info!("Done writing logs.")
+                    if host_reading {
+                        send_packet_reliable(io_packet.reply(OutPacket::Ok)).await;
+                    }
+                    continue;
                 }
                 InPacket::Tail(enabled) => {
                     set_usb_broadcasting_enabled(enabled);
@@ -570,12 +580,10 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             },
             SirinMode::Flight => {
                 //Log a DataState packet every 100 milliseconds
-                OUT_CHANNEL.publish_immediate(IoPacket::new(
-                    IoChannel::Flash, OutPacket::LogEntry(
-                        LogEntry::new(
-                            sirin.data.time,
-                            Log::DataState(datastate.clone())
-                        )
+                log_to_flash(OutPacket::LogEntry(
+                    LogEntry::new(
+                        sirin.data.time,
+                        Log::DataState(datastate.clone())
                     )
                 ));
 
@@ -590,10 +598,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     //Deploy apo parachute
                     if !apo_deployed && dur.is_some_and(|d| d > Duration::from_secs(timeout)) {
                         Sirin::deploy_chute_apo(&mut sirin.parachute_apo);
-                        OUT_CHANNEL.publish_immediate(IoPacket::new(
-                            IoChannel::Flash,
-                            OutPacket::DeployedApoAt(sirin.data.time.value)
-                        ));
+                        log_to_flash(OutPacket::DeployedApoAt(sirin.data.time.value));
                         apo_deployed = true;
                     }
 
@@ -609,22 +614,17 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 sirin.led_blue.set_high();
 
                 // Log DataState packet during descent
-                OUT_CHANNEL.publish_immediate(IoPacket::new(
-                    IoChannel::Flash,
-                    OutPacket::LogEntry(LogEntry::new(
-                        sirin.data.time,
-                        Log::DataState(datastate.clone()),
-                    )),
-                ));
+                log_to_flash(OutPacket::LogEntry(LogEntry::new(
+                    sirin.data.time,
+                    Log::DataState(datastate.clone()),
+                )));
 
                 //Deploy main parachute
                 if state.apogee.is_some() {
                     if (datastate.altitude.value as f64) < main_deployment_altitude {
                         if !main_deployed {
                             Sirin::deploy_chute_main(&mut sirin.parachute_main);
-                            OUT_CHANNEL.publish_immediate(IoPacket::new(
-                    IoChannel::Flash, OutPacket::DeployedMainAt(sirin.data.time.value)
-                            ));
+                            log_to_flash(OutPacket::DeployedMainAt(sirin.data.time.value));
                             main_deployed = true;
                         }
                     }
