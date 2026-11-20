@@ -946,15 +946,15 @@ impl <S: SpiHandle> Lsm6dsv32x<S> {
 
           // Accelerometer setup
           // 000: high performance mode
-          // 1100: 7.68 kHz ODR
-          self.write_reg(RegCtrl1, 0b0_000_1100 as u8).await?;
+          // 0111: 240 Hz ODR
+          self.write_reg(RegCtrl1, 0b0_000_0111 as u8).await?;
           // 11: +- 32g FS
           self.write_reg(RegCtrl8, 0b000_0_0_1_11 as u8).await?;
  
           // Gyroscope setup
           // 000: high performance mode
-          // 1100: 7.68 kHz ODR
-          self.write_reg(RegCtrl2, 0b0_000_1100 as u8).await?;
+          // 0111: 240 Hz ODR
+          self.write_reg(RegCtrl2, 0b0_000_0111 as u8).await?;
           // 0001: +-250dps FS
           self.write_reg(RegCtrl6, 0b0_000_0001 as u8).await?;
           Ok(())    
