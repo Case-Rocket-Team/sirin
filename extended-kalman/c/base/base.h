@@ -91,6 +91,7 @@ f32 vec3f_dot(vec3f a, vec3f b);
 f32 vec3f_sqr_dist(vec3f a, vec3f b);
 f32 vec3f_dist(vec3f a, vec3f b);
 b8 vec3f_eq(vec3f a, vec3f b);
+b8 vec3f_finite(vec3f v);
 f32 vec3f_sqr_len(vec3f v);
 f32 vec3f_len(vec3f v);
 vec3f vec3f_norm(vec3f v);
@@ -100,6 +101,7 @@ quatf quatf_mul(quatf a, quatf b);
 f32 quatf_dot(quatf a, quatf b);
 quatf quatf_norm(quatf q);
 quatf quatf_conj(quatf q);
+b8 quatf_finite(quatf q);
 
 // Calcualtes the rotation required to get from `u` to `v`
 quatf quatf_rot_between(vec3f u, vec3f v);

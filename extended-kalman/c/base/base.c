@@ -130,6 +130,10 @@ b8 vec3f_eq(vec3f a, vec3f b) {
     return a.x == b.x && a.y == b.y && a.z == b.z;
 }
 
+b8 vec3f_finite(vec3f v) {
+    return isfinite(v.x) && isfinite(v.y) && isfinite(v.z);
+}
+
 f32 vec3f_sqr_len(vec3f v) {
     return v.x * v.x + v.y * v.y + v.z * v.z;
 }
@@ -195,6 +199,10 @@ quatf quatf_conj(quatf q) {
         .y = -q.y,
         .z = -q.z,
     };
+}
+
+b8 quatf_finite(quatf q) {
+    return isfinite(q.w) && isfinite(q.x) && isfinite(q.y) && isfinite(q.z);
 }
 
 // https://stackoverflow.com/questions/1171849/finding-quaternion-representing-the-rotation-from-one-vector-to-another

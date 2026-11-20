@@ -24,23 +24,28 @@ extern "C" {
 #include "base/base.h"
 
 #define EKF_STATE_DIM 18
+#define EKF_NOMINAL_STATE_DIM 19
 #define EKF_CONTROL_DIM 6
 #define EKF_MAX_MEASURE_DIM 3
 
-typedef struct {
-    // Stored such that left multiplication by attitude goes from body frame
-    // to world frame
-    quatf attitude;
+typedef union {
+    struct {
+        // Stored such that left multiplication by attitude goes from body frame
+        // to world frame
+        quatf attitude;
 
-    // Velocity is in the world's frame of reference
-    vec3f vel_fps;
+        // Velocity is in the world's frame of reference
+        vec3f vel_fps;
 
-    // Position is in the world's frame of reference
-    vec3f pos_ft;
+        // Position is in the world's frame of reference
+        vec3f pos_ft;
 
-    vec3f gyro_bias_radps; // radians / sec
-    vec3f accel_bias_fps2;
-    vec3f magn_bias_gauss;
+        vec3f gyro_bias_radps; // radians / sec
+        vec3f accel_bias_fps2;
+        vec3f magn_bias_gauss;
+    };
+
+    f32 v[EKF_NOMINAL_STATE_DIM];
 } ekf_nominal_state;
 
 typedef union {
