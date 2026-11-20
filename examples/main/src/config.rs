@@ -9,6 +9,7 @@ pub const APOGEE_ERROR_M: f64 = 0.0; //In meters
 pub const APOGEE_TIMEOUT_S: u64 = 0; //In seconds
 pub const FLIGHT_TIMEOUT_S: u64 = 10; //In seconds
 pub const LANDED_VELOCITY_THRESHOLD_M_S: f64 = -1.0; //In meters per second
+pub const LANDED_MAX_ALTITUDE_M: f64 = 50.0; //Landing only counts below this altitude above the pad, in meters
 pub const THRESHOLD_WINDOW: usize = 50; //Size of ring buffer for apogee/landing detection
 pub const THRESHOLD_REQUIRED: usize = 35; //Values meeting threshold in ring buffer to pass the check
 

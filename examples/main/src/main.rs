@@ -630,13 +630,15 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     }
                 }
 
-                //Landed once velocity is below threshold for THRESHOLD_REQUIRED of the
-                //last THRESHOLD_WINDOW measurements. Ticks without a valid velocity count as misses.
-                let total_vel: f64 = (state.nominal.vel.x.powf(2.0) + state.nominal.vel.y.value.powf(2.0) + state.nominal.vel.z.powf(2.0)).sqrt() as f64;
+                //Landed once the filter's vertical speed is below threshold near the pad for
+                //THRESHOLD_REQUIRED of the last THRESHOLD_WINDOW measurements. The altitude check
+                //stops it passing at apogee, where vertical speed is also near zero.
+                let vz = datastate.vel.z.value as f64;
                 landed_check.push(
                     velocity_valid
-                        && total_vel.is_finite()
-                        && total_vel < config::LANDED_VELOCITY_THRESHOLD_M_S
+                        && vz.is_finite()
+                        && ComplexField::abs(vz) < config::LANDED_VELOCITY_THRESHOLD_M_S
+                        && (datastate.altitude.value as f64) < config::LANDED_MAX_ALTITUDE_M
                 );
                 if landed_check.passes(config::THRESHOLD_REQUIRED) {
                     desired_mode = Some(SirinMode::Landed);
