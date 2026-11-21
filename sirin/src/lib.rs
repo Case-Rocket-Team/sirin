@@ -187,6 +187,11 @@ impl Sirin {
             let mut spi_config = em_spi::Config::default();
             spi_config.frequency = mhz(1);
 
+            // SPI2 has only the flash and the radio. At 1 MHz, flash logging can't keep
+            // up with the 100 Hz loop. The RFM9x allows up to 10 MHz, the W25Q far more.
+            let mut spi2_config = spi_config.clone();
+            spi2_config.frequency = mhz(8);
+
             let spi1: *mut SpiInstance = ptr!(sirin.spi1);
             spi1.write(spi::SpiInstance::new(SpiConfigStruct {
                 spi: p.SPI1,
@@ -206,7 +211,7 @@ impl Sirin {
                 mosi: p.PB15,
                 dma_tx: p.DMA1_CH5,
                 dma_rx: p.DMA1_CH4,
-                config: spi_config
+                config: spi2_config
             }));
 
             let gpio: *mut GpioPins = ptr!(sirin.gpio);

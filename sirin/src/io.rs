@@ -38,6 +38,10 @@ static USB_REPLY_CHANNEL: Channel<CriticalSectionRawMutex, OutPacket, 4> = Chann
 // Give up on an export if the host stops reading for this long
 const USB_REPLY_TIMEOUT: Duration = Duration::from_secs(2);
 
+// True while a flight export is running; live USB packets are dropped so only the
+// export reaches the host
+static USB_EXPORTING: AtomicBool = AtomicBool::new(false);
+
 static USB_BROADCASTING_ENABLED: AtomicBool = AtomicBool::new(false);
 pub static FLASH_LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
 
@@ -211,6 +215,12 @@ pub fn set_usb_broadcasting_enabled(bool: bool) {
     USB_BROADCASTING_ENABLED.store(bool, Ordering::Relaxed);
 }
 
+/// Set while sending a flight export. Live USB packets (including ones already queued)
+/// are dropped until it's cleared, so they don't get mixed into the export.
+pub fn set_usb_exporting(exporting: bool) {
+    USB_EXPORTING.store(exporting, Ordering::Relaxed);
+}
+
 async fn usb_output_task_impl(
     usb: &mut WriteEp
 ) -> Result<(), SirinError> {
@@ -223,15 +233,19 @@ async fn usb_output_task_impl(
         usb.wait_enabled().await;
 
         // Replies first so an export isn't held up by live data
-        let packet = match select3(
+        let (packet, is_reply) = match select3(
             USB_REPLY_CHANNEL.receive(),
             next_out_packet(&mut broadcast_sub, &mut out_sub, IoChannel::Usb),
             EKF_DEBUG.wait()
         ).await {
-            Either3::First(p) => p,
-            Either3::Second(p) => p,
-            Either3::Third(d) => OutPacket::EkfDebug(d),
+            Either3::First(p) => (p, true),
+            Either3::Second(p) => (p, false),
+            Either3::Third(d) => (OutPacket::EkfDebug(d), false),
         };
+        // During an export only its replies go out; drop live data instead of sending it
+        if !is_reply && USB_EXPORTING.load(Ordering::Relaxed) {
+            continue;
+        }
 
         packet.to_song(&mut buf)?;
         let len = packet.song_size();

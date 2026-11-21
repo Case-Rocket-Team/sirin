@@ -15,7 +15,7 @@ use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task, gps_task_with_nav_db}, io::{EKF_DEBUG, FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, log_to_flash, radio_io_task, send_packet, send_packet_reliable,set_flash_logging_enabled, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{SirinDataState, GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
+use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task, gps_task_with_nav_db}, io::{EKF_DEBUG, FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, log_to_flash, radio_io_task, send_packet, send_packet_reliable,set_flash_logging_enabled, set_usb_broadcasting_enabled, set_usb_exporting, try_receive_packet, usb_input_task, usb_output_task}, packet::{SirinDataState, GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, Publisher, Subscriber}};
 use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
@@ -386,16 +386,21 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 }
                 InPacket::ReadFlight(index) => {
                     let mut flash = flash.lock().await;
-                    let Some(header) = flash.flight_headers.get(index as usize) else {
+                    // Look up by list position, the same numbering QueryFlights reports
+                    // (the deque's physical slots stop matching once old flights are removed)
+                    let Some(header) = flash.flight_headers.iter().nth(index as usize).cloned() else {
                         //TODO: Fix error
                         //send_packet(io_packet.reply(OutPacket::Error(PacketError::FlightNotFound(index))));
+                        warn!("Flight {} not found ({} flights stored)", index, flash.flight_headers.len());
+                        // Reply anyway so the host's export ends instead of waiting forever
+                        send_packet_reliable(io_packet.reply(OutPacket::Ok)).await;
                         continue;
                     };
 
-                    //info!("Reading flight with header: {:?}", Debug2Format(&header));
+                    info!("Reading flight {} (header slot {})", index, header.index);
 
-                    // borrow checker :(
-                    let header = header.clone();
+                    // Drop live USB data (and any already queued) until the export is done
+                    set_usb_exporting(true);
 
                     // Wait for USB to take each log so none are dropped
                     let mut iter = flash.read_logs(&header);
@@ -413,6 +418,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     if host_reading {
                         send_packet_reliable(io_packet.reply(OutPacket::Ok)).await;
                     }
+                    set_usb_exporting(false);
                     continue;
                 }
                 InPacket::Tail(enabled) => {
@@ -513,7 +519,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             let settled = calm_since.is_some_and(|t| Instant::now() - t >= Duration::from_millis(MAG_SETTLE_MS));
 
             if new_mag && settled {
-                //filter.inject_magn(&sirin.data.magnetometer, Instant::now().as_micros() as u32);
+                filter.inject_magn(&sirin.data.magnetometer, Instant::now().as_micros() as u32);
             }
         }
         if let Ok(pressure) = sirin.data.baro.pressure {
