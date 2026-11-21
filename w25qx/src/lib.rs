@@ -95,9 +95,10 @@ impl <S: SpiHandle> W25Q<S>{
         let mut i = 0;
 
         while i < buf.len() {
-            let page_end = (addr + 256) / 256 * 256;
-            
-            let section_size = (page_end - addr).min(buf.len() - i);
+            // End of the page this piece starts in (a page program can't cross it)
+            let page_end = (addr + i + 256) / 256 * 256;
+
+            let section_size = (page_end - (addr + i)).min(buf.len() - i);
             self.page_program((addr + i) as u32, &buf[i..(i + section_size)]).await?;
 
             i += section_size;
