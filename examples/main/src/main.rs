@@ -269,15 +269,15 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
         accel_var_f2ps4: 0.001272,
         accel_bias_var_f2ps4: 1e-5,
         gyro_var_rad2ps2: 3.668276077e-7,
-        gyro_bias_var_rad2ps2: 1e-10,        // σ ≈ 0.00105 rad/s (≈ 0.06 °/s)
-        baro_var_ft2: 100.0,              // σ = 10 ft (≈ 3 m
-        magn_covar_gauss2: [                // σ = 3.2 mG (x, y), 4.1 mG (z)
+        gyro_bias_var_rad2ps2: 1e-10,        
+        baro_var_ft2: 100.0,         
+        magn_covar_gauss2: [         
             0.025 * 0.025, 0.0, 0.0,
             0.0, 0.025 * 0.025, 0.0,
             0.0, 0.0, 0.025 * 0.025,
         ],
         magn_bias_var_gauss2: 1e-6,
-        gnss_covar_ft2: [                   // unused while you don't inject GPS
+        gnss_covar_ft2: [
             18.0, 0.0, 0.0,
             0.0, 18.0, 0.0,
             0.0, 0.0, 200.0,

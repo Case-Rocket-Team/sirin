@@ -490,6 +490,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "drop-test"
+version = "0.1.0"
+dependencies = [
+ "bmp3",
+ "chrono",
+ "cortex-m",
+ "cortex-m-rt",
+ "critical-section",
+ "defmt",
+ "defmt-rtt",
+ "embassy-executor",
+ "embassy-futures 0.1.1",
+ "embassy-net",
+ "embassy-stm32",
+ "embassy-sync",
+ "embassy-time",
+ "embassy-usb",
+ "embedded-hal 0.2.7",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "embedded-io-async",
+ "embedded-nal-async 0.7.1",
+ "embedded-storage",
+ "extended-kalman",
+ "futures",
+ "heapless 0.8.0",
+ "lsm6dsv-spi",
+ "micromath",
+ "nalgebra",
+ "panic-probe",
+ "postcard",
+ "rand_core",
+ "rfm9",
+ "sirin",
+ "sirin-filter",
+ "sirin-shared",
+ "static_cell",
+ "stm32-fmc",
+ "w25qx",
+]
+
+[[package]]
 name = "ematch-test"
 version = "0.1.0"
 dependencies = [

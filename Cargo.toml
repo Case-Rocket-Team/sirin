@@ -18,6 +18,7 @@ members = [
     "examples/bare",
     "examples/h3lis-test",
     "examples/main",
+    "examples/drop-test",
     "examples/dongle",
     "examples/kalman-test",
     "examples/kalman-rust-test",

@@ -1,8 +1,8 @@
 // FOR IREC ROCKET - CHECK TO ENSURE THESE VALUES ARE CODED:
 
 //Flight-specific parameters
-pub const ACCEL_THRESHOLD_GS_SQUARED: f64 = 8.0 * 8.0; //In Gs squared
-pub const ALTITUDE_THRESHOLD_M: f64 = 5.0; //In meters
+pub const ACCEL_THRESHOLD_GS_SQUARED: f64 = 7.0 * 7.0; //In Gs squared
+pub const ALTITUDE_THRESHOLD_M: f64 = 10.0; //In meters
 pub const MAIN_DEPLOYMENT_ALTITUDE_M: f64 = 152.4; //In meters (1500 ft)
 pub const FLIGHT_DURATION_S: u64 = 300; //In seconds
 pub const APOGEE_ERROR_M: f64 = 0.0; //In meters
