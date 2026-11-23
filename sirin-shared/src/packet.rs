@@ -89,7 +89,43 @@ pub enum OutPacket {
     State(SirinState),
     DataState(SirinDataState),
     DeployedApoAt(u32),
-    DeployedMainAt(u32)
+    DeployedMainAt(u32),
+    // Keep last so the other variants keep their discriminants
+    EkfDebug(EkfDebug)
+}
+
+/// Copy of the EKF's tuning settings (`Ekf_settings` in extended-kalman), same
+/// field order and units. Fixed after the filter starts.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, SongSize, FromSong, ToSong)]
+pub struct EkfSettingsData {
+    pub accel_var_f2ps4: f32,
+    pub accel_bias_var_f2ps4: f32,
+    pub gyro_var_rad2ps2: f32,
+    pub gyro_bias_var_rad2ps2: f32,
+    pub baro_var_ft2: f32,
+    /// 3x3 row-major
+    pub magn_covar_gauss2: [f32; 9],
+    pub magn_bias_var_gauss2: f32,
+    /// 3x3 row-major
+    pub gnss_covar_ft2: [f32; 9],
+}
+
+/// Live EKF internals for debugging, sent over USB once per main loop iteration.
+/// Values are in the filter's own units (ft, rad, gauss).
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, SongSize, FromSong, ToSong)]
+pub struct EkfDebug {
+    /// Board uptime, same clock as `SirinData::time`
+    pub time: Milliseconds<u32>,
+    pub settings: EkfSettingsData,
+    pub gyro_bias_radps: Vec3<f32>,
+    pub accel_bias_fps2: Vec3<f32>,
+    pub magn_bias_gauss: Vec3<f32>,
+    /// Diagonal of the error-state covariance (variances), 3 per block:
+    /// attitude rad², velocity ft²/s², position ft², gyro bias (rad/s)²,
+    /// accel bias (ft/s²)², mag bias gauss²
+    pub covar_diag: [f32; 18],
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

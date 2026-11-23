@@ -242,12 +242,28 @@ impl Flash {
     }
 
     pub fn read_logs(&mut self, header: &FlashFlightHeader) -> FlashFlightPacketsIterator<'_> {
-        let addr_of_next_header = self.flight_headers.get((header.index + 1) % self.flight_headers.len()).unwrap().header.data_addr();
-        
+        let start = header.header.data_addr();
+        let size = self.flight_data.data_subregion_size;
+
+        // Stop where the next flight's data starts
+        let end = match self.flight_headers.get((header.index + 1) % FLIGHT_HEADER_COUNT) {
+            Some(next) if !self.flight_headers.back().is_some_and(|b| b.index == header.index) => {
+                let next_addr = next.header.data_addr();
+                if next_addr >= start {
+                    // Equal means this flight logged nothing
+                    next_addr
+                } else {
+                    // Next flight wrapped around the cyclic buffer
+                    next_addr + size
+                }
+            }
+            _ => start + size,
+        };
+
         FlashFlightPacketsIterator {
             flash: self,
-            rel_addr: header.header.data_addr(),
-            rel_addr_of_next_header: addr_of_next_header,
+            rel_addr: start,
+            rel_end_addr: end,
             is_done: false
         }
     }
@@ -405,8 +421,9 @@ pub struct FlashFlightPacketsIterator<'a> {
     // Not including offset!
     rel_addr: u32,
 
-    // Not including offset!
-    rel_addr_of_next_header: u32,
+    // Exclusive end of this flight's data, not including offset. May exceed the
+    // data region size when the flight wraps around; `rel_addr` is unwrapped too.
+    rel_end_addr: u32,
 
     is_done: bool
 }
@@ -416,14 +433,15 @@ impl <'a> FlashFlightPacketsIterator<'a> {
         let size = self.flash.flight_data.data_subregion_size;
         let offset = self.flash.flight_data.region_start;
 
-        if self.is_done || self.rel_addr >= self.rel_addr_of_next_header + size {
-            self.is_done = true;
-            return None;
-        }
-
         let mut buf = [0; MAX_OUT_PACKET_SIZE];
 
         loop {
+            // Checked every pass so a jump to the next sector can't run past the end
+            if self.is_done || self.rel_addr >= self.rel_end_addr {
+                self.is_done = true;
+                return None;
+            }
+
             //info!("Ran iter loop");
             let addr = offset + (self.rel_addr % size);
             match self.flash.w25q.read(addr, &mut buf).await {

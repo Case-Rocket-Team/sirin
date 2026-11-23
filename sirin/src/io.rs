@@ -1,17 +1,17 @@
-use core::{char::MAX, future::{Future, poll_fn}, marker::PhantomData, mem::transmute, sync::atomic::{AtomicBool, Ordering}, task::Poll};
+use core::{char::MAX, future::{Future, poll_fn}, marker::PhantomData, mem::transmute, sync::atomic::{AtomicBool, AtomicU32, Ordering}, task::Poll};
 
-use defmt::{error, info, println, Debug2Format};
+use defmt::{error, info, println, warn, Debug2Format};
 use embassy_executor::task;
-use embassy_futures::{join::join, select::{select, Either}};
+use embassy_futures::{join::join, select::{select, select3, Either, Either3}};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TryReceiveError, TrySendError}, pubsub::{PubSubBehavior, PubSubChannel as EmbassyPubSubChannel, Subscriber}, signal::Signal, waitqueue::AtomicWaker};
-use embassy_time::Instant;
+use embassy_time::{with_timeout, Duration, Instant};
 use embassy_usb::{driver::{Endpoint, EndpointIn, EndpointOut}, UsbDevice};
 use sirin_macros::{FromSong, SongSize, ToSong};
 use uunit::Milliseconds;
 use crate::{sync::Mutex, usb::{ReadEp, SirinUsb, WriteEp}};
 
 use crate::{error::SirinError, Flash, Radio};
-use sirin_shared::{config::{CallsignBuf, SirinConfig}, packet::{InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, RadioPacket, MAX_OUT_PACKET_SIZE}, song::{FromSong, FromSongError, SongSize, ToSong, ToSongError}};
+use sirin_shared::{config::{CallsignBuf, SirinConfig}, packet::{EkfDebug, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, RadioPacket, MAX_OUT_PACKET_SIZE}, song::{FromSong, FromSongError, SongSize, ToSong, ToSongError}};
 
 //pub static OUT_CHANNEL: Channel<CriticalSectionRawMutex, OutPacket, 10> = Channel::new();
 
@@ -23,6 +23,24 @@ pub static BROADCAST_CHANNEL: PubSubChannel<OutPacket, 3> = EmbassyPubSubChannel
 // High priority I/O channels
 pub static OUT_CHANNEL: PubSubChannel<IoPacket<OutPacket>, 3> = EmbassyPubSubChannel::new();
 pub static IN_CHANNEL: Channel<CriticalSectionRawMutex, IoPacket<InPacket>, 32> = Channel::new();
+
+// Latest EKF debug snapshot, sent over USB only. Kept out of OUT_CHANNEL so its
+// high rate can't push out radio or flash packets; only the newest is kept.
+pub static EKF_DEBUG: Signal<CriticalSectionRawMutex, EkfDebug> = Signal::new();
+
+// Flash log queue. Isolated so that radio and USB do not fill the same buffer and drop packets
+const FLASH_QUEUE_LEN: usize = 64;
+static FLASH_CHANNEL: Channel<CriticalSectionRawMutex, OutPacket, FLASH_QUEUE_LEN> = Channel::new();
+static FLASH_DROPPED: AtomicU32 = AtomicU32::new(0);
+
+// USB replies that must not be dropped
+static USB_REPLY_CHANNEL: Channel<CriticalSectionRawMutex, OutPacket, 4> = Channel::new();
+// Give up on an export if the host stops reading for this long
+const USB_REPLY_TIMEOUT: Duration = Duration::from_secs(2);
+
+// True while a flight export is running; live USB packets are dropped so only the
+// export reaches the host
+static USB_EXPORTING: AtomicBool = AtomicBool::new(false);
 
 static USB_BROADCASTING_ENABLED: AtomicBool = AtomicBool::new(false);
 pub static FLASH_LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
@@ -45,6 +63,31 @@ pub fn broadcast(packet: OutPacket) {
 pub fn send_packet(packet: IoPacket<OutPacket>) {
     info!("{:?}", Debug2Format(&packet));
     OUT_CHANNEL.publish_immediate(packet);
+}
+
+/// Queue a packet for the flash log without blocking. Dropped when logging is off.
+/// Dropped and counted when the queue is full.
+pub fn log_to_flash(packet: OutPacket) {
+    if !FLASH_LOGGING_ENABLED.load(Ordering::Relaxed) {
+        return;
+    }
+    if FLASH_CHANNEL.try_send(packet).is_err() {
+        let dropped = FLASH_DROPPED.fetch_add(1, Ordering::Relaxed) + 1;
+        // Warn on 1, 2, 4, 8... so a long stall doesn't flood the log
+        if dropped.is_power_of_two() {
+            warn!("Flash log queue full, {} entries dropped so far", dropped);
+        }
+    }
+}
+
+/// Send a reply that must arrive. USB replies wait for room in the USB queue and other
+/// channels fall back to `send_packet`. Returns false if the host stopped reading.
+pub async fn send_packet_reliable(packet: IoPacket<OutPacket>) -> bool {
+    if packet.channel != IoChannel::Usb {
+        send_packet(packet);
+        return true;
+    }
+    with_timeout(USB_REPLY_TIMEOUT, USB_REPLY_CHANNEL.send(packet.packet)).await.is_ok()
 }
 
 pub async fn receive_packet() -> IoPacket<InPacket> {
@@ -172,6 +215,12 @@ pub fn set_usb_broadcasting_enabled(bool: bool) {
     USB_BROADCASTING_ENABLED.store(bool, Ordering::Relaxed);
 }
 
+/// Set while sending a flight export. Live USB packets (including ones already queued)
+/// are dropped until it's cleared, so they don't get mixed into the export.
+pub fn set_usb_exporting(exporting: bool) {
+    USB_EXPORTING.store(exporting, Ordering::Relaxed);
+}
+
 async fn usb_output_task_impl(
     usb: &mut WriteEp
 ) -> Result<(), SirinError> {
@@ -183,11 +232,20 @@ async fn usb_output_task_impl(
     loop {
         usb.wait_enabled().await;
 
-        let packet = next_out_packet(
-            &mut broadcast_sub,
-            &mut out_sub,
-            IoChannel::Usb
-        ).await;
+        // Replies first so an export isn't held up by live data
+        let (packet, is_reply) = match select3(
+            USB_REPLY_CHANNEL.receive(),
+            next_out_packet(&mut broadcast_sub, &mut out_sub, IoChannel::Usb),
+            EKF_DEBUG.wait()
+        ).await {
+            Either3::First(p) => (p, true),
+            Either3::Second(p) => (p, false),
+            Either3::Third(d) => (OutPacket::EkfDebug(d), false),
+        };
+        // During an export only its replies go out; drop live data instead of sending it
+        if !is_reply && USB_EXPORTING.load(Ordering::Relaxed) {
+            continue;
+        }
 
         packet.to_song(&mut buf)?;
         let len = packet.song_size();
@@ -198,6 +256,12 @@ async fn usb_output_task_impl(
             let j = (i + 64).min(len);
             usb.write(&buf[i..j]).await?;
             i = j;
+        }
+
+        // The host ends a read on a short chunk. A packet that fills its last chunk
+        // needs an empty one, or the host merges it with the next packet.
+        if len % 64 == 0 {
+            usb.write(&[]).await?;
         }
     }
 }
@@ -241,20 +305,26 @@ pub async fn flash_io_task(flash: &'static Mutex<&'static mut Flash>){
 
 pub async fn flash_task_impl(flash_mutex: &Mutex<&mut Flash>) -> Result<(), SirinError> {
     let mut broadcast_sub = BROADCAST_CHANNEL.subscriber()?;
-    let mut out_sub = OUT_CHANNEL.subscriber()?;
 
     loop {
-        let packet = next_out_packet(
-            &mut broadcast_sub,
-            &mut out_sub,
-            IoChannel::Flash
-        ).await;
+        let packet = match select(
+            FLASH_CHANNEL.receive(),
+            broadcast_sub.next_message_pure()
+        ).await {
+            // Already checked against FLASH_LOGGING_ENABLED when queued, so entries
+            // queued just before logging is turned off still get written
+            Either::First(p) => p,
+            Either::Second(p) => {
+                if !FLASH_LOGGING_ENABLED.load(Ordering::Relaxed) {
+                    continue;
+                }
+                p
+            }
+        };
 
-        if FLASH_LOGGING_ENABLED.load(Ordering::Relaxed) {
-            let mut flash = flash_mutex.lock().await;
-            flash.log(&packet).await.unwrap();
-            drop(flash);
-        }       
+        let mut flash = flash_mutex.lock().await;
+        flash.log(&packet).await.unwrap();
+        drop(flash);
     }
 }
 

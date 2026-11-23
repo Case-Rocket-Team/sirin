@@ -15,7 +15,7 @@ use postcard::take_from_bytes;
 use rfm9::{ReadRfm9, Rfm9};
 use w25qx::W25Q;
 use {defmt_rtt as _, panic_probe as _};
-use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task, gps_task_with_nav_db}, io::{FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, radio_io_task, send_packet, set_flash_logging_enabled, set_usb_broadcasting_enabled, try_receive_packet, usb_input_task, usb_output_task}, packet::{SirinDataState, GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
+use sirin::{Radio, Sirin, error::SirinError, flash::Flash, gps::{GPS_FIX, gps_task, gps_task_with_nav_db}, io::{EKF_DEBUG, FLASH_LOGGING_ENABLED, IN_CHANNEL, OUT_CHANNEL, broadcast, broadcast_log, flash_io_task, log_to_flash, radio_io_task, send_packet, send_packet_reliable,set_flash_logging_enabled, set_usb_broadcasting_enabled, set_usb_exporting, try_receive_packet, usb_input_task, usb_output_task}, packet::{SirinDataState, GpsFixType, InPacket, IoChannel, IoPacket, Log, LogEntry, OutPacket, PacketError, Page, SirinData, SirinState}, song::{FromSong, SongSize}, spi::SpiDev, state::{Accel, AngularVel, ErrorState, NominalState, Pos, Vel}, subsystems::measure_sirin, sync::Mutex, time::{duration_since_epoch, set_duration_since_epoch}, uunit::{Gs, Meters, MetersPerSecond2, MicroGs, WithUnits}};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::{Channel, TrySendError}, pubsub::{PubSubBehavior, Publisher, Subscriber}};
 use sirin_shared::{mode::SirinMode, physics::approx_pressure_altitude, time::AbsoluteTimeReference};
 use sirin::song::SongDiscriminant;
@@ -266,23 +266,17 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
     // Kalman filter init
     let ekf_settings = Ekf_settings {
-        accel_var_f2ps4: 0.051196358441216, // σ = 0.1058 ft/s² (≈ 3.3 mg)
+        accel_var_f2ps4: 0.001272,
         accel_bias_var_f2ps4: 1e-5,
-        gyro_var_rad2ps2: 1.09662e-6,
-        gyro_bias_var_rad2ps2: 1e-3,        // σ ≈ 0.00105 rad/s (≈ 0.06 °/s)
-        baro_var_ft2: 100.0,  
-        /*            // σ = 10 ft (≈ 3 m
+        gyro_var_rad2ps2: 3.668276077e-7,
+        gyro_bias_var_rad2ps2: 1e-10,        // σ ≈ 0.00105 rad/s (≈ 0.06 °/s)
+        baro_var_ft2: 100.0,              // σ = 10 ft (≈ 3 m
         magn_covar_gauss2: [                // σ = 3.2 mG (x, y), 4.1 mG (z)
-            3.2e-3 * 3.2e-3, 0.0, 0.0,
-            0.0, 3.2e-3 * 3.2e-3, 0.0,
-            0.0, 0.0, 4.1e-3 * 4.1e-3,
-        ], */
-        magn_covar_gauss2: [
-            3.0, 0.0, 0.0,
-            0.0, 3.0, 0.0,
-            0.0, 0.0, 3.0
+            0.025 * 0.025, 0.0, 0.0,
+            0.0, 0.025 * 0.025, 0.0,
+            0.0, 0.0, 0.025 * 0.025,
         ],
-        magn_bias_var_gauss2: 1e-3,
+        magn_bias_var_gauss2: 1e-6,
         gnss_covar_ft2: [                   // unused while you don't inject GPS
             18.0, 0.0, 0.0,
             0.0, 18.0, 0.0,
@@ -320,7 +314,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
     loop {
         //True only once velocity is successfully calculated
-        let mut velocity_valid = false;
+        let mut velocity_valid = true;
 
         //info!("Handle input packets");
         while let Ok(io_packet) = try_receive_packet() {
@@ -392,24 +386,40 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 }
                 InPacket::ReadFlight(index) => {
                     let mut flash = flash.lock().await;
-                    let Some(header) = flash.flight_headers.get(index as usize) else {
+                    // Look up by list position, the same numbering QueryFlights reports
+                    // (the deque's physical slots stop matching once old flights are removed)
+                    let Some(header) = flash.flight_headers.iter().nth(index as usize).cloned() else {
                         //TODO: Fix error
                         //send_packet(io_packet.reply(OutPacket::Error(PacketError::FlightNotFound(index))));
+                        warn!("Flight {} not found ({} flights stored)", index, flash.flight_headers.len());
+                        // Reply anyway so the host's export ends instead of waiting forever
+                        send_packet_reliable(io_packet.reply(OutPacket::Ok)).await;
                         continue;
                     };
 
-                    //info!("Reading flight with header: {:?}", Debug2Format(&header));
+                    info!("Reading flight {} (header slot {})", index, header.index);
 
-                    // borrow checker :(
-                    let header = header.clone();
+                    // Drop live USB data (and any already queued) until the export is done
+                    set_usb_exporting(true);
 
+                    // Wait for USB to take each log so none are dropped
                     let mut iter = flash.read_logs(&header);
+                    let mut host_reading = true;
                     while let Some(log) = iter.next().await {
                         //info!("Sent log: {}", Debug2Format(&log));
-                        send_packet(io_packet.reply(log?));
+                        if !send_packet_reliable(io_packet.reply(log?)).await {
+                            warn!("Host stopped reading, export of flight {} abandoned", index);
+                            host_reading = false;
+                            break;
+                        }
                     }
 
                     //info!("Done writing logs.")
+                    if host_reading {
+                        send_packet_reliable(io_packet.reply(OutPacket::Ok)).await;
+                    }
+                    set_usb_exporting(false);
+                    continue;
                 }
                 InPacket::Tail(enabled) => {
                     set_usb_broadcasting_enabled(enabled);
@@ -509,13 +519,17 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             let settled = calm_since.is_some_and(|t| Instant::now() - t >= Duration::from_millis(MAG_SETTLE_MS));
 
             if new_mag && settled {
-                //filter.inject_magn(&sirin.data.magnetometer, Instant::now().as_micros() as u32);
+                filter.inject_magn(&sirin.data.magnetometer, Instant::now().as_micros() as u32);
             }
         }
         if let Ok(pressure) = sirin.data.baro.pressure {
             if inject_counter % 1 == 0{
                 filter.inject_baro(approx_pressure_altitude(pressure.convert()) - initial_altitude, Instant::now().as_micros() as u32);
             }
+        }
+
+        if config::EKF_DEBUG_ENABLED {
+            EKF_DEBUG.signal(filter.debug_snapshot(sirin.data.time));
         }
 
         //Calculate DataState
@@ -559,7 +573,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
 
         match state.mode {
             SirinMode::Standby => {
-                if state.altitude.value > altitude_threshold
+                if datastate.altitude.value as f64 > altitude_threshold
                     || accel_mag_squared.is_some_and(|accel| accel.value > accel_threshold.value)
                     || desired_mode == Some(SirinMode::Flight)
                 {
@@ -572,12 +586,10 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
             },
             SirinMode::Flight => {
                 //Log a DataState packet every 100 milliseconds
-                OUT_CHANNEL.publish_immediate(IoPacket::new(
-                    IoChannel::Flash, OutPacket::LogEntry(
-                        LogEntry::new(
-                            sirin.data.time,
-                            Log::DataState(datastate.clone())
-                        )
+                log_to_flash(OutPacket::LogEntry(
+                    LogEntry::new(
+                        sirin.data.time,
+                        Log::DataState(datastate.clone())
                     )
                 ));
 
@@ -592,10 +604,7 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     //Deploy apo parachute
                     if !apo_deployed && dur.is_some_and(|d| d > Duration::from_secs(timeout)) {
                         Sirin::deploy_chute_apo(&mut sirin.parachute_apo);
-                        OUT_CHANNEL.publish_immediate(IoPacket::new(
-                            IoChannel::Flash,
-                            OutPacket::DeployedApoAt(sirin.data.time.value)
-                        ));
+                        log_to_flash(OutPacket::DeployedApoAt(sirin.data.time.value));
                         apo_deployed = true;
                     }
 
@@ -611,34 +620,31 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                 sirin.led_blue.set_high();
 
                 // Log DataState packet during descent
-                OUT_CHANNEL.publish_immediate(IoPacket::new(
-                    IoChannel::Flash,
-                    OutPacket::LogEntry(LogEntry::new(
-                        sirin.data.time,
-                        Log::DataState(datastate.clone()),
-                    )),
-                ));
+                log_to_flash(OutPacket::LogEntry(LogEntry::new(
+                    sirin.data.time,
+                    Log::DataState(datastate.clone()),
+                )));
 
                 //Deploy main parachute
                 if state.apogee.is_some() {
-                    if state.altitude.value < main_deployment_altitude {
+                    if (datastate.altitude.value as f64) < main_deployment_altitude {
                         if !main_deployed {
                             Sirin::deploy_chute_main(&mut sirin.parachute_main);
-                            OUT_CHANNEL.publish_immediate(IoPacket::new(
-                    IoChannel::Flash, OutPacket::DeployedMainAt(sirin.data.time.value)
-                            ));
+                            log_to_flash(OutPacket::DeployedMainAt(sirin.data.time.value));
                             main_deployed = true;
                         }
                     }
                 }
 
-                //Landed once velocity is below threshold for THRESHOLD_REQUIRED of the
-                //last THRESHOLD_WINDOW measurements. Ticks without a valid velocity count as misses.
-                let total_vel: f64 = (state.nominal.vel.x.powf(2.0) + state.nominal.vel.y.value.powf(2.0) + state.nominal.vel.z.powf(2.0)).sqrt() as f64;
+                //Landed once the filter's vertical speed is below threshold near the pad for
+                //THRESHOLD_REQUIRED of the last THRESHOLD_WINDOW measurements. The altitude check
+                //stops it passing at apogee, where vertical speed is also near zero.
+                let vz = datastate.vel.z.value as f64;
                 landed_check.push(
                     velocity_valid
-                        && total_vel.is_finite()
-                        && total_vel < config::LANDED_VELOCITY_THRESHOLD_M_S
+                        && vz.is_finite()
+                        && ComplexField::abs(vz) < config::LANDED_VELOCITY_THRESHOLD_M_S
+                        && (datastate.altitude.value as f64) < config::LANDED_MAX_ALTITUDE_M
                 );
                 if landed_check.passes(config::THRESHOLD_REQUIRED) {
                     desired_mode = Some(SirinMode::Landed);
@@ -699,6 +705,11 @@ async fn main_task(sirin: &'static mut Sirin) -> Result<(), SirinError> {
                     Log::DataState(datastate.clone())
                 ))
             ));
+            if config::EKF_DEBUG_RADIO_ENABLED {
+                OUT_CHANNEL.publish_immediate(IoPacket::new(
+                    IoChannel::ToLoRa, OutPacket::EkfDebug(filter.debug_snapshot(sirin.data.time))
+                ));
+            }
         }
     }
 }

@@ -140,7 +140,7 @@ impl CyclicFlashSection {
         // do not write across two sectors
         if data.len() as u32 + self.data_byte_index > SECTOR_SIZE {
             if self.data_byte_index < SECTOR_SIZE {
-                flash.checked_write(
+                flash.write(
                     self.region_start + self.data_sector_index * SECTOR_SIZE + self.data_byte_index,
                     &[0xFE]
                 ).await?;
@@ -155,7 +155,9 @@ impl CyclicFlashSection {
         if self.data_byte_index == 0 {
             self.write_sector_index(flash).await?;
             let sector_addr = self.region_start + self.data_sector_index * SECTOR_SIZE;
-            flash.checked_erase_sector(sector_addr).await?;
+            // Unchecked: reading the 4 KB back takes ~35 ms on the 1 MHz bus. The next
+            // write waits for the erase to finish.
+            flash.erase_sector(sector_addr).await?;
             sector_erased = Some(sector_addr);
         } else {
             sector_erased = None;
@@ -163,7 +165,9 @@ impl CyclicFlashSection {
 
         let index = self.data_sector_index * SECTOR_SIZE + self.data_byte_index;
         let addr = self.region_start + index;
-        flash.checked_write(addr, data).await?;
+        // Unchecked: the read-before and read-back of checked_write cost ~8 ms per entry
+        // on the 1 MHz bus, more than the 100 Hz logging rate allows
+        flash.write(addr, data).await?;
 
         // due to the bounds check at the beginning this will surely be less the max
         self.data_byte_index += data.len() as u32;

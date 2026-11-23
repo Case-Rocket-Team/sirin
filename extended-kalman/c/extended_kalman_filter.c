@@ -49,7 +49,9 @@ typedef union {
 
 static_assert(sizeof(_ekf_err_state) == sizeof(f32) * EKF_STATE_DIM);
 
-void _ekf_fill_skew3(f32* m, vec3f v, u32 row_off, u32 col_off, u32 stride) {
+static void _ekf_fill_skew3(
+    f32* m, vec3f v, u32 row_off, u32 col_off, u32 stride
+) {
     m[(row_off + 0) * stride + (col_off + 0)] = 0.0f;
     m[(row_off + 0) * stride + (col_off + 1)] = -v.z;
     m[(row_off + 0) * stride + (col_off + 2)] = v.y;
@@ -63,7 +65,9 @@ void _ekf_fill_skew3(f32* m, vec3f v, u32 row_off, u32 col_off, u32 stride) {
     m[(row_off + 2) * stride + (col_off + 2)] = 0.0f;
 }
 
-void _ekf_fill_mat3(f32* dst, f32 src[3 * 3], u32 row_off, u32 col_off, u32 stride) {
+static void _ekf_fill_mat3(
+    f32* dst, f32 src[3 * 3], u32 row_off, u32 col_off, u32 stride
+) {
     dst[(row_off + 0) * stride + (col_off + 0)] = src[0];
     dst[(row_off + 0) * stride + (col_off + 1)] = src[1];
     dst[(row_off + 0) * stride + (col_off + 2)] = src[2];
@@ -77,7 +81,7 @@ void _ekf_fill_mat3(f32* dst, f32 src[3 * 3], u32 row_off, u32 col_off, u32 stri
     dst[(row_off + 2) * stride + (col_off + 2)] = src[8];
 }
 
-void _ekf_linearize_state_transition(
+static void _ekf_linearize_state_transition(
     extended_kalman_filter* ekf,
     // Output state transition matrix
     f32 F[EKF_STATE_DIM * EKF_STATE_DIM], 
@@ -147,13 +151,15 @@ void _ekf_linearize_state_transition(
 
 // Given a float `src`, fills in a 3x3 region of `dst` with src along the
 // diagonal. Only the diagonal entries are actually set
-void _ekf_fill_diag3(f32* dst, f32 src, u32 row_off, u32 col_off, u32 stride) {
+static void _ekf_fill_diag3(
+    f32* dst, f32 src, u32 row_off, u32 col_off, u32 stride
+) {
     dst[(row_off + 0) * stride + (col_off + 0)] = src;
     dst[(row_off + 1) * stride + (col_off + 1)] = src;
     dst[(row_off + 2) * stride + (col_off + 2)] = src;
 }
 
-void _ekf_build_process_covariance(
+static void _ekf_build_process_covariance(
     extended_kalman_filter* ekf,
     f32 Q[EKF_STATE_DIM * EKF_STATE_DIM],
     f32 dt
@@ -193,18 +199,51 @@ void _ekf_build_process_covariance(
     #undef _EKF_FILLD
 }
 
-void _ekf_predict_to(
+static void _ekf_fix_covar(extended_kalman_filter* ekf) {
+    // Force diagonalize the covariance matrix
+    for (u32 row = 0; row < EKF_STATE_DIM; row++) {
+        for (u32 col = row; col < EKF_STATE_DIM; col++) {
+            u32 upper_index = col + row * EKF_STATE_DIM;
+            u32 lower_index = col + row * EKF_STATE_DIM;
+
+            f32 avg = 0.5f * (
+                ekf->state_covar[upper_index] + ekf->state_covar[lower_index]
+            );
+
+            if (row == col) {
+                // Enforce positives along the diagonal to keep the covariance
+                // positive semidefinite
+                avg = MAX(0.0f, avg);
+            }
+
+            ekf->state_covar[upper_index] = avg;
+            ekf->state_covar[lower_index] = avg;
+        }
+    }
+}
+
+static b32 _ekf_all_finite(f32* nums, u32 size) {
+    for (u32 i = 0; i < size; i++) {
+        if (!isfinite(nums[i])) {
+            return false;
+        }
+    }
+
+    return true;
+} 
+
+static void _ekf_predict_to(
     extended_kalman_filter* ekf,
     ekf_control_input* control,
     u32 timestamp_us
 ) {
-    if (timestamp_us == ekf->state_time_us) { return; }
-
     // Note(Ian) This has to be a subtract that can over and underflow for 
     // it to work correctly
     u32 dt_us = timestamp_us - ekf->state_time_us;
     f32 dt = (f32)dt_us * 1e-6f;
-    ekf->state_time_us = timestamp_us;
+
+    // Reject very small `dt` values to avoid floating point rounding issues
+    if (dt < 1e-8f) { return; }
 
     vec3f gyro_radps = vec3f_sub(
         control->gyro_radps,
@@ -260,6 +299,7 @@ void _ekf_predict_to(
     // Next, update the state's covariance given a linearization of the state
     // transition, control model, and process covariance
     // P_n+1|n = F * P_n|n * F^T + Q
+    f32 new_state_covar[EKF_STATE_DIM * EKF_STATE_DIM] = { 0 };
     {
         // Also called F
         f32 state_transition[EKF_STATE_DIM * EKF_STATE_DIM];
@@ -277,25 +317,33 @@ void _ekf_predict_to(
             0.0f, FP
         );
 
-        // Building process covariance directly into the state covariance to 
-        // avoid an additional temporary variable. Also, P has already been 
-        // consumed by the previous operation
-        _ekf_build_process_covariance(ekf, ekf->state_covar, dt);
+        _ekf_build_process_covariance(ekf, new_state_covar, dt);
 
         matmul(
             false, true,
             EKF_STATE_DIM, EKF_STATE_DIM, EKF_STATE_DIM,
             1.0f, FP, state_transition,
-            1.0f, ekf->state_covar
+            1.0f, new_state_covar
         );
     }
 
-    ekf->nominal_state.attitude = new_attitude;
-    ekf->nominal_state.vel_fps = new_vel_fps;
-    ekf->nominal_state.pos_ft = new_pos_ft;
+    if (
+        _ekf_all_finite(new_state_covar, EKF_STATE_DIM * EKF_STATE_DIM) &&
+        quatf_finite(new_attitude) && vec3f_finite(new_vel_fps) &&
+        vec3f_finite(new_pos_ft)
+    ) {
+        ekf->nominal_state.attitude = new_attitude;
+        ekf->nominal_state.vel_fps = new_vel_fps;
+        ekf->nominal_state.pos_ft = new_pos_ft;
+
+        memcpy(ekf->state_covar, new_state_covar, sizeof(new_state_covar));
+        _ekf_fix_covar(ekf);
+
+        ekf->state_time_us = timestamp_us;
+    }
 }
 
-void _ekf_update(
+static void _ekf_update(
     extended_kalman_filter* ekf,
     // Must be less than EKF_MAX_MEASURE_DIM
     u32 measure_dim,
@@ -372,6 +420,7 @@ void _ekf_update(
 
     // Updating covariance according to
     // P_n|n = (I - KH) * P_n|n-1 * (I - KH)^T + KRK^T
+    f32 new_state_cov[EKF_STATE_DIM * EKF_STATE_DIM] = { 0 };
     {
         // Stores (I - KH)
         f32 cov_factor[EKF_STATE_DIM * EKF_STATE_DIM] = { 0 };
@@ -408,7 +457,7 @@ void _ekf_update(
             false, true,
             EKF_STATE_DIM, EKF_STATE_DIM, EKF_STATE_DIM,
             1.0f, leftmul, cov_factor,
-            0.0f, ekf->state_covar
+            0.0f, new_state_cov
         );
 
         // K*R
@@ -424,11 +473,12 @@ void _ekf_update(
             false, true,
             EKF_STATE_DIM, EKF_STATE_DIM, measure_dim,
             1.0f, leftmul, kalman_gain,
-            1.0f, ekf->state_covar
+            1.0f, new_state_cov
         );
     }
 
     // Updating nominal state
+    ekf_nominal_state new_state = { 0 };
     {
         // y = (z - h(x))
         // Really sized (measure_dim x 1)
@@ -456,8 +506,7 @@ void _ekf_update(
         };
 
         ekf_nominal_state nominal = ekf->nominal_state;
-
-        ekf->nominal_state = (ekf_nominal_state){
+        new_state = (ekf_nominal_state){
             .attitude = quatf_norm(quatf_mul(nominal.attitude, rot_err)),
 
             .pos_ft = vec3f_add(nominal.pos_ft, err.pos_ft),
@@ -476,6 +525,16 @@ void _ekf_update(
             ),
         };
     }
+
+    if (
+        _ekf_all_finite(new_state_cov, EKF_STATE_DIM * EKF_STATE_DIM) &&
+        _ekf_all_finite(new_state.v, EKF_NOMINAL_STATE_DIM)
+    ) {
+        memcpy(&ekf->nominal_state, &new_state, sizeof(ekf_nominal_state));
+        memcpy(ekf->state_covar, new_state_cov, sizeof(new_state_cov));
+
+        _ekf_fix_covar(ekf);
+    }
 }
 
 void ekf_inject_imu(
@@ -484,6 +543,18 @@ void ekf_inject_imu(
     vec3f gyro_radps,
     u32 timestamp_us
 ) {
+    if (!vec3f_finite(accel_fps2) || !vec3f_finite(gyro_radps)) {
+        // This control input corresponds to no movement
+        ekf->control_input = (ekf_control_input){
+            .accel_fps2 = quatf_rot_vec3f(
+                quatf_conj(ekf->nominal_state.attitude),
+                (vec3f){ 0.0f, 0.0f, _EKF_G_FPS2 }
+             )
+        };
+
+        return;
+    }
+
     // Predict previous control input to now
     _ekf_predict_to(ekf, &ekf->control_input, timestamp_us);
 
@@ -498,6 +569,10 @@ void ekf_inject_baro(
     f32 altitude_ft,
     u32 timestamp_us
 ) {
+    if (!isfinite(altitude_ft)) {
+        return;
+    }
+
     // Predict previous control input to now
     _ekf_predict_to(ekf, &ekf->control_input, timestamp_us);
 
@@ -521,6 +596,10 @@ void ekf_inject_magn(
     vec3f magn_north_gauss,
     u32 timestamp_us
 ) {
+    if (!vec3f_finite(magn_north_gauss)) {
+        return;
+    }
+
     // Predict previous control input to now
     _ekf_predict_to(ekf, &ekf->control_input, timestamp_us);
 
@@ -567,6 +646,10 @@ void ekf_inject_gnss(
     vec3f pos_ft,
     u32 timestamp_us
 ) {
+    if (!vec3f_finite(pos_ft)) {
+        return;
+    }
+
     // Predict previous control input to now
     _ekf_predict_to(ekf, &ekf->control_input, timestamp_us);
 

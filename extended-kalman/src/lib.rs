@@ -103,10 +103,10 @@ unsafe extern "C" {
 use core::f32::consts::PI;
 
 use sirin_shared::{
-    packet::{ImuData, MagnetometerData, Vec3},
+    packet::{EkfDebug, EkfSettingsData, ImuData, MagnetometerData, Vec3},
     state::{Pos, Quaternion, Vel, Accel, AngularVel},
 };
-use uunit::{MicroGs, Meters, Quantity};
+use uunit::{MicroGs, Meters, Milliseconds, Quantity};
 
 const FT_TO_M: f32 = 0.3048;
 const M_TO_FT: f32 = 1.0 / FT_TO_M;
@@ -168,21 +168,30 @@ fn angular_vel_to_vec3f(w: &ImuData) -> Option<vec3f> {
 
 
 /* 
-Magnetometer calibration inside Test Rocket ebay
+Sirin B Magnetometer calibration inside Test Rocket ebay
 const MAG_HARD_IRON_UT: [f32; 3] = [-74.704506, -169.0767, -71.9992];
 const MAG_SOFT_IRON: [[f32; 3]; 3] = [
     [1.0387778, -0.00072778534, -0.046094228],
     [-0.00072778534, 1.1413802, 0.019123822],
     [-0.046094228, 0.019123822, 0.8457911],
 ];
-*/
 
-/// Magnetometer calibration outside ebay (Matthew's Code)
+
+/// Sirin A Magnetometer calibration outside ebay (Matthew's Code)
 const MAG_HARD_IRON_UT: [f32; 3] = [-18.668148, 42.824524, -175.88482];
 const MAG_SOFT_IRON: [[f32; 3]; 3] = [
     [0.9940695, 0.042993855, -0.019891627],
     [0.042993855, 0.9750613, 0.007590707],
     [-0.019891627, 0.007590707, 1.0341376],
+];
+*/
+
+/// Sirin D Magnetometer calibration inside Luke's L1 Ebay
+const MAG_HARD_IRON_UT: [f32; 3] = [-28.617245, 43.30164, -22.6641];
+const MAG_SOFT_IRON: [[f32; 3]; 3] = [
+    [1.002862, 0.035722543, 0.018164534],
+    [0.035722543, 1.0655078, -0.03196912],
+    [0.018164534, -0.03196912, 0.93828887],
 ];
 
 /// Magnetometer reading after the same hard/soft-iron calibration the filter
@@ -262,6 +271,30 @@ impl Ekf {
         let k = 1.0 - G_FTPS2 / norm;
         self.raw.nominal_state.accel_bias_fps2 = vec3f { x: a.x * k, y: a.y * k, z: a.z * k };
         Some(err_g)
+    }
+    /// Current settings, bias estimates and covariance diagonal, read from the
+    /// running filter, in the filter's own units.
+    pub fn debug_snapshot(&self, time: Milliseconds<u32>) -> EkfDebug {
+        let s = &self.raw.settings;
+        let n = &self.raw.nominal_state;
+        let v3 = |v: vec3f| Vec3 { x: v.x, y: v.y, z: v.z };
+        EkfDebug {
+            time,
+            settings: EkfSettingsData {
+                accel_var_f2ps4: s.accel_var_f2ps4,
+                accel_bias_var_f2ps4: s.accel_bias_var_f2ps4,
+                gyro_var_rad2ps2: s.gyro_var_rad2ps2,
+                gyro_bias_var_rad2ps2: s.gyro_bias_var_rad2ps2,
+                baro_var_ft2: s.baro_var_ft2,
+                magn_covar_gauss2: s.magn_covar_gauss2,
+                magn_bias_var_gauss2: s.magn_bias_var_gauss2,
+                gnss_covar_ft2: s.gnss_covar_ft2,
+            },
+            gyro_bias_radps: v3(n.gyro_bias_radps),
+            accel_bias_fps2: v3(n.accel_bias_fps2),
+            magn_bias_gauss: v3(n.magn_bias_gauss),
+            covar_diag: core::array::from_fn(|i| self.raw.state_covar[i * EKF_STATE_DIM + i]),
+        }
     }
     pub fn inject_imu(&mut self, imu: &ImuData, timestamp_us: u32) {
         let (Ok(accel), Some(gyro_radps)) = (&imu.accel, angular_vel_to_vec3f(imu)) else {
