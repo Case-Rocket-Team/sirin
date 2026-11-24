@@ -184,7 +184,7 @@ const MAG_SOFT_IRON: [[f32; 3]; 3] = [
     [0.042993855, 0.9750613, 0.007590707],
     [-0.019891627, 0.007590707, 1.0341376],
 ];
-*/
+
 
 /// Sirin D Magnetometer calibration inside Luke's L1 Ebay
 const MAG_HARD_IRON_UT: [f32; 3] = [-17.507195, 38.21166, -12.422867];
@@ -192,6 +192,15 @@ const MAG_SOFT_IRON: [[f32; 3]; 3] = [
     [1.0139598, 0.024968298, -0.012524376],
     [0.024968298, 1.086348, -0.055150088],
     [-0.012524376, -0.055150088, 0.9112809],
+];
+*/
+
+/// Sirin D Magnetometer calibration inside Recovery Drop Test Apparatus
+const MAG_HARD_IRON_UT: [f32; 3] = [27.60889, 2.8146572, -13.005585];
+const MAG_SOFT_IRON: [[f32; 3]; 3] = [
+    [1.0347706, 0.10251667, -0.015118748],
+    [0.10251667, 1.020616, 0.02854042],
+    [-0.015118748, 0.02854042, 0.95750815],
 ];
 
 /// Magnetometer reading after the same hard/soft-iron calibration the filter

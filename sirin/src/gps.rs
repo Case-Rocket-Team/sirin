@@ -70,10 +70,13 @@ pub async fn gps_init(gps_uart: &mut Uart<'_, Async>) {
         rate: 5,
     };
     //Satelite message config ()
+    // Off: nothing reads it, and with ~42+ satellites in view it's bigger than the
+    // 512-byte parser buffer, so each one failed to parse. Still sent (as 0) so a
+    // module that kept the old setting through a reflash stops sending it.
     let satelite_msg_config = CfgMsgSinglePortBuilder {
         msg_class: NavSat::CLASS,
         msg_id: NavSat::ID,
-        rate: 5,
+        rate: 0,
     };
     let nav_ecef_config = CfgMsgSinglePortBuilder {
         msg_class: NavPosEcef::CLASS,
